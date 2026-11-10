@@ -30,7 +30,7 @@ It changes what's reported, not what's protected, so a change to it applies at o
 ### D4. Account events through EventBridge, optional
 With `ReactToAccountEvents=true`, the template adds a rule matching `source: aws.organizations`, `detail-type: AWS API Call via CloudTrail`, and event names `CreateAccount`, `InviteAccountToOrganization`, `AcceptHandshake` and `MoveAccount`, targeting the guard. (`CreateAccount` returns before the account exists; task 1.1 confirms which event marks it active.) The function recognizes the event shape and runs the coverage check only. Account creation is asynchronous, so the check also runs on the next daily run in case the account wasn't active yet.
 
-*Why optional:* EventBridge gets these events only through CloudTrail management events. Task 1.1 confirms whether that needs a trail in the management account; if it does, the parameter's description and the install docs say so.
+*Why optional:* EventBridge gets these events only through CloudTrail. Confirmed in the e2e organization, which has no trail: two `MoveAccount` calls appeared in CloudTrail event history, but an EventBridge rule on `aws.organizations` matched nothing. So the parameter needs a trail recording management events, and its description and the install docs say so. Which events arrive with a trail is still to confirm.
 
 ### D5. Messages name the account
 Each event and alert carries the account id, its name from Organizations, and its parent (root or OU), so the person reading it can decide the ceiling without looking it up.

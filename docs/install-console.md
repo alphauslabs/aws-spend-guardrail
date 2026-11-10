@@ -73,7 +73,7 @@ The link only works in the payer account it was made for. Opened in any other ac
    | `FunctionPackageBucket`, `FunctionPackageKey` | from step 4 |
    | `GuardVersion` | the release version, for example `v0.1.0` |
    | `AlertEmail` | who receives local alerts (optional) |
-   | `ReactToAccountEvents` | keep `false` unless you want new accounts reported within minutes rather than daily (needs CloudTrail events in EventBridge) |
+   | `ReactToAccountEvents` | keep `false` unless you want new accounts reported within minutes rather than daily (only works if a CloudTrail trail records the payer account's management events) |
 
 4. Choose **Next** twice. On the review page, tick **I acknowledge that AWS CloudFormation might create IAM resources**, then **Submit**.
 5. Wait for **CREATE_COMPLETE** on the **Events** tab (a few minutes). If you gave an alert email, confirm the subscription email AWS sends.

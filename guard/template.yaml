@@ -74,7 +74,7 @@ Parameters:
     Type: String
     Default: "false"
     AllowedValues: ["true", "false"]
-    Description: When true, an account created, invited, or moved in the organization runs the coverage check within minutes instead of at the next daily run. Needs the account's CloudTrail management events in EventBridge.
+    Description: When true, an account created, invited, or moved in the organization runs the coverage check within minutes instead of at the next daily run. Only works when a CloudTrail trail records the account's management events; without one, these events never reach EventBridge.
 
 Rules:
   UsEast1Only:

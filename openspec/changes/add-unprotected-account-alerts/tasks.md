@@ -2,7 +2,7 @@
 
 ## 1. AWS facts
 
-- [ ] 1.1 In the e2e organization, confirm which events EventBridge receives in us-east-1 when an account is created, invited and moved, and whether that needs a CloudTrail trail; record the result in `docs/aws-facts.md` and adjust design D4 if it differs
+- [x] 1.1 In the e2e organization, confirm whether Organizations account events reach EventBridge in us-east-1 without a CloudTrail trail; record the result in `docs/aws-facts.md` and adjust design D4 (confirmed: they don't, so `ReactToAccountEvents` needs a trail)
 
 ## 2. Config
 
@@ -28,3 +28,4 @@
 ## Workflow follow-up
 
 - Archive after `add-budget-freeze-guard` is archived, so its specs exist first.
+- The first time a client with a CloudTrail trail turns on `ReactToAccountEvents`, confirm which events arrive for account creation, invitation and moves, and update `docs/aws-facts.md` and the rule's event names if they differ.
