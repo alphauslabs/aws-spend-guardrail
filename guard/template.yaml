@@ -19,8 +19,8 @@ Metadata:
 Parameters:
   MSPId:
     Type: String
-    Description: MSP id used in this org's Jennah dataset names (guardrail.<id>.config and .inbox).
-    AllowedPattern: "^[a-z0-9]([a-z0-9_-]{0,98}[a-z0-9])?$"
+    Description: MSP id. With this payer account it names the Jennah datasets guardrail.<id>.<payer>.config and .inbox. One MSP may have several payer orgs, each with its own stack.
+    AllowedPattern: "^[a-z0-9]([a-z0-9_-]{0,88}[a-z0-9])?$"
   JennahEndpoint:
     Type: String
     Description: Jennah gRPC endpoint, for example api.example.com:443.

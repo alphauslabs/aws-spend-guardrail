@@ -27,7 +27,7 @@
 
 - [x] 3.1 Define the `config_versions` and `events` table layouts with a layout version in `schema/` (design D5, D8); verify a test that the declared columns match what the guard reads and writes
 - [x] 3.2 Implement a small Jennah client on `jennah-sdk-go`: read the latest config version, insert a version, commit an event with an idempotency key, create and read an approval by request key; verify tests against a fake HTTP server for each call, including a primary-key conflict and an idempotent replay
-- [ ] 3.3 Implement `guardrail setup --msp <id>`: create both datasets, declare tables, print the selectors and permissions for the reader and writer credentials (design D9); verify that a second run against a local Jennah reports no change
+- [ ] 3.3 Implement `guardrail setup --msp <id> --payer <account>`: create both datasets, declare tables, print the selectors and permissions for the reader and writer credentials (design D9); verify that a second run against a local Jennah reports no change
 - [x] 3.4 Implement `guardrail validate`, `guardrail diff` and `guardrail publish` (design D11); verify that publish shows loosening differences, refuses an invalid document, and writes exactly one version when retried
 - [x] 3.5 Implement `guardrail pull` (newest or `--version N`, applied and pending status from the inbox on stderr, design D11); verify that a pulled file republished unchanged is reported by `diff` as having no differences, and that a pending newest version is reported as pending
 - [ ] 3.6 Document setup, credential minting (personal scoped keys now, service accounts later), and the pull, edit, publish flow in `docs/operating.md`; verify the commands run as written against a local Jennah

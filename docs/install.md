@@ -1,10 +1,10 @@
 # Install
 
-One CloudFormation stack per payer (management) account, in us-east-1. Deploy it through your own pipeline from a version you reviewed.
+One CloudFormation stack per payer (management) account, in us-east-1. An MSP with several payer orgs installs one stack in each, all with the same `MSPId`; each reads its own config, named by its payer account. Deploy it through your own pipeline from a version you reviewed.
 
 ## Before you start
 
-1. [Set up the MSP in Jennah and mint the guard's two credentials](operating.md). Store them in Secrets Manager in the payer account.
+1. [Set up the payer org in Jennah and mint the guard's two credentials](operating.md). Store them in Secrets Manager in the payer account.
 2. Publish a first config with every scope in `dry-run` (the default).
 3. Run `guardrail preflight` to confirm every target has a free SCP slot.
 4. Build the function package with `make guard` and upload `bin/guard.zip` to an S3 bucket in us-east-1 that you control.
@@ -36,7 +36,7 @@ Within 5 minutes the guard pulls the config and creates one budget per scope. Wa
 
 | Parameter | Default | Purpose |
 |---|---|---|
-| `MSPId` | | MSP id, used in the Jennah dataset names. |
+| `MSPId` | | MSP id. With the payer account (taken from the stack's account), it names the Jennah datasets `guardrail.<MSPId>.<payer>.config` and `.inbox`. |
 | `JennahEndpoint` | | Jennah gRPC endpoint. |
 | `ReaderSecretArn` | | Secret with the reader key. |
 | `WriterSecretArn` | | Secret with the writer key. |

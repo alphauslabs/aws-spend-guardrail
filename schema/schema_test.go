@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"strings"
 	"testing"
 
 	datastorev1 "github.com/alphauslabs/jennah-sdk-go/jennah/datastore/v1"
@@ -67,19 +68,29 @@ func TestMSPIDs(t *testing.T) {
 			t.Errorf("%q should be refused", bad)
 		}
 	}
-	if ConfigDatasetID("msp_a") != "guardrail.msp_a.config" || MSPSelector("msp_a") != "guardrail.msp_a.*" {
+	if ConfigDatasetID("msp_a", "123456789012") != "guardrail.msp_a.123456789012.config" ||
+		InboxDatasetID("msp_a", "123456789012") != "guardrail.msp_a.123456789012.inbox" ||
+		MSPSelector("msp_a") != "guardrail.msp_a.*" ||
+		PayerSelector("msp_a", "123456789012") != "guardrail.msp_a.123456789012.*" {
 		t.Error("dataset naming changed")
+	}
+	long := strings.Repeat("a", maxMSPIDLen)
+	if ValidateMSPID(long) != nil || len(ConfigDatasetID(long, "123456789012")) > 128 {
+		t.Error("the longest MSP id must still form a valid dataset id")
+	}
+	if ValidatePayer("123456789012") != nil || ValidatePayer("12345") == nil || ValidatePayer("12345678901a") == nil {
+		t.Error("payer validation")
 	}
 }
 
 func TestReaderCannotWriteAndWriterOnlyWrites(t *testing.T) {
-	for _, c := range GuardCredentials("msp_a") {
+	for _, c := range GuardCredentials("msp_a", "123456789012") {
 		for _, p := range c.Permissions {
 			if c.Name == "reader" && p == "datastore.data:write" {
 				t.Error("reader must not write")
 			}
 		}
-		if c.Name == "writer" && (len(c.Permissions) != 1 || c.Permissions[0] != "datastore.data:write" || c.DatasetID != InboxDatasetID("msp_a")) {
+		if c.Name == "writer" && (len(c.Permissions) != 1 || c.Permissions[0] != "datastore.data:write" || c.DatasetID != InboxDatasetID("msp_a", "123456789012")) {
 			t.Errorf("writer reach: %+v", c)
 		}
 	}

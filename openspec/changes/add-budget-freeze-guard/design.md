@@ -70,7 +70,7 @@ The inbox dataset has `events (event_id STRING PK, occurred_at TIMESTAMP, kind S
 *Alternative:* write to Jennah directly and queue only on failure. Rejected: two code paths, and a crash between failure and enqueue loses the event.
 
 ### D9. Two credentials in Secrets Manager
-`guardrail/<msp>/reader` and `guardrail/<msp>/writer` in Secrets Manager. Reader: `datastore.data:read` and `datastore.schema:read` on `guardrail.<msp>.config`, plus `approval.requests:create`, `approval.requests:read` and `approval.requests:cancel` (to cancel a superseded loosening approval). Writer: `datastore.data:write` on `guardrail.<msp>.inbox`. Today these are personal API keys with their own scope and selectors. If Jennah adds service accounts, they can become one service account each, with a custom role per MSP. The guard doesn't care which; it only needs the secret.
+`guardrail/<msp>/reader` and `guardrail/<msp>/writer` in Secrets Manager. Reader: `datastore.data:read` and `datastore.schema:read` on `guardrail.<msp>.<payer>.config`, plus `approval.requests:create`, `approval.requests:read` and `approval.requests:cancel` (to cancel a superseded loosening approval). Writer: `datastore.data:write` on `guardrail.<msp>.<payer>.inbox`. The keys are per payer org, so a leaked key reaches one organization. Today these are personal API keys with their own scope and selectors. If Jennah adds service accounts, they can become one service account each, with a custom role per MSP. The guard doesn't care which; it only needs the secret.
 
 ### D10. One Go function, several triggers
 One Lambda (Go, `provided.al2023`, arm64) handles: the 5-minute schedule (pull config, reconcile), the budget notification topic (record freeze or would-freeze), the daily schedule (OU membership, drift, heartbeat, period-start lifts) and the outbox queue (write to Jennah). Reconcile is idempotent, so a run that overlaps another is harmless. The function's reserved concurrency for the schedule path is 1.
@@ -94,7 +94,7 @@ One Lambda (Go, `provided.al2023`, arm64) handles: the 5-minute schedule (pull c
 
 There is nothing to migrate. Rollout per payer org:
 
-1. The distributor runs `guardrail setup` for the MSP and mints the two credentials.
+1. The distributor runs `guardrail setup` for the MSP's payer org and mints the two credentials.
 2. They publish a first config with every scope in dry-run.
 3. They deploy the stack through their pipeline and store the credentials in Secrets Manager.
 4. After a dry-run month whose `would_freeze` events match what they expect, one MSP moves selected scopes to enforce. That is a tightening change, so it applies at once.

@@ -13,8 +13,8 @@ guardrail CLI (pull, edit, publish)
         |
         v
 distributor's Jennah enterprise
-  guardrail.<msp>.config   versioned config documents
-  guardrail.<msp>.inbox    freezes, lifts, approvals, drift
+  guardrail.<msp>.<payer>.config   versioned config documents
+  guardrail.<msp>.<payer>.inbox    freezes, lifts, approvals, drift
         ^                         ^
         | pulls config            | writes events
         | every 5 min             |

@@ -25,16 +25,19 @@ var version = "dev"
 const usage = `guardrail: operate aws-spend-guardrail config in Jennah.
 
 Usage:
-  guardrail setup    --msp ID
-  guardrail pull     --msp ID [--version N] [-o FILE]
+  guardrail setup    --msp ID --payer ACCOUNT
+  guardrail pull     --msp ID --payer ACCOUNT [--version N] [-o FILE]
   guardrail validate [--payer ACCOUNT] FILE
-  guardrail diff     --msp ID FILE
-  guardrail publish  --msp ID [--note TEXT] FILE
+  guardrail diff     --msp ID --payer ACCOUNT FILE
+  guardrail publish  --msp ID --payer ACCOUNT [--note TEXT] FILE
   guardrail preflight --msp ID FILE   (run with AWS credentials for the payer account)
   guardrail schema   (print the config JSON schema)
   guardrail version
 
-Jennah connection, for every command except validate, schema and version:
+An MSP can have several payer orgs. Each has its own guard and its own config,
+so every Jennah command names the payer account with --payer.
+
+Jennah connection, for every command except validate, preflight, schema and version:
   --endpoint (or JENNAH_ENDPOINT)   Jennah gRPC endpoint
   --api-key  (or JENNAH_API_KEY)    optional; otherwise your jennah CLI login is used
 `
@@ -60,7 +63,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	ver := fs.Int64("version", 0, "config version (pull; default newest)")
 	out := fs.String("o", "", "write the document to FILE (pull)")
 	note := fs.String("note", "", "note stored with the version (publish)")
-	payer := fs.String("payer", "", "payer account the document must be for (validate)")
+	payer := fs.String("payer", "", "payer (management) account of the org")
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
@@ -92,8 +95,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("unknown command %q\n\n%s", cmd, usage)
 	}
 
-	if *msp == "" {
-		return errors.New("--msp is required")
+	if *msp == "" || *payer == "" {
+		return errors.New("--msp and --payer are required")
 	}
 	if *endpoint == "" {
 		return errors.New("--endpoint or JENNAH_ENDPOINT is required")
@@ -102,7 +105,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("connect to Jennah: %w", err)
 	}
-	c := &cli.CLI{J: j, MSP: *msp, Out: stdout, Status: stderr}
+	c := &cli.CLI{J: j, MSP: *msp, Payer: *payer, Out: stdout, Status: stderr}
 
 	switch cmd {
 	case "setup":

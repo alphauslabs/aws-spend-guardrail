@@ -24,9 +24,18 @@ import (
 type CLI struct {
 	J      *jennah.Client
 	MSP    string
+	Payer  string    // the payer account this config and its guard belong to
 	Out    io.Writer // documents and results
 	Status io.Writer // status lines, kept apart so pulled documents stay clean
 	Now    func() time.Time
+}
+
+// check validates the MSP id and payer account.
+func (c *CLI) check() error {
+	if err := schema.ValidateMSPID(c.MSP); err != nil {
+		return err
+	}
+	return schema.ValidatePayer(c.Payer)
 }
 
 func (c *CLI) now() time.Time {
@@ -39,7 +48,7 @@ func (c *CLI) now() time.Time {
 // Setup creates an MSP's datasets and declares their tables. Running it again
 // changes nothing.
 func (c *CLI) Setup(ctx context.Context) error {
-	if err := schema.ValidateMSPID(c.MSP); err != nil {
+	if err := c.check(); err != nil {
 		return err
 	}
 	changed := false
@@ -47,8 +56,8 @@ func (c *CLI) Setup(ctx context.Context) error {
 		id     string
 		tables []*datastorev1.TableDeclaration
 	}{
-		{schema.ConfigDatasetID(c.MSP), schema.ConfigTables()},
-		{schema.InboxDatasetID(c.MSP), schema.InboxTables()},
+		{schema.ConfigDatasetID(c.MSP, c.Payer), schema.ConfigTables()},
+		{schema.InboxDatasetID(c.MSP, c.Payer), schema.InboxTables()},
 	} {
 		_, _, err := c.J.SDK().Datasets.Create(ctx, &datastorev1.CreateDatasetRequest{DatasetId: d.id, DisplayName: "aws-spend-guardrail " + d.id})
 		switch {
@@ -77,10 +86,11 @@ func (c *CLI) Setup(ctx context.Context) error {
 		fmt.Fprintln(c.Out, "nothing changed")
 	}
 	fmt.Fprintln(c.Out, "\nGuard credentials (store each in the payer account's Secrets Manager):")
-	for _, n := range schema.GuardCredentials(c.MSP) {
+	for _, n := range schema.GuardCredentials(c.MSP, c.Payer) {
 		fmt.Fprintf(c.Out, "  %-6s dataset selector %s, permissions %s\n", n.Name, n.DatasetID, strings.Join(n.Permissions, ", "))
 	}
-	fmt.Fprintf(c.Out, "Operators for this MSP need dataset selector %s.\n", schema.MSPSelector(c.MSP))
+	fmt.Fprintf(c.Out, "Operators need dataset selector %s for this payer org, or %s for every payer org of the MSP.\n",
+		schema.PayerSelector(c.MSP, c.Payer), schema.MSPSelector(c.MSP))
 	return nil
 }
 
@@ -105,7 +115,10 @@ func hasTables(have *datastorev1.GetSchemaResponse, want []*datastorev1.TableDec
 // Pull writes a config version's document. Version 0 means the newest. The
 // applied and pending status goes to Status, never into the document.
 func (c *CLI) Pull(ctx context.Context, version int64) error {
-	ds := schema.ConfigDatasetID(c.MSP)
+	if err := c.check(); err != nil {
+		return err
+	}
+	ds := schema.ConfigDatasetID(c.MSP, c.Payer)
 	var v *jennah.Version
 	var err error
 	if version == 0 {
@@ -143,7 +156,7 @@ func (c *CLI) Pull(ctx context.Context, version int64) error {
 }
 
 func (c *CLI) appliedVersion(ctx context.Context) (int64, error) {
-	e, err := c.J.LatestEvent(ctx, schema.InboxDatasetID(c.MSP), schema.KindConfigApplied)
+	e, err := c.J.LatestEvent(ctx, schema.InboxDatasetID(c.MSP, c.Payer), schema.KindConfigApplied)
 	if err != nil || e == nil {
 		return 0, err
 	}
@@ -179,15 +192,14 @@ func (c *CLI) Diff(ctx context.Context, raw []byte) error {
 }
 
 func (c *CLI) diff(ctx context.Context, raw []byte) (*config.Document, []config.Change, error) {
+	if err := c.check(); err != nil {
+		return nil, nil, err
+	}
 	base, baseVersion, err := c.baseline(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	opts := config.Options{}
-	if base != nil {
-		opts.PayerAccountID = base.PayerAccountID
-	}
-	doc, err := config.Parse(raw, opts)
+	doc, err := config.Parse(raw, config.Options{PayerAccountID: c.Payer})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -219,7 +231,7 @@ func (c *CLI) diff(ctx context.Context, raw []byte) (*config.Document, []config.
 // baseline is the applied version, or the newest one when the guard hasn't
 // reported an applied version.
 func (c *CLI) baseline(ctx context.Context) (*config.Document, int64, error) {
-	ds := schema.ConfigDatasetID(c.MSP)
+	ds := schema.ConfigDatasetID(c.MSP, c.Payer)
 	applied, err := c.appliedVersion(ctx)
 	if err != nil {
 		applied = 0
@@ -251,7 +263,7 @@ func (c *CLI) Publish(ctx context.Context, raw []byte, note string) error {
 	if err != nil {
 		return err
 	}
-	ds := schema.ConfigDatasetID(c.MSP)
+	ds := schema.ConfigDatasetID(c.MSP, c.Payer)
 	latest, err := c.J.LatestVersion(ctx, ds)
 	if err != nil {
 		return err

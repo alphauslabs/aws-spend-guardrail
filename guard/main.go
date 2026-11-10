@@ -110,7 +110,7 @@ func setup(ctx context.Context) *app {
 			},
 			Org: &awsx.Org{API: orgs},
 		},
-		consumer: &outbox.Consumer{Jennah: writer, DatasetID: schema.InboxDatasetID(mspID)},
+		consumer: &outbox.Consumer{Jennah: writer, DatasetID: schema.InboxDatasetID(mspID, payer)},
 	}
 }
 

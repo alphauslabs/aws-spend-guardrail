@@ -18,7 +18,7 @@ const v1 = `{"payer_account_id":"123456789012","scopes":[{"account_id":"11112222
 func newCLI(t *testing.T) (*CLI, *jennahtest.Server, *bytes.Buffer, *bytes.Buffer) {
 	f, j := jennahtest.Start(t)
 	out, status := &bytes.Buffer{}, &bytes.Buffer{}
-	return &CLI{J: j, MSP: "msp_a", Out: out, Status: status}, f, out, status
+	return &CLI{J: j, MSP: "msp_a", Payer: "123456789012", Out: out, Status: status}, f, out, status
 }
 
 func TestSetupIsIdempotent(t *testing.T) {
@@ -27,7 +27,7 @@ func TestSetupIsIdempotent(t *testing.T) {
 	if err := c.Setup(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.Datasets(); len(got) != 2 || got[0] != "guardrail.msp_a.config" || got[1] != "guardrail.msp_a.inbox" {
+	if got := f.Datasets(); len(got) != 2 || got[0] != "guardrail.msp_a.123456789012.config" || got[1] != "guardrail.msp_a.123456789012.inbox" {
 		t.Fatalf("datasets %v", got)
 	}
 	if !strings.Contains(out.String(), "datastore.data:write") {
@@ -95,7 +95,7 @@ func TestRetriedPublishWritesOneVersion(t *testing.T) {
 	if err := c.Publish(ctx, []byte(v1), ""); err != nil {
 		t.Fatal(err)
 	}
-	if n := len(f.Rows(schema.ConfigDatasetID("msp_a"), schema.ConfigTable)); n != 1 {
+	if n := len(f.Rows(schema.ConfigDatasetID("msp_a", "123456789012"), schema.ConfigTable)); n != 1 {
 		t.Fatalf("want 1 version, got %d", n)
 	}
 	if !strings.Contains(out.String(), "already published as version 1") {
@@ -132,7 +132,7 @@ func TestPullReportsPending(t *testing.T) {
 	ctx := context.Background()
 	c, _, out, status := newCLI(t)
 	_ = c.Publish(ctx, []byte(v1), "")
-	_ = c.J.CommitEvent(ctx, schema.InboxDatasetID("msp_a"), jennah.Event{ID: "config_applied:1", OccurredAt: time.Now(), Kind: schema.KindConfigApplied, ConfigVersion: 1, GuardVersion: "v0"})
+	_ = c.J.CommitEvent(ctx, schema.InboxDatasetID("msp_a", "123456789012"), jennah.Event{ID: "config_applied:1", OccurredAt: time.Now(), Kind: schema.KindConfigApplied, ConfigVersion: 1, GuardVersion: "v0"})
 	_ = c.Publish(ctx, []byte(strings.Replace(v1, "50000", "60000", 1)), "")
 	out.Reset()
 	if err := c.Pull(ctx, 0); err != nil {
@@ -157,7 +157,7 @@ func TestDiffAgainstAppliedVersion(t *testing.T) {
 	ctx := context.Background()
 	c, _, out, _ := newCLI(t)
 	_ = c.Publish(ctx, []byte(v1), "")
-	_ = c.J.CommitEvent(ctx, schema.InboxDatasetID("msp_a"), jennah.Event{ID: "config_applied:1", OccurredAt: time.Now(), Kind: schema.KindConfigApplied, ConfigVersion: 1, GuardVersion: "v0"})
+	_ = c.J.CommitEvent(ctx, schema.InboxDatasetID("msp_a", "123456789012"), jennah.Event{ID: "config_applied:1", OccurredAt: time.Now(), Kind: schema.KindConfigApplied, ConfigVersion: 1, GuardVersion: "v0"})
 	_ = c.Publish(ctx, []byte(strings.Replace(v1, "50000", "60000", 1)), "")
 	out.Reset()
 	lower := strings.Replace(v1, "50000", "40000", 1)
@@ -176,5 +176,44 @@ func TestValidate(t *testing.T) {
 	}
 	if err := c.Validate([]byte(v1), "999999999999"); err == nil {
 		t.Fatal("want payer mismatch")
+	}
+}
+
+func TestTwoPayerOrgsOfOneMSPAreSeparate(t *testing.T) {
+	ctx := context.Background()
+	f, j := jennahtest.Start(t)
+	a := &CLI{J: j, MSP: "msp_a", Payer: "123456789012", Out: &bytes.Buffer{}, Status: &bytes.Buffer{}}
+	b := &CLI{J: j, MSP: "msp_a", Payer: "210987654321", Out: &bytes.Buffer{}, Status: &bytes.Buffer{}}
+	for _, c := range []*CLI{a, b} {
+		if err := c.Setup(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := f.Datasets(); len(got) != 4 {
+		t.Fatalf("want 4 datasets, got %v", got)
+	}
+	if err := a.Publish(ctx, []byte(v1), ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Publish(ctx, []byte(v1), ""); err == nil {
+		t.Fatal("a document for payer 123456789012 must not publish to payer 210987654321")
+	}
+	other := strings.Replace(v1, "123456789012", "210987654321", 1)
+	if err := b.Publish(ctx, []byte(other), ""); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(f.Rows(schema.ConfigDatasetID("msp_a", "123456789012"), schema.ConfigTable)); n != 1 {
+		t.Fatalf("payer A versions: %d", n)
+	}
+	if n := len(f.Rows(schema.ConfigDatasetID("msp_a", "210987654321"), schema.ConfigTable)); n != 1 {
+		t.Fatalf("payer B versions: %d", n)
+	}
+}
+
+func TestPayerIsRequired(t *testing.T) {
+	c, _, _, _ := newCLI(t)
+	c.Payer = ""
+	if err := c.Setup(context.Background()); err == nil {
+		t.Fatal("setup without a payer should fail")
 	}
 }

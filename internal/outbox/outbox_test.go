@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 )
 
-const ds = "guardrail.msp_a.inbox"
+const ds = "guardrail.msp_a.123456789012.inbox"
 
 type fakeQueue struct{ bodies []string }
 

@@ -32,7 +32,7 @@ func (g *Guard) Pull(ctx context.Context) error {
 }
 
 func (g *Guard) evaluate(ctx context.Context, st *State) error {
-	latest, err := g.Config.LatestVersion(ctx, schema.ConfigDatasetID(g.S.MSPID))
+	latest, err := g.Config.LatestVersion(ctx, schema.ConfigDatasetID(g.S.MSPID, g.S.PayerAccountID))
 	if err != nil {
 		return fmt.Errorf("cannot read config from Jennah: %w", err)
 	}

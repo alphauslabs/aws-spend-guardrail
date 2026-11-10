@@ -219,7 +219,7 @@ func (h *harness) newGuard() *Guard {
 func (h *harness) publish(doc string) int64 {
 	h.t.Helper()
 	h.nextVer++
-	err := h.client.InsertVersion(context.Background(), schema.ConfigDatasetID(msp), jennah.Version{
+	err := h.client.InsertVersion(context.Background(), schema.ConfigDatasetID(msp, payer), jennah.Version{
 		Number: h.nextVer, Document: json.RawMessage(doc), PublishedAt: h.now,
 	}, "")
 	if err != nil {

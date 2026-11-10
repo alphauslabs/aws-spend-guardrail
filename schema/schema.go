@@ -9,6 +9,7 @@ package schema
 
 import (
 	"fmt"
+	"strings"
 
 	datastorev1 "github.com/alphauslabs/jennah-sdk-go/jennah/datastore/v1"
 )
@@ -32,7 +33,7 @@ const (
 	ColConfigVersion  = "config_version"
 	ColGuardVersion   = "guard_version"
 	ColDetail         = "detail" // JSON
-	maxMSPIDLen       = 100
+	maxMSPIDLen       = 90       // keeps guardrail.<msp>.<payer>.config within Jennah's 128
 	datasetPrefix     = "guardrail."
 	configDatasetPart = ".config"
 	inboxDatasetPart  = ".inbox"
@@ -57,7 +58,8 @@ const (
 
 // ValidateMSPID checks that an MSP id can form dataset ids under Jennah's id
 // grammar (lowercase letters, digits, and inner '_' or '-'). Dots are refused
-// so the per-MSP selector guardrail.<msp>.* reaches exactly that MSP.
+// so the per-MSP selector guardrail.<msp>.* reaches exactly that MSP's payer
+// orgs.
 func ValidateMSPID(msp string) error {
 	if msp == "" || len(msp) > maxMSPIDLen {
 		return fmt.Errorf("msp id must be 1 to %d characters", maxMSPIDLen)
@@ -75,14 +77,32 @@ func ValidateMSPID(msp string) error {
 	return nil
 }
 
-// ConfigDatasetID is the config dataset of an MSP.
-func ConfigDatasetID(msp string) string { return datasetPrefix + msp + configDatasetPart }
+// ValidatePayer checks a payer account id: 12 digits.
+func ValidatePayer(payer string) error {
+	if len(payer) != 12 || strings.Trim(payer, "0123456789") != "" {
+		return fmt.Errorf("payer account %q: must be a 12-digit account id", payer)
+	}
+	return nil
+}
 
-// InboxDatasetID is the inbox dataset of an MSP.
-func InboxDatasetID(msp string) string { return datasetPrefix + msp + inboxDatasetPart }
+// An MSP can have several payer orgs, each with its own guard and its own pair
+// of datasets: guardrail.<msp>.<payer>.config and guardrail.<msp>.<payer>.inbox.
 
-// MSPSelector is the dataset selector that reaches both of an MSP's datasets.
+// ConfigDatasetID is the config dataset of one payer org of an MSP.
+func ConfigDatasetID(msp, payer string) string {
+	return datasetPrefix + msp + "." + payer + configDatasetPart
+}
+
+// InboxDatasetID is the inbox dataset of one payer org of an MSP.
+func InboxDatasetID(msp, payer string) string {
+	return datasetPrefix + msp + "." + payer + inboxDatasetPart
+}
+
+// MSPSelector is the dataset selector that reaches every payer org of an MSP.
 func MSPSelector(msp string) string { return datasetPrefix + msp + ".*" }
+
+// PayerSelector is the dataset selector that reaches one payer org's datasets.
+func PayerSelector(msp, payer string) string { return datasetPrefix + msp + "." + payer + ".*" }
 
 func col(name string, t datastorev1.ColumnType, nullable bool) *datastorev1.ColumnDeclaration {
 	return &datastorev1.ColumnDeclaration{Name: name, Type: t, Nullable: nullable}
@@ -128,17 +148,17 @@ type CredentialNeeds struct {
 	Permissions []string
 }
 
-// GuardCredentials lists the reach of the guard's reader and writer.
-func GuardCredentials(msp string) []CredentialNeeds {
+// GuardCredentials lists the reach of one payer org's guard reader and writer.
+func GuardCredentials(msp, payer string) []CredentialNeeds {
 	return []CredentialNeeds{
 		{
 			Name:        "reader",
-			DatasetID:   ConfigDatasetID(msp),
+			DatasetID:   ConfigDatasetID(msp, payer),
 			Permissions: []string{"datastore.data:read", "datastore.schema:read", "approval.requests:create", "approval.requests:read", "approval.requests:cancel"},
 		},
 		{
 			Name:        "writer",
-			DatasetID:   InboxDatasetID(msp),
+			DatasetID:   InboxDatasetID(msp, payer),
 			Permissions: []string{"datastore.data:write"},
 		},
 	}

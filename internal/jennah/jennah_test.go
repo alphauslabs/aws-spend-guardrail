@@ -13,8 +13,8 @@ import (
 	approvalv1 "github.com/alphauslabs/jennah-sdk-go/jennah/approval/v1"
 )
 
-const cfgDS = "guardrail.msp_a.config"
-const inboxDS = "guardrail.msp_a.inbox"
+const cfgDS = "guardrail.msp_a.123456789012.config"
+const inboxDS = "guardrail.msp_a.123456789012.inbox"
 
 func TestVersionsReadAndWrite(t *testing.T) {
 	ctx := context.Background()

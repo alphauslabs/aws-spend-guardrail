@@ -7,11 +7,15 @@ Defines what the guard reads from and writes to Jennah: the per-MSP datasets and
 ## ADDED Requirements
 
 ### Requirement: Two datasets per payer org
-Each payer org SHALL use two datasets in the distributor's Jennah enterprise: a config dataset holding config versions, and an inbox dataset holding the guard's events. Their ids SHALL share a per-MSP prefix (`guardrail.<msp>.config`, `guardrail.<msp>.inbox`), so one dataset selector can give an MSP's people a view of both.
+Each payer org SHALL use two datasets in the distributor's Jennah enterprise: a config dataset holding config versions, and an inbox dataset holding the guard's events. Their ids SHALL be `guardrail.<msp>.<payer>.config` and `guardrail.<msp>.<payer>.inbox`, so one MSP can have several payer orgs, and a dataset selector can reach one payer org or all of an MSP's.
 
 #### Scenario: MSP reach by prefix
 - **WHEN** a role holds dataset selector `guardrail.msp_a.*`
-- **THEN** it reaches MSP A's config and inbox datasets and no other MSP's
+- **THEN** it reaches the config and inbox datasets of every payer org of MSP A, and no other MSP's
+
+#### Scenario: One MSP with two payer orgs
+- **WHEN** MSP A has payer accounts `123456789012` and `210987654321`, each with its own guard
+- **THEN** each guard reads and writes only its own pair of datasets, and a role with selector `guardrail.msp_a.123456789012.*` reaches only the first pair
 
 ### Requirement: The table layouts are versioned in this repo
 The tables of both datasets SHALL be defined in this repo with a layout version. A layout change SHALL only add tables or columns, so a guard written for an older layout keeps working against a newer one.
