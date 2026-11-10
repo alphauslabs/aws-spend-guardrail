@@ -4,10 +4,33 @@ One CloudFormation stack per payer (management) account, in us-east-1. An MSP wi
 
 ## Before you start
 
-1. [Set up the payer org in Jennah and mint the guard's two credentials](operating.md). Store them in Secrets Manager in the payer account.
-2. Publish a first config with every scope in `dry-run` (the default).
-3. Run `guardrail preflight` to confirm every target has a free SCP slot.
-4. Build the function package with `make guard` and upload `bin/guard.zip` to an S3 bucket in us-east-1 that you control.
+1. Make sure service control policies are enabled in the organization (see below).
+2. [Set up the payer org in Jennah and mint the guard's two credentials](operating.md). Store them in Secrets Manager in the payer account.
+3. Publish a first config with every scope in `dry-run` (the default).
+4. Run `guardrail preflight` to confirm every target has a free SCP slot.
+5. Build the function package with `make guard` and upload `bin/guard.zip` to an S3 bucket in us-east-1 that you control.
+
+### Service control policies must be enabled
+
+The freeze is a service control policy (SCP). If SCPs are not enabled on the organization's root, AWS Budgets cannot attach a freeze policy to anything, and every freeze fails.
+
+Check, from the management account:
+
+```
+aws organizations list-roots --query 'Roots[].[Id,PolicyTypes]'
+```
+
+The root is ready when its policy types include `SERVICE_CONTROL_POLICY` with status `ENABLED`. An empty list means SCPs are off. To enable them:
+
+```
+aws organizations enable-policy-type --root-id <root id, r-...> --policy-type SERVICE_CONTROL_POLICY
+```
+
+The guard never does this itself. It is an organization-wide decision for the organization's owner:
+
+- AWS attaches its default `FullAWSAccess` policy to the root, every OU and every account, so nobody's access changes, but every account is evaluated against SCPs from then on.
+- It is not undone when the guard's stack is deleted, since other policies may come to rely on it.
+- Many organizations already have SCPs enabled, in which case there is nothing to do.
 
 ## Deploy
 
