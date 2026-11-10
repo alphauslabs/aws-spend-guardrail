@@ -1,4 +1,4 @@
-name: release
+name: Release
 
 # A release is built only here, from a vX.Y.Z tag on a commit in main. The
 # function package and CLI binaries are built twice on separate runners and
