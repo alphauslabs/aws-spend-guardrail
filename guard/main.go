@@ -26,6 +26,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/budgets"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	lambdasvc "github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
@@ -94,7 +95,7 @@ func setup(ctx context.Context) *app {
 		LooseningWindow:    envDuration("LOOSENING_APPROVAL_WINDOW"),
 		LooseningDelay:     envDuration("LOOSENING_DELAY"),
 	}
-	return &app{
+	a := &app{
 		g: &guard.Guard{
 			S:      s,
 			Config: reader,
@@ -112,6 +113,9 @@ func setup(ctx context.Context) *app {
 		},
 		consumer: &outbox.Consumer{Jennah: writer, DatasetID: schema.InboxDatasetID(mspID, payer)},
 	}
+	hash, err := awsx.CodeSHA256(ctx, lambdasvc.NewFromConfig(cfg), os.Getenv("AWS_LAMBDA_FUNCTION_NAME"))
+	a.g.SetCodeHash(ctx, hash, err)
+	return a
 }
 
 type probe struct {

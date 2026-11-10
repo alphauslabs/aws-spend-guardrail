@@ -652,6 +652,11 @@ Resources:
                 Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: [!Ref ReaderSecretArn, !Ref WriterSecretArn]
+              - Sid: ReadOwnCodeHash
+                Effect: Allow
+                Action: lambda:GetFunction
+                # Only the guard itself, so it can report its deployed package hash.
+                Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:guardrail-${MSPId}
 
   GuardFunction:
     Type: AWS::Lambda::Function

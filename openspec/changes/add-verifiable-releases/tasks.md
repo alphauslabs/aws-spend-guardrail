@@ -2,19 +2,19 @@
 
 ## 1. Reproducible build
 
-- [ ] 1.1 Pin the Go toolchain in `go.mod` and `GOTOOLCHAIN` in the `Makefile`; verify `go version` inside `make` reports the pinned version
-- [ ] 1.2 Add `tools/zipdet`, a deterministic zip writer (fixed time from the tag's commit, fixed mode, single `bootstrap` entry, no extra fields); verify a unit test that zipping the same input twice, with different file mtimes, gives identical bytes
+- [x] 1.1 Pin the Go toolchain in `go.mod` and `GOTOOLCHAIN` in the `Makefile`; verify `go version` inside `make` reports the pinned version
+- [x] 1.2 Add `tools/zipdet`, a deterministic zip writer (fixed time from the tag's commit, fixed mode, single `bootstrap` entry, no extra fields); verify a unit test that zipping the same input twice, with different file mtimes, gives identical bytes
 - [ ] 1.3 Add `make release VERSION=vX.Y.Z` building the function package, the four CLI binaries and the template into `dist/` with the flags in design D2, and writing `SHA256SUMS`; verify two runs in fresh clones on different machines produce identical `SHA256SUMS`
 
 ## 2. Guard self-report
 
-- [ ] 2.1 Read the guard's own code hash at cold start with `lambda:GetFunction` on its own ARN, fall back to `unknown` with a local alert, and add version and hash to `heartbeat` and `config_applied` event details (design D5); verify unit tests for the normal and failure paths
-- [ ] 2.2 Add `lambda:GetFunction` on the guard's own function ARN to its role, and the `FunctionPackageBucket` and `FunctionPackageKey` parameters to the template (design D6); verify `cfn-lint` passes and the role grants nothing on other functions
+- [x] 2.1 Read the guard's own code hash at cold start with `lambda:GetFunction` on its own ARN, fall back to `unknown` with a local alert, and add version and hash to `heartbeat` and `config_applied` event details (design D5); verify unit tests for the normal and failure paths
+- [x] 2.2 Add `lambda:GetFunction` on the guard's own function ARN to its role, and the `FunctionPackageBucket` and `FunctionPackageKey` parameters to the template (design D6); verify `cfn-lint` passes and the role grants nothing on other functions
 
 ## 3. CI and release workflows
 
 - [ ] 3.1 Add a CI workflow on push and pull request: `go test ./...`, `govulncheck ./...`, `cfn-lint`, and a check that every `uses:` is pinned to a full commit hash; verify it fails on a deliberately unpinned action in a test branch
-- [ ] 3.2 Add `tools/changelogcheck` and `CHANGELOG.md` with the required "Security-relevant" subsection (design D7); verify the check fails for a missing version and for a version without the subsection
+- [x] 3.2 Add `tools/changelogcheck` and `CHANGELOG.md` with the required "Security-relevant" subsection (design D7); verify the check fails for a missing version and for a version without the subsection
 - [ ] 3.3 Add the release workflow on `v*` tags: confirm the tag's commit is in `main`, run the changelog check and `govulncheck`, build `dist/` twice in separate jobs and compare (design D3), generate the SBOM, sign `SHA256SUMS` with cosign keyless (design D1), and publish the release with notes giving the package hash in hex and base64 (design D4); verify on a test tag in a fork that the release appears with every asset
 - [ ] 3.4 Verify the gates in a fork: a tag not on `main`, a tag without a changelog entry, and a forced non-reproducible build each fail with nothing published
 

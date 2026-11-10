@@ -2,6 +2,8 @@ package guard
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -283,5 +285,37 @@ func TestTeardownLiftsAndDeletesOnlyOwned(t *testing.T) {
 	}
 	if len(h.budgets.all) != 1 {
 		t.Fatalf("budgets left: %v", h.budgets.all)
+	}
+}
+
+func TestHeartbeatAndConfigAppliedReportCodeHash(t *testing.T) {
+	h := newHarness(t)
+	h.g.SetCodeHash(context.Background(), "q1w2e3=", nil)
+	h.publish(doc("50000", "50000"))
+	h.pull()
+	_ = h.g.Daily(context.Background())
+	for _, e := range h.events.list {
+		if e.Kind != schema.KindHeartbeat && e.Kind != schema.KindConfigApplied {
+			continue
+		}
+		var d map[string]any
+		_ = json.Unmarshal(e.Detail, &d)
+		if d["code_sha256"] != "q1w2e3=" || d["guard_version"] != "v0.0.0-test" {
+			t.Fatalf("%s detail %v", e.Kind, d)
+		}
+	}
+}
+
+func TestUnknownCodeHashAlerts(t *testing.T) {
+	h := newHarness(t)
+	h.g.SetCodeHash(context.Background(), "", errors.New("AccessDenied"))
+	if h.g.S.CodeSHA256 != "unknown" || !h.alerts.has("code hash unknown") {
+		t.Fatalf("hash %q alerts %v", h.g.S.CodeSHA256, h.alerts.list)
+	}
+	_ = h.g.Daily(context.Background())
+	var d map[string]any
+	_ = json.Unmarshal(h.events.list[len(h.events.list)-1].Detail, &d)
+	if d["code_sha256"] != "unknown" {
+		t.Fatalf("heartbeat should say unknown: %v", d)
 	}
 }

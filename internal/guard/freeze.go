@@ -113,7 +113,7 @@ func (g *Guard) Daily(ctx context.Context) error {
 	}
 	day := g.now().Format("2006-01-02")
 	g.emit(ctx, schema.KindHeartbeat, schema.KindHeartbeat+":"+day, "", st.AppliedVersion,
-		map[string]any{"applied_version": st.AppliedVersion, "effective_version": st.EffectiveVersion, "pending": st.Pending != nil})
+		g.selfReport(map[string]any{"applied_version": st.AppliedVersion, "effective_version": st.EffectiveVersion, "pending": st.Pending != nil}))
 	if st.Effective != nil {
 		if err := g.Reconcile(ctx, st.Effective); err != nil {
 			errs = append(errs, err)

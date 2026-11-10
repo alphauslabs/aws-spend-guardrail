@@ -1,0 +1,104 @@
+name: release
+
+# A release is built only here, from a vX.Y.Z tag on a commit in main. The
+# function package and CLI binaries are built twice on separate runners and
+# must match; SHA256SUMS is signed with Sigstore keyless signing.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: The tag is on a commit in main
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "tag $GITHUB_REF_NAME is not on main"; exit 1; }
+      - name: The changelog has an entry with a Security-relevant section
+        run: go run ./tools/changelogcheck CHANGELOG.md "$GITHUB_REF_NAME"
+      - name: Actions are pinned
+        run: go run ./tools/pincheck .github/workflows/*.yml
+      - name: No known vulnerabilities in reachable code
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  second-build:
+    needs: gates
+    runs-on: ubuntu-latest
+    outputs:
+      sums: ${{ steps.build.outputs.sums }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - id: build
+        run: |
+          make release VERSION="$GITHUB_REF_NAME"
+          { echo 'sums<<EOF'; cat dist/SHA256SUMS; echo 'EOF'; } >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: second-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the release
+      id-token: write   # Sigstore keyless signing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: v3.1.4
+      - name: Build
+        run: make release VERSION="$GITHUB_REF_NAME"
+      - name: Both builds are identical
+        env:
+          OTHER: ${{ needs.second-build.outputs.sums }}
+        run: |
+          diff <(printf '%s\n' "$OTHER") dist/SHA256SUMS || { echo "the two builds differ: not reproducible"; exit 1; }
+      - name: SBOM
+        run: |
+          go run github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.12.0 mod -json -licenses -output "dist/sbom-$GITHUB_REF_NAME.cdx.json"
+          make --no-print-directory sums
+      - name: Sign SHA256SUMS
+        run: cosign sign-blob --yes --bundle dist/SHA256SUMS.sigstore.json dist/SHA256SUMS
+      - name: Release notes
+        run: |
+          zip="dist/guard-$GITHUB_REF_NAME-linux-arm64.zip"
+          hex=$(sha256sum "$zip" | cut -d' ' -f1)
+          b64=$(openssl dgst -sha256 -binary "$zip" | base64)
+          {
+            go run ./tools/changelogcheck -notes CHANGELOG.md "$GITHUB_REF_NAME"
+            echo
+            echo "## Function package"
+            echo
+            echo "\`$(basename "$zip")\`"
+            echo
+            echo "- SHA-256 (hex): \`$hex\`"
+            echo "- SHA-256 as AWS Lambda reports it (base64 \`CodeSha256\`): \`$b64\`"
+            echo
+            echo "Verify this release: see docs/verify.md. The signer identity is"
+            echo "\`https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/$GITHUB_REF_NAME\`."
+          } > notes.md
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "$GITHUB_REF_NAME" --notes-file notes.md

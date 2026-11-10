@@ -119,7 +119,7 @@ func (g *Guard) applyFull(ctx context.Context, st *State, version int64, desired
 	st.EffectiveVersion = version
 	st.Pending = nil
 	g.emit(ctx, schema.KindConfigApplied, fmt.Sprintf("%s:%d", schema.KindConfigApplied, version), "", version,
-		map[string]any{"changes": changeStrings(changes)})
+		g.selfReport(map[string]any{"changes": changeStrings(changes)}))
 }
 
 func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, desired *config.Resolved, changes []config.Change) error {

@@ -146,9 +146,12 @@ type Org interface {
 
 // Settings are the guard's stack parameters.
 type Settings struct {
-	PayerAccountID     string
-	MSPID              string
-	GuardVersion       string
+	PayerAccountID string
+	MSPID          string
+	GuardVersion   string
+	// CodeSHA256 is the deployed package's hash as AWS Lambda reports it
+	// (base64 SHA-256), or "unknown". Set once at cold start.
+	CodeSHA256         string
 	PolicyA            string
 	PolicyB            string
 	LooseningApprovers []string
@@ -206,4 +209,36 @@ func (g *Guard) policyFor(style string) string {
 		return g.S.PolicyA
 	}
 	return g.S.PolicyB
+}
+
+// SetCodeHash records the deployed package's hash read at cold start. When it
+// can't be read, the guard reports "unknown" and alerts locally, so a
+// reviewer knows to read the hash from Lambda directly.
+func (g *Guard) SetCodeHash(ctx context.Context, hash string, err error) {
+	if err != nil || hash == "" {
+		g.S.CodeSHA256 = "unknown"
+		msg := "the guard could not read its own code hash, so events report it as unknown"
+		if err != nil {
+			msg += ": " + err.Error()
+		}
+		g.alert(ctx, "guardrail: code hash unknown", msg)
+		return
+	}
+	g.S.CodeSHA256 = hash
+}
+
+// selfReport is what the guard says about itself in heartbeat and
+// config_applied events, so a reviewer can compare the running function with
+// a release from the record in Jennah.
+func (g *Guard) selfReport(detail map[string]any) map[string]any {
+	if detail == nil {
+		detail = map[string]any{}
+	}
+	detail["guard_version"] = g.S.GuardVersion
+	code := g.S.CodeSHA256
+	if code == "" {
+		code = "unknown"
+	}
+	detail["code_sha256"] = code
+	return detail
 }
