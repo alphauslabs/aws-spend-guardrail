@@ -14,6 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alphauslabs/aws-spend-guardrail/internal/awsx"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/outbox"
+	"github.com/alphauslabs/aws-spend-guardrail/schema"
 	"github.com/aws/aws-lambda-go/cfn"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -25,12 +30,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-
-	"github.com/alphauslabs/aws-spend-guardrail/internal/awsx"
-	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
-	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
-	"github.com/alphauslabs/aws-spend-guardrail/internal/outbox"
-	"github.com/alphauslabs/aws-spend-guardrail/schema"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".

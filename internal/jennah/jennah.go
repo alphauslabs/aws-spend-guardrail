@@ -10,14 +10,13 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/alphauslabs/aws-spend-guardrail/schema"
 	sdk "github.com/alphauslabs/jennah-sdk-go"
 	approvalv1 "github.com/alphauslabs/jennah-sdk-go/jennah/approval/v1"
 	datastorev1 "github.com/alphauslabs/jennah-sdk-go/jennah/datastore/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
-
-	"github.com/alphauslabs/aws-spend-guardrail/schema"
 )
 
 // ErrVersionExists means a config version with that number is already written.

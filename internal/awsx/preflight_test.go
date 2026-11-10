@@ -4,11 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/alphauslabs/aws-spend-guardrail/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	otypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
-
-	"github.com/alphauslabs/aws-spend-guardrail/config"
 )
 
 type fakePolicies map[string][]string

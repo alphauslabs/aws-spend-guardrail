@@ -13,12 +13,11 @@ import (
 	"strings"
 	"time"
 
-	sdk "github.com/alphauslabs/jennah-sdk-go"
-	datastorev1 "github.com/alphauslabs/jennah-sdk-go/jennah/datastore/v1"
-
 	"github.com/alphauslabs/aws-spend-guardrail/config"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 	"github.com/alphauslabs/aws-spend-guardrail/schema"
+	sdk "github.com/alphauslabs/jennah-sdk-go"
+	datastorev1 "github.com/alphauslabs/jennah-sdk-go/jennah/datastore/v1"
 )
 
 // CLI holds what every subcommand needs.

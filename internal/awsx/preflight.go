@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/alphauslabs/aws-spend-guardrail/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	otypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
-
-	"github.com/alphauslabs/aws-spend-guardrail/config"
 )
 
 // MaxSCPsPerTarget is the AWS Organizations limit on SCPs attached directly to

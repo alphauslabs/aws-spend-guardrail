@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 	sdk "github.com/alphauslabs/jennah-sdk-go"
 	approvalv1 "github.com/alphauslabs/jennah-sdk-go/jennah/approval/v1"
 	datastorev1 "github.com/alphauslabs/jennah-sdk-go/jennah/datastore/v1"
@@ -20,8 +21,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
-
-	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 )
 
 // Server is the fake.

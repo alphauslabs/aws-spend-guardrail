@@ -11,13 +11,12 @@ import (
 	"os"
 	"strings"
 
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/organizations"
-
 	"github.com/alphauslabs/aws-spend-guardrail/config"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/awsx"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/cli"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/organizations"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".

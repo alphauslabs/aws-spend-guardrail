@@ -7,11 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-
-	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 )
 
 // Sender is the part of the SQS client the producer uses.

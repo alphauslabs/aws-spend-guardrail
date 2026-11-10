@@ -5,13 +5,12 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/alphauslabs/aws-spend-guardrail/config"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/budgets"
 	btypes "github.com/aws/aws-sdk-go-v2/service/budgets/types"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
-
-	"github.com/alphauslabs/aws-spend-guardrail/config"
-	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
 )
 
 type fakeAPI struct {

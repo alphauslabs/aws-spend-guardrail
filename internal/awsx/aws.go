@@ -7,14 +7,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/alphauslabs/aws-spend-guardrail/config"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
-
-	"github.com/alphauslabs/aws-spend-guardrail/config"
-	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
 )
 
 // OrgAPI is the part of the Organizations client the guard uses.

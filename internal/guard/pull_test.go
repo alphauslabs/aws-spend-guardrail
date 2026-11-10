@@ -5,9 +5,8 @@ import (
 	"testing"
 	"time"
 
-	approvalv1 "github.com/alphauslabs/jennah-sdk-go/jennah/approval/v1"
-
 	"github.com/alphauslabs/aws-spend-guardrail/schema"
+	approvalv1 "github.com/alphauslabs/jennah-sdk-go/jennah/approval/v1"
 )
 
 const (
