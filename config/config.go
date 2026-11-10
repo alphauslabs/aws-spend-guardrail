@@ -59,9 +59,10 @@ type Scope struct {
 
 // Document is one config version as written.
 type Document struct {
-	PayerAccountID string    `json:"payer_account_id"`
-	Defaults       *Settings `json:"defaults,omitempty"`
-	Scopes         []Scope   `json:"scopes"`
+	PayerAccountID   string    `json:"payer_account_id"`
+	Defaults         *Settings `json:"defaults,omitempty"`
+	Scopes           []Scope   `json:"scopes"`
+	ExcludedAccounts []string  `json:"excluded_accounts,omitempty"`
 }
 
 // Target is what a scope protects: one account or one OU.
@@ -96,6 +97,23 @@ type ResolvedScope struct {
 type Resolved struct {
 	PayerAccountID string          `json:"payer_account_id"`
 	Scopes         []ResolvedScope `json:"scopes"`
+	// ExcludedAccounts are left out of protection on purpose, sorted. They
+	// change what the guard reports, not what it protects.
+	ExcludedAccounts []string `json:"excluded_accounts,omitempty"`
+}
+
+// Excluded reports whether an account is excluded on purpose. The payer
+// account always is.
+func (r *Resolved) Excluded(account string) bool {
+	if account == r.PayerAccountID {
+		return true
+	}
+	for _, a := range r.ExcludedAccounts {
+		if a == account {
+			return true
+		}
+	}
+	return false
 }
 
 // Scope returns the scope for a target, if present.
@@ -111,6 +129,10 @@ func (r *Resolved) Scope(t Target) (ResolvedScope, bool) {
 // Resolve applies document defaults, then built-in defaults, to every scope.
 func (d *Document) Resolve() *Resolved {
 	r := &Resolved{PayerAccountID: d.PayerAccountID}
+	if len(d.ExcludedAccounts) > 0 {
+		r.ExcludedAccounts = append([]string(nil), d.ExcludedAccounts...)
+		sort.Strings(r.ExcludedAccounts)
+	}
 	var docDefaults Settings
 	if d.Defaults != nil {
 		docDefaults = *d.Defaults
@@ -245,6 +267,20 @@ func checkSemantics(d *Document, opts Options) []Problem {
 			continue
 		}
 		seen[t] = i
+	}
+	scoped := map[string]bool{}
+	for _, sc := range d.Scopes {
+		if sc.AccountID != "" {
+			scoped[sc.AccountID] = true
+		}
+	}
+	for i, a := range d.ExcludedAccounts {
+		if scoped[a] {
+			probs = append(probs, Problem{
+				Field:   fmt.Sprintf("excluded_accounts[%d]", i),
+				Message: fmt.Sprintf("account %s is also a scope; an account can't be both protected and excluded", a),
+			})
+		}
 	}
 	return probs
 }

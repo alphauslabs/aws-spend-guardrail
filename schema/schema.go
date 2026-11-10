@@ -53,6 +53,8 @@ const (
 	KindLooseningExpired = "loosening_expired"
 	KindLooseningVoid    = "loosening_cancelled"
 	KindDrift            = "drift"
+	KindUnprotected      = "unprotected_account" // an active account no scope covers or excludes
+	KindStaleScope       = "stale_scope"         // an account scope naming an account not in the org
 	KindHeartbeat        = "heartbeat"
 )
 

@@ -15,6 +15,8 @@ Metadata:
         Parameters: [FunctionPackageBucket, FunctionPackageKey, GuardVersion]
       - Label: { default: Local alerts }
         Parameters: [AlertEmail]
+      - Label: { default: Account coverage }
+        Parameters: [ReactToAccountEvents]
 
 Parameters:
   MSPId:
@@ -68,6 +70,11 @@ Parameters:
     Type: String
     Default: ""
     Description: Optional email subscribed to local alerts. Alerts never depend on Jennah.
+  ReactToAccountEvents:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: When true, an account created, invited, or moved in the organization runs the coverage check within minutes instead of at the next daily run. Needs the account's CloudTrail management events in EventBridge.
 
 Rules:
   UsEast1Only:
@@ -82,6 +89,7 @@ Rules:
 
 Conditions:
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+  ReactToAccounts: !Equals [!Ref ReactToAccountEvents, "true"]
 
 Resources:
   # Freeze policies, created unattached. Budgets attaches one when a scope's
@@ -614,8 +622,10 @@ Resources:
               - Sid: ReadOrganization
                 Effect: Allow
                 Action:
+                  - organizations:ListAccounts
                   - organizations:ListAccountsForParent
                   - organizations:ListOrganizationalUnitsForParent
+                  - organizations:ListParents
                   - organizations:ListTargetsForPolicy
                 Resource: "*"
               - Sid: DetachFreezePolicies
@@ -735,10 +745,40 @@ Resources:
         RoleArn: !GetAtt SchedulerRole.Arn
         Input: '{"task":"pull"}'
 
+  # Optional: run the coverage check when an account is created, invited,
+  # or moved, instead of waiting for the daily run.
+  AccountEventsRule:
+    Type: AWS::Events::Rule
+    Condition: ReactToAccounts
+    Properties:
+      Description: Run the guardrail coverage check when the organization's accounts change.
+      EventPattern:
+        source: [aws.organizations]
+        detail-type: [AWS API Call via CloudTrail]
+        detail:
+          eventSource: [organizations.amazonaws.com]
+          eventName:
+            - CreateAccount
+            - InviteAccountToOrganization
+            - AcceptHandshake
+            - MoveAccount
+      Targets:
+        - Id: guard
+          Arn: !GetAtt GuardFunction.Arn
+
+  AccountEventsInvokePermission:
+    Type: AWS::Lambda::Permission
+    Condition: ReactToAccounts
+    Properties:
+      FunctionName: !Ref GuardFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AccountEventsRule.Arn
+
   DailySchedule:
     Type: AWS::Scheduler::Schedule
     Properties:
-      Description: Period-start lifts, drift check, OU membership, and heartbeat.
+      Description: Period-start lifts, drift check, OU membership, account coverage, and heartbeat.
       ScheduleExpression: cron(15 0 * * ? *)
       FlexibleTimeWindow: { Mode: "OFF" }
       Target:

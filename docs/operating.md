@@ -70,6 +70,19 @@ guardrail install-link --msp msp_a --payer 123456789012 \
 
 It prints one URL. Options you leave out stay empty in the console form. The link holds no secrets, only ARNs and emails, and the command refuses a Jennah key given as any option. The link sets `ExpectedPayerAccountId`, so it can only create the stack in that payer account. See [install from the console](install-console.md).
 
+## Accounts nobody protects
+
+Once a day, the guard compares the organization's active accounts with the config. An account that no scope covers (directly, or through a scoped OU) and that isn't in `excluded_accounts` is reported once:
+
+- an `unprotected_account` event in the payer org's inbox in Jennah, with the account's id, name, and parent (root or OU);
+- a local alert. The first run after install sends one alert listing all of them.
+
+A scoped account that's no longer an active member of the organization is reported the same way, as `stale_scope`.
+
+To act on a report, publish a new version that either adds the account as a scope (a tightening, so it applies at once) or adds it to `excluded_accounts` (applies at once, no approval). It's reported again only if it lapses later.
+
+New accounts are found at the daily run, 00:15 UTC. With the stack parameter `ReactToAccountEvents=true`, they're found within minutes of being created, invited, or moved.
+
 ## Before installing: check SCP slots
 
 AWS allows 5 SCPs attached directly to one account or OU. A target that already has 5 can't take a freeze policy. With AWS credentials for the payer account:

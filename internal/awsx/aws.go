@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/alphauslabs/aws-spend-guardrail/config"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
@@ -21,6 +22,46 @@ type OrgAPI interface {
 	ListAccountsForParent(context.Context, *organizations.ListAccountsForParentInput, ...func(*organizations.Options)) (*organizations.ListAccountsForParentOutput, error)
 	ListOrganizationalUnitsForParent(context.Context, *organizations.ListOrganizationalUnitsForParentInput, ...func(*organizations.Options)) (*organizations.ListOrganizationalUnitsForParentOutput, error)
 	ListTargetsForPolicy(context.Context, *organizations.ListTargetsForPolicyInput, ...func(*organizations.Options)) (*organizations.ListTargetsForPolicyOutput, error)
+	ListAccounts(context.Context, *organizations.ListAccountsInput, ...func(*organizations.Options)) (*organizations.ListAccountsOutput, error)
+	ListParents(context.Context, *organizations.ListParentsInput, ...func(*organizations.Options)) (*organizations.ListParentsOutput, error)
+}
+
+// ListAccounts lists every account in the organization with its state.
+func (o *Org) ListAccounts(ctx context.Context) ([]guard.Account, error) {
+	var out []guard.Account
+	var token *string
+	for {
+		p, err := o.API.ListAccounts(ctx, &organizations.ListAccountsInput{NextToken: token})
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range p.Accounts {
+			state := string(a.State)
+			if state == "" {
+				state = string(a.Status) // older field, same meaning for ACTIVE and SUSPENDED
+			}
+			out = append(out, guard.Account{ID: aws.ToString(a.Id), Name: aws.ToString(a.Name), State: state})
+		}
+		if p.NextToken == nil {
+			return out, nil
+		}
+		token = p.NextToken
+	}
+}
+
+// ParentOf names an account's parent: "root" or the OU id.
+func (o *Org) ParentOf(ctx context.Context, account string) (string, error) {
+	p, err := o.API.ListParents(ctx, &organizations.ListParentsInput{ChildId: aws.String(account)})
+	if err != nil {
+		return "", err
+	}
+	if len(p.Parents) == 0 {
+		return "", errors.New("no parent")
+	}
+	if string(p.Parents[0].Type) == "ROOT" {
+		return "root", nil
+	}
+	return aws.ToString(p.Parents[0].Id), nil
 }
 
 // Org implements guard.Org.
@@ -111,8 +152,9 @@ type State struct {
 }
 
 const (
-	pkState  = "state"
-	pkFrozen = "frozen"
+	pkState    = "state"
+	pkFrozen   = "frozen"
+	pkReported = "reported"
 )
 
 func key(pk, sk string) map[string]ddbtypes.AttributeValue {
@@ -201,6 +243,54 @@ func (s *State) ListFrozen(ctx context.Context) ([]guard.Frozen, error) {
 		}
 		start = page.LastEvaluatedKey
 	}
+}
+
+// Reported returns the accounts already reported for a kind.
+func (s *State) Reported(ctx context.Context, kind string) (map[string]time.Time, error) {
+	out := map[string]time.Time{}
+	var start map[string]ddbtypes.AttributeValue
+	for {
+		page, err := s.API.Query(ctx, &dynamodb.QueryInput{
+			TableName:              aws.String(s.Table),
+			KeyConditionExpression: aws.String("pk = :pk AND begins_with(sk, :k)"),
+			ExpressionAttributeValues: map[string]ddbtypes.AttributeValue{
+				":pk": &ddbtypes.AttributeValueMemberS{Value: pkReported},
+				":k":  &ddbtypes.AttributeValueMemberS{Value: kind + "#"},
+			},
+			ConsistentRead:    aws.Bool(true),
+			ExclusiveStartKey: start,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, it := range page.Items {
+			sk, _ := it["sk"].(*ddbtypes.AttributeValueMemberS)
+			doc, _ := it["doc"].(*ddbtypes.AttributeValueMemberS)
+			if sk == nil {
+				continue
+			}
+			var at time.Time
+			if doc != nil {
+				_ = json.Unmarshal([]byte(doc.Value), &at)
+			}
+			out[strings.TrimPrefix(sk.Value, kind+"#")] = at
+		}
+		if len(page.LastEvaluatedKey) == 0 {
+			return out, nil
+		}
+		start = page.LastEvaluatedKey
+	}
+}
+
+// MarkReported records that an account was reported for a kind.
+func (s *State) MarkReported(ctx context.Context, kind, account string, at time.Time) error {
+	return s.put(ctx, pkReported, kind+"#"+account, at)
+}
+
+// ClearReported forgets a report, so a later lapse is reported again.
+func (s *State) ClearReported(ctx context.Context, kind, account string) error {
+	_, err := s.API.DeleteItem(ctx, &dynamodb.DeleteItemInput{TableName: aws.String(s.Table), Key: key(pkReported, kind+"#"+account)})
+	return err
 }
 
 // SNSAPI is the part of the SNS client the alerter uses.

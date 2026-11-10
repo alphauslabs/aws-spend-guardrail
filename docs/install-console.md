@@ -73,6 +73,7 @@ The link only works in the payer account it was made for. Opened in any other ac
    | `FunctionPackageBucket`, `FunctionPackageKey` | from step 4 |
    | `GuardVersion` | the release version, for example `v0.1.0` |
    | `AlertEmail` | who receives local alerts (optional) |
+   | `ReactToAccountEvents` | keep `false` unless you want new accounts reported within minutes rather than daily (needs CloudTrail events in EventBridge) |
 
 4. Choose **Next** twice. On the review page, tick **I acknowledge that AWS CloudFormation might create IAM resources**, then **Submit**.
 5. Wait for **CREATE_COMPLETE** on the **Events** tab (a few minutes). If you gave an alert email, confirm the subscription email AWS sends.
@@ -85,6 +86,8 @@ Within about 5 minutes:
 - The guard's events appear in the payer org's inbox in Jennah, starting with `config_applied`.
 
 Budgets calculates spend a few times a day, so the first `would_freeze` events can take hours.
+
+After the first daily run (00:15 UTC), expect one alert listing every active account that no scope covers. Add each to the config as a scope, or to `excluded_accounts` if leaving it out is intended.
 
 ## Updating or removing
 

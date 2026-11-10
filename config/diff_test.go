@@ -136,3 +136,23 @@ func TestStricterOfPureTighteningIsDesired(t *testing.T) {
 		t.Fatal("pure tightening should apply as published")
 	}
 }
+
+func TestExclusionChangesAreNotices(t *testing.T) {
+	a := cfg(base())
+	d := cfg(base())
+	d.ExcludedAccounts = []string{"999988887777"}
+	ch := Diff(a, d)
+	if len(ch) != 1 || ch[0].Direction != Notice || ch[0].Field != "excluded" || HasLoosening(ch) {
+		t.Fatalf("adding an exclusion: %v", ch)
+	}
+	back := Diff(d, a)
+	if len(back) != 1 || back[0].Direction != Notice || HasLoosening(back) {
+		t.Fatalf("removing an exclusion: %v", back)
+	}
+	if got := Stricter(a, d); len(got.ExcludedAccounts) != 1 {
+		t.Fatal("exclusions apply at once")
+	}
+	if Equal(a, d) {
+		t.Fatal("configs differing only in exclusions are not equal")
+	}
+}

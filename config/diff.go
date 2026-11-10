@@ -1,6 +1,9 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Direction says whether a change makes protection stricter or looser.
 type Direction string
@@ -8,6 +11,9 @@ type Direction string
 const (
 	Tightening Direction = "tightening"
 	Loosening  Direction = "loosening"
+	// Notice changes what the guard reports, not what it protects, so it
+	// applies at once and needs no approval.
+	Notice Direction = "notice"
 )
 
 // Change is one difference between two resolved configs.
@@ -21,6 +27,10 @@ type Change struct {
 
 func (c Change) String() string {
 	switch {
+	case c.Field == "excluded" && c.To != "":
+		return fmt.Sprintf("%s: excluded from protection (%s)", c.Target, c.Direction)
+	case c.Field == "excluded":
+		return fmt.Sprintf("%s: no longer excluded (%s)", c.Target, c.Direction)
 	case c.Field == "scope" && c.From == "":
 		return fmt.Sprintf("%s: scope added (%s)", c.Target, c.Direction)
 	case c.Field == "scope":
@@ -48,6 +58,22 @@ func Diff(applied, desired *Resolved) []Change {
 	for _, a := range applied.Scopes {
 		if _, ok := desired.Scope(a.Target); !ok {
 			out = append(out, Change{Target: a.Target, Field: "scope", From: "present", Direction: Loosening})
+		}
+	}
+	was := map[string]bool{}
+	for _, a := range applied.ExcludedAccounts {
+		was[a] = true
+	}
+	now := map[string]bool{}
+	for _, a := range desired.ExcludedAccounts {
+		now[a] = true
+		if !was[a] {
+			out = append(out, Change{Target: Target{Kind: "account", ID: a}, Field: "excluded", To: "yes", Direction: Notice})
+		}
+	}
+	for _, a := range applied.ExcludedAccounts {
+		if !now[a] {
+			out = append(out, Change{Target: Target{Kind: "account", ID: a}, Field: "excluded", From: "yes", Direction: Notice})
 		}
 	}
 	return out
@@ -104,7 +130,9 @@ func money(v float64) string { return fmt.Sprintf("%.2f", v) }
 // applied and desired configs. A scope only in desired is added; a scope only
 // in applied is kept. Applying the result at once never loosens protection.
 func Stricter(applied, desired *Resolved) *Resolved {
-	out := &Resolved{PayerAccountID: desired.PayerAccountID}
+	// Exclusions change reporting, not protection, so the desired ones apply
+	// at once.
+	out := &Resolved{PayerAccountID: desired.PayerAccountID, ExcludedAccounts: desired.ExcludedAccounts}
 	if applied == nil {
 		applied = &Resolved{}
 	}
@@ -147,7 +175,8 @@ func Equal(a, b *Resolved) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	if a.PayerAccountID != b.PayerAccountID || len(a.Scopes) != len(b.Scopes) {
+	if a.PayerAccountID != b.PayerAccountID || len(a.Scopes) != len(b.Scopes) ||
+		strings.Join(a.ExcludedAccounts, ",") != strings.Join(b.ExcludedAccounts, ",") {
 		return false
 	}
 	for i := range a.Scopes {

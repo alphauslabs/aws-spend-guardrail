@@ -19,6 +19,12 @@
       "description": "Accounts and OUs protected by a budget.",
       "type": "array",
       "items": { "$ref": "#/$defs/scope" }
+    },
+    "excluded_accounts": {
+      "description": "Accounts left out of protection on purpose. The guard never reports them as unprotected.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/account_id" }
     }
   },
   "$defs": {

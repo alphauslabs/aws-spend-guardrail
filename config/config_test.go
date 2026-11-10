@@ -173,3 +173,29 @@ func TestSameVerdictTwice(t *testing.T) {
 		t.Fatalf("verdicts differ: %v / %v", e1, e2)
 	}
 }
+
+func TestExcludedAccounts(t *testing.T) {
+	ok := `{"payer_account_id":"123456789012","excluded_accounts":["999988887777"],
+		"scopes":[{"ou_id":"ou-ab12-cd34ef56","ceiling_usd":1}]}`
+	d := mustParse(t, ok)
+	r := d.Resolve()
+	if !r.Excluded("999988887777") || !r.Excluded("123456789012") || r.Excluded("111122223333") {
+		t.Fatalf("excluded: %v (payer must always count as excluded)", r.ExcludedAccounts)
+	}
+
+	both := `{"payer_account_id":"123456789012","excluded_accounts":["111122223333"],
+		"scopes":[{"account_id":"111122223333","ceiling_usd":1}]}`
+	if !hasProblem(problems(t, both, Options{}), "excluded_accounts[0]", "both protected and excluded") {
+		t.Fatal("an account both excluded and scoped must be invalid")
+	}
+
+	dup := `{"payer_account_id":"123456789012","excluded_accounts":["111122223333","111122223333"],"scopes":[]}`
+	if !hasProblem(problems(t, dup, Options{}), "excluded_accounts[1]", "listed twice") {
+		t.Fatal("a duplicate exclusion must be invalid")
+	}
+
+	bad := `{"payer_account_id":"123456789012","excluded_accounts":["123"],"scopes":[]}`
+	if !hasProblem(problems(t, bad, Options{}), "excluded_accounts[0]", "12-digit") {
+		t.Fatal("a malformed exclusion must be invalid")
+	}
+}

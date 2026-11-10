@@ -22,6 +22,7 @@ The schema is [`config/schema.json`](../config/schema.json), also printed by `gu
 | `payer_account_id` | yes | The payer (management) account the document is for. The guard refuses a document for another account. |
 | `defaults` | no | Values every scope takes unless it sets its own. Same fields as a scope's settings below. |
 | `scopes` | yes | The accounts and OUs protected by a budget. May be empty. |
+| `excluded_accounts` | no | Accounts left out of protection on purpose, such as an SSO or shared-services account. The guard never reports them as unprotected. The payer account always counts as excluded. An account can't be both excluded and a scope. |
 
 ### Scope
 
@@ -46,6 +47,7 @@ A document is invalid, and the guard keeps the last valid config, when it:
 - is for another payer account;
 - names a scope twice;
 - names the payer account or the organization root (`r-...`) as a scope;
+- lists an account both in `excluded_accounts` and as an account scope, or lists an exclusion twice;
 - contains an `approvers` field. Who approves a loosening is set in the stack, not in Jennah, so that someone who can write config can't choose who approves it.
 
 ## Tightening and loosening
@@ -63,6 +65,7 @@ The guard compares each new version with the config in force, field by field:
 | Higher `ceiling_usd` or `threshold_pct` | loosening |
 | `enforce` to `dry-run`, `B` to `A`, `stay_frozen` to `auto_lift` | loosening |
 | Any change of `period` | loosening |
+| Account added to or removed from `excluded_accounts` | notice: applies at once, no approval, since it changes what's reported, not what's protected |
 
 - A version that only tightens applies on the guard's next pull, within about 5 minutes.
 - A version that loosens anything applies its tightening parts at once. For the rest, the guard raises one Jennah approval to the approvers set in the stack. The loosening applies only once the approval is approved **and** the stack's delay has passed since the guard first saw the version.

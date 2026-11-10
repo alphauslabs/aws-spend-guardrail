@@ -8,8 +8,23 @@
     "month_end": "stay_frozen"
   },
   "scopes": [
-    { "account_id": "111122223333", "ceiling_usd": 20000 },
-    { "account_id": "444455556666", "ceiling_usd": 5000, "freeze_style": "A", "month_end": "auto_lift" },
-    { "ou_id": "ou-ab12-cd34ef56", "ceiling_usd": 50000, "mode": "dry-run" }
+    {
+      "account_id": "111122223333",
+      "ceiling_usd": 20000
+    },
+    {
+      "account_id": "444455556666",
+      "ceiling_usd": 5000,
+      "freeze_style": "A",
+      "month_end": "auto_lift"
+    },
+    {
+      "ou_id": "ou-ab12-cd34ef56",
+      "ceiling_usd": 50000,
+      "mode": "dry-run"
+    }
+  ],
+  "excluded_accounts": [
+    "777788889999"
   ]
 }

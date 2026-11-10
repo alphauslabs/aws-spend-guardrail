@@ -70,6 +70,7 @@ Within 5 minutes the guard pulls the config and creates one budget per scope. Wa
 | `FunctionPackageBucket`, `FunctionPackageKey` | | Where the function zip is. |
 | `GuardVersion` | `dev` | Recorded with every event. |
 | `AlertEmail` | empty | Optional email for local alerts. |
+| `ReactToAccountEvents` | `false` | When `true`, a new, invited, or moved account is checked within minutes instead of at the daily run. Needs the account's CloudTrail management events in EventBridge. |
 
 The approval settings are stack parameters on purpose: changing them takes a stack update in the payer account, which a Jennah credential can't do.
 
@@ -80,6 +81,7 @@ The approval settings are stack parameters on purpose: changing them takes a sta
 - The guard function, run every 5 minutes and daily, and on budget notifications.
 - A DynamoDB table for the guard's state, an SQS outbox for events (with a dead-letter queue and an alarm), and an SNS alert topic.
 - A delete-time step that lifts every freeze the guard recorded and removes the budgets it owns.
+- With `ReactToAccountEvents=true`, an EventBridge rule that runs the coverage check when accounts change.
 
 Budgets are not stack resources. The guard creates and updates them from config, named `guardrail-<account|ou>-<id>` and tagged `guardrail:owned=true`. It never touches other budgets.
 

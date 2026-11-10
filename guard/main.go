@@ -117,19 +117,53 @@ func setup(ctx context.Context) *app {
 type probe struct {
 	Task        string `json:"task"`
 	RequestType string `json:"RequestType"` // CloudFormation custom resource
+	Source      string `json:"source"`      // EventBridge
 	Records     []struct {
 		EventSource  string `json:"eventSource"`
 		EventSource2 string `json:"EventSource"`
 	} `json:"Records"`
 }
 
-func (a *app) handle(ctx context.Context, raw json.RawMessage) (any, error) {
+// Kinds of invocation the function handles.
+const (
+	routeTeardown = "teardown"
+	routePull     = "pull"
+	routeDaily    = "daily"
+	routeOutbox   = "outbox"
+	routeNotify   = "notification"
+	routeCoverage = "coverage"
+)
+
+// route names what an incoming event is, without acting on it.
+func route(raw json.RawMessage) (string, error) {
 	var p probe
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return nil, fmt.Errorf("unrecognized event: %w", err)
+		return "", fmt.Errorf("unrecognized event: %w", err)
 	}
 	switch {
 	case p.RequestType != "":
+		return routeTeardown, nil
+	case p.Task == "pull":
+		return routePull, nil
+	case p.Task == "daily":
+		return routeDaily, nil
+	case p.Source == "aws.organizations":
+		return routeCoverage, nil // an account created, invited or moved
+	case len(p.Records) > 0 && p.Records[0].EventSource == "aws:sqs":
+		return routeOutbox, nil
+	case len(p.Records) > 0 && p.Records[0].EventSource2 == "aws:sns":
+		return routeNotify, nil
+	}
+	return "", fmt.Errorf("unrecognized event: %.200s", raw)
+}
+
+func (a *app) handle(ctx context.Context, raw json.RawMessage) (any, error) {
+	r, err := route(raw)
+	if err != nil {
+		return nil, err
+	}
+	switch r {
+	case routeTeardown:
 		var ev cfn.Event
 		if err := json.Unmarshal(raw, &ev); err != nil {
 			return nil, err
@@ -141,17 +175,19 @@ func (a *app) handle(ctx context.Context, raw json.RawMessage) (any, error) {
 			return "guardrail-teardown", nil, nil
 		})(ctx, ev)
 		return nil, nil
-	case p.Task == "pull":
+	case routePull:
 		return nil, a.g.Pull(ctx)
-	case p.Task == "daily":
+	case routeDaily:
 		return nil, a.g.Daily(ctx)
-	case len(p.Records) > 0 && p.Records[0].EventSource == "aws:sqs":
+	case routeCoverage:
+		return nil, a.g.CheckCoverage(ctx)
+	case routeOutbox:
 		var ev events.SQSEvent
 		if err := json.Unmarshal(raw, &ev); err != nil {
 			return nil, err
 		}
 		return a.consumer.Handle(ctx, ev)
-	case len(p.Records) > 0 && p.Records[0].EventSource2 == "aws:sns":
+	case routeNotify:
 		var ev events.SNSEvent
 		if err := json.Unmarshal(raw, &ev); err != nil {
 			return nil, err
@@ -168,7 +204,7 @@ func (a *app) handle(ctx context.Context, raw json.RawMessage) (any, error) {
 		}
 		return nil, nil
 	}
-	return nil, fmt.Errorf("unrecognized event: %.200s", raw)
+	return nil, fmt.Errorf("unhandled route %q", r)
 }
 
 func main() {

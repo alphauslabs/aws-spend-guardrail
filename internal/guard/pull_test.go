@@ -291,3 +291,16 @@ func TestRestartDuringOutageSendsNoNewStartAlert(t *testing.T) {
 		t.Fatalf("a restart should not repeat the start alert, got %d", n)
 	}
 }
+
+func TestExclusionOnlyVersionAppliesWithoutApproval(t *testing.T) {
+	h := newHarness(t)
+	h.publish(doc("50000", "50000"))
+	h.pull()
+	h.publish(`{"payer_account_id":"123456789012","excluded_accounts":["999988887777"],"scopes":[
+		{"account_id":"111122223333","ceiling_usd":50000},
+		{"account_id":"444455556666","ceiling_usd":50000}]}`)
+	h.pull()
+	if st := h.st(); st.AppliedVersion != 2 || len(st.Effective.ExcludedAccounts) != 1 || h.jennah.CreatedApprovals != 0 {
+		t.Fatalf("state %+v approvals %d", st, h.jennah.CreatedApprovals)
+	}
+}

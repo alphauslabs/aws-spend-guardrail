@@ -87,6 +87,11 @@ type StateStore interface {
 	MarkFrozen(ctx context.Context, f Frozen) error
 	ClearFrozen(ctx context.Context, t config.Target) error
 	ListFrozen(ctx context.Context) ([]Frozen, error)
+	// Reported returns the accounts already reported for a kind
+	// (unprotected_account, stale_scope), with when each was first reported.
+	Reported(ctx context.Context, kind string) (map[string]time.Time, error)
+	MarkReported(ctx context.Context, kind, account string, at time.Time) error
+	ClearReported(ctx context.Context, kind, account string) error
 }
 
 // BudgetSpec is one budget the guard owns, as it should exist in AWS.
@@ -122,10 +127,21 @@ type Budgets interface {
 	Release(ctx context.Context, b BudgetSpec) (how string, err error)
 }
 
-// Org reads the organization: OU membership and freeze policy attachments.
+// Account is one member account of the organization.
+type Account struct {
+	ID    string
+	Name  string
+	State string // ACTIVE, SUSPENDED, PENDING_CLOSURE, ...
+}
+
+// Org reads the organization: accounts, OU membership and freeze policy
+// attachments.
 type Org interface {
 	AccountsInOU(ctx context.Context, ouID string) ([]string, error)
 	PolicyTargets(ctx context.Context, policyID string) ([]config.Target, error)
+	ListAccounts(ctx context.Context) ([]Account, error)
+	// ParentOf names where an account sits: "root" or an OU id.
+	ParentOf(ctx context.Context, account string) (string, error)
 }
 
 // Settings are the guard's stack parameters.

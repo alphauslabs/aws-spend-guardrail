@@ -36,7 +36,7 @@ var (
 		"month_end":    {MonthEndAutoLift, MonthEndStayFrozen},
 	}
 
-	documentFields = []string{"payer_account_id", "defaults", "scopes"}
+	documentFields = []string{"payer_account_id", "defaults", "scopes", "excluded_accounts"}
 	settingsFields = []string{"period", "threshold_pct", "freeze_style", "mode", "month_end"}
 	scopeFields    = append([]string{"account_id", "ou_id", "ceiling_usd"}, settingsFields...)
 )
@@ -63,6 +63,23 @@ func checkSchema(raw []byte) []Problem {
 		if obj := c.object("defaults", v); obj != nil {
 			c.unknown("defaults", obj, settingsFields)
 			c.settings("defaults", obj)
+		}
+	}
+	if v, ok := top["excluded_accounts"]; ok {
+		var ids []json.RawMessage
+		if err := json.Unmarshal(v, &ids); err != nil || isNull(v) {
+			c.add("excluded_accounts", "must be an array of account ids")
+		} else {
+			seen := map[string]bool{}
+			for i, id := range ids {
+				field := fmt.Sprintf("excluded_accounts[%d]", i)
+				c.pattern(field, id, accountIDRe, "a 12-digit account id")
+				if s := string(id); seen[s] {
+					c.add(field, "is listed twice")
+				} else {
+					seen[s] = true
+				}
+			}
 		}
 	}
 	v, ok := top["scopes"]

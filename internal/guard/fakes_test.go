@@ -70,11 +70,35 @@ func (a *alerts) has(substr string) bool {
 
 // memState round-trips through JSON, like the real store would.
 type memState struct {
-	raw    []byte
-	frozen map[config.Target]Frozen
+	raw      []byte
+	frozen   map[config.Target]Frozen
+	reported map[string]map[string]time.Time
 }
 
-func newMemState() *memState { return &memState{frozen: map[config.Target]Frozen{}} }
+func newMemState() *memState {
+	return &memState{frozen: map[config.Target]Frozen{}, reported: map[string]map[string]time.Time{}}
+}
+
+func (m *memState) Reported(_ context.Context, kind string) (map[string]time.Time, error) {
+	out := map[string]time.Time{}
+	for k, v := range m.reported[kind] {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func (m *memState) MarkReported(_ context.Context, kind, account string, at time.Time) error {
+	if m.reported[kind] == nil {
+		m.reported[kind] = map[string]time.Time{}
+	}
+	m.reported[kind][account] = at
+	return nil
+}
+
+func (m *memState) ClearReported(_ context.Context, kind, account string) error {
+	delete(m.reported[kind], account)
+	return nil
+}
 
 func (m *memState) Load(context.Context) (*State, error) {
 	st := &State{}
@@ -161,6 +185,22 @@ func (f *fakeBudgets) setActual(name string, usd float64) {
 type fakeOrg struct {
 	ous      map[string][]string
 	attached map[string][]config.Target
+	accounts []Account
+}
+
+func (o *fakeOrg) ListAccounts(context.Context) ([]Account, error) {
+	return append([]Account(nil), o.accounts...), nil
+}
+
+func (o *fakeOrg) ParentOf(_ context.Context, account string) (string, error) {
+	for ou, members := range o.ous {
+		for _, m := range members {
+			if m == account {
+				return ou, nil
+			}
+		}
+	}
+	return "root", nil
 }
 
 func (o *fakeOrg) AccountsInOU(_ context.Context, id string) ([]string, error) {
