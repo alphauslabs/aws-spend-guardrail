@@ -1,4 +1,6 @@
-# aws-spend-guardrail
+[![Default](https://github.com/alphauslabs/aws-spend-guardrail/actions/workflows/ci.yml/badge.svg)](https://github.com/alphauslabs/aws-spend-guardrail/actions/workflows/ci.yml)
+
+## aws-spend-guardrail
 
 Budget caps for AWS organizations that block new spend in an account or OU when it hits its limit, without stopping or deleting running resources.
 
