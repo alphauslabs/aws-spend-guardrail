@@ -5,12 +5,12 @@
 See proposal.md for why. The repo is new and empty. Constraints that shape the approach:
 
 - **AWS.** Service control policies only bind member accounts, never the management account, and only inside one organization, so each payer org needs its own guard. Budgets actions that apply SCPs run from the management account. Budgets is a global service served from us-east-1.
-- **Jennah** (checked against its specs and code on 2026-11-10):
+- **Jennah** (from its public API and docs):
   - Datasets are `(EnterpriseId, DatasetId)`-scoped. Ids use lowercase letters, digits, and `.`, `_`, `-` (not at the edges), up to 128 characters, with `.` as the selector hierarchy separator.
   - Data goes through `POST /v1/datasets/:id/data:commit` and `data:query` only (structured, no SQL). Commits accept an idempotency key, and a duplicate primary key is reported as a conflict.
   - Column types include `INT64`, `STRING`, `BOOL`, `TIMESTAMP` and `JSON`.
   - Approvals carry a payload and a `request_key` for idempotent creation. A key-authenticated caller can create approvals but never decide them. Expiry fails closed.
-  - API keys today carry their own permission scope and dataset selectors. `add-service-accounts` (not built) will move to role-based reach with no per-key selectors.
+  - API keys today carry their own permission scope and dataset selectors. If Jennah adds service accounts with role-based reach, their keys may not carry selectors of their own.
 - **Team**: Go everywhere on the Jennah side, so the function, CLI and validator are Go.
 
 ## Goals / Non-Goals
@@ -70,7 +70,7 @@ The inbox dataset has `events (event_id STRING PK, occurred_at TIMESTAMP, kind S
 *Alternative:* write to Jennah directly and queue only on failure. Rejected: two code paths, and a crash between failure and enqueue loses the event.
 
 ### D9. Two credentials in Secrets Manager
-`guardrail/<msp>/reader` and `guardrail/<msp>/writer` in Secrets Manager. Reader: `datastore.data:read` and `datastore.schema:read` on `guardrail.<msp>.config`, plus `approval.requests:create` and `approval.requests:read`. Writer: `datastore.data:write` on `guardrail.<msp>.inbox`. Today these are personal API keys with their own scope and selectors. After `add-service-accounts`, they become one service account each, with a custom role per MSP. The guard doesn't care which; it only needs the secret.
+`guardrail/<msp>/reader` and `guardrail/<msp>/writer` in Secrets Manager. Reader: `datastore.data:read` and `datastore.schema:read` on `guardrail.<msp>.config`, plus `approval.requests:create` and `approval.requests:read`. Writer: `datastore.data:write` on `guardrail.<msp>.inbox`. Today these are personal API keys with their own scope and selectors. If Jennah adds service accounts, they can become one service account each, with a custom role per MSP. The guard doesn't care which; it only needs the secret.
 
 ### D10. One Go function, several triggers
 One Lambda (Go, `provided.al2023`, arm64) handles: the 5-minute schedule (pull config, reconcile), the budget notification topic (record freeze or would-freeze), the daily schedule (OU membership, drift, heartbeat, period-start lifts) and the outbox queue (write to Jennah). Reconcile is idempotent, so a run that overlaps another is harmless. The function's reserved concurrency for the schedule path is 1.

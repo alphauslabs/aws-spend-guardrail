@@ -35,6 +35,6 @@ None. This is the repo's first change.
 
 - **New repo** `aws-spend-guardrail` (open source, maintained by the Jennah team): `guard/` (CloudFormation template and Go function), `config/` (JSON schema and examples), `schema/` (Jennah table layouts), `cmd/guardrail` (CLI).
 - **Customer AWS**: one stack per payer org in us-east-1. Uses AWS Budgets, Budgets actions, Organizations SCPs, Lambda, SQS, SNS, Secrets Manager, SSM Parameter Store, EventBridge Scheduler.
-- **Jennah**: uses existing public APIs only (`data:commit`, `data:query`, schema declaration, dataset creation, approvals). No Jennah change is required. Credentials are personal scoped API keys until `add-service-accounts` (and its prerequisite `revoke-keys-on-member-removal`) land in Jennah, then two service accounts per payer org.
+- **Jennah**: uses existing public APIs only (`data:commit`, `data:query`, schema declaration, dataset creation, approvals). No Jennah change is required. Credentials are scoped API keys, two per payer org. Once Jennah supports service accounts, they can move to two service accounts per payer org.
 - **Distributor**: one Jennah enterprise; per MSP, two datasets and the roles or keys that reach them; approvers for loosening listed on Jennah's outside-approver allowlist.
 - **Open with each distributor before enforcing**: whether AWS cost as measured by Budgets is the right basis rather than the price they bill their customers, and who approves loosening per MSP.

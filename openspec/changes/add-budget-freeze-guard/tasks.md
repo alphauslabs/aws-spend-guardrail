@@ -62,5 +62,5 @@
 ## Workflow follow-up
 
 - Agree the cost basis and the approvers per MSP with the distributor before any scope goes to enforce.
-- Swap the guard's credentials to service accounts once `revoke-keys-on-member-removal` and `add-service-accounts` land in Jennah.
+- Swap the guard's credentials to service accounts once Jennah supports them.
 - Archive this change after the dry-run month.
