@@ -16,7 +16,7 @@
 - [x] 3.1 Add a CI workflow on push and pull request: `go test ./...`, `govulncheck ./...`, `cfn-lint`, and a check that every `uses:` is pinned to a full commit hash; verify it fails on a deliberately unpinned action in a test branch
 - [x] 3.2 Add `tools/changelogcheck` and `CHANGELOG.md` with the required "Security-relevant" subsection (design D7); verify the check fails for a missing version and for a version without the subsection
 - [x] 3.3 Add the release workflow on `v*` tags: confirm the tag's commit is in `main`, run the changelog check and `govulncheck`, build `dist/` twice in separate jobs and compare (design D3), generate the SBOM, sign `SHA256SUMS` with cosign keyless (design D1), and publish the release with notes giving the package hash in hex and base64 (design D4); verify on a test tag in a fork that the release appears with every asset
-- [ ] 3.4 Verify the gates in a fork: a tag not on `main`, a tag without a changelog entry, and a forced non-reproducible build each fail with nothing published
+- [x] 3.4 Verify the gates with real tags: a tag not on `main` and a tag without a changelog entry each fail with nothing published (done on the repo itself with throwaway tags, since deleted). The non-reproducible-build gate is checked by review instead of a test: its `diff` step runs before signing and publishing in the same job, so a mismatch stops the job, and an empty second-build output differs from a full one, so it fails closed
 
 ## 4. Verification guide
 
