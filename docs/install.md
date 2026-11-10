@@ -1,6 +1,6 @@
 # Install
 
-One CloudFormation stack per payer (management) account, in us-east-1. An MSP with several payer orgs installs one stack in each, all with the same `MSPId`; each reads its own config, named by its payer account. Deploy it through your own pipeline from a version you reviewed.
+One CloudFormation stack per payer (management) account, in us-east-1. An MSP with several payer orgs installs one stack in each, all with the same `MSPId`; each reads its own config, named by its payer account. Deploy it through your own pipeline from a version you reviewed. To do it in the AWS console instead of the AWS CLI, follow [install from the console](install-console.md).
 
 ## Before you start
 
