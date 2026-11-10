@@ -4,7 +4,7 @@ Budget caps for AWS organizations that block new spend in an account or OU when 
 
 Each management account runs a guard stack. AWS Budgets tracks spend and attaches a freeze SCP when a budget hits its threshold, so enforcement does not depend on any external service. Jennah stores the config, handles approvals for relaxing limits, and logs freeze and unfreeze events.
 
-> **Status:** planning. No code yet. See [`add-budget-freeze-guard`](openspec/changes/add-budget-freeze-guard/) for the initial proposal.
+> **Status:** first implementation, not yet tested in a real AWS organization. Tracked in [`add-budget-freeze-guard`](openspec/changes/add-budget-freeze-guard/). Docs: [install](docs/install.md), [operating](docs/operating.md), [config](docs/config.md).
 
 ## How it works
 
@@ -49,9 +49,15 @@ Limitations:
 
 ## Repository layout
 
+- `guard/`: CloudFormation template and the Go Lambda entry point.
+- `cmd/guardrail/`: the operator CLI.
+- `config/`: config JSON schema, validator and examples.
+- `schema/`: Jennah dataset and table definitions.
+- `internal/`: guard logic, AWS and Jennah adapters, outbox, CLI commands.
+- `docs/`: install, operating and config guides.
 - `openspec/`: Specs and change proposals managed with [OpenSpec](https://github.com/Fission-AI/OpenSpec).
 
-Planned directories for the initial implementation: `guard/` (CloudFormation template and Go Lambda), `config/` (schema and examples), `schema/` (Jennah table definitions), and `cmd/guardrail/` (CLI).
+Build with `make` (CLI in `bin/guardrail`, function package in `bin/guard.zip`), test with `make test`.
 
 ## License
 

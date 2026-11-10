@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/alphauslabs/aws-spend-guardrail/config/schema.json",
+  "title": "aws-spend-guardrail config",
+  "description": "One config document for the guard in one payer (management) account.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["payer_account_id", "scopes"],
+  "properties": {
+    "payer_account_id": {
+      "description": "The payer (management) account this document is for.",
+      "$ref": "#/$defs/account_id"
+    },
+    "defaults": {
+      "description": "Values a scope takes when it doesn't set them.",
+      "$ref": "#/$defs/settings"
+    },
+    "scopes": {
+      "description": "Accounts and OUs protected by a budget.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/scope" }
+    }
+  },
+  "$defs": {
+    "account_id": {
+      "type": "string",
+      "pattern": "^[0-9]{12}$"
+    },
+    "ou_id": {
+      "type": "string",
+      "description": "An OU id. An organization root id (r-...) matches the pattern only so that it can be refused with a clear message.",
+      "pattern": "^(ou-[0-9a-z]{4,32}-[0-9a-z]{8,32}|r-[0-9a-z]{4,32})$"
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "period": {
+          "description": "Budget period.",
+          "enum": ["monthly", "quarterly", "annually"]
+        },
+        "threshold_pct": {
+          "description": "Percentage of the ceiling at which the freeze fires.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "freeze_style": {
+          "description": "A: deny listed cost-creating actions. B: deny everything except reads, cost-reducing actions, and support, billing and security tooling.",
+          "enum": ["A", "B"]
+        },
+        "mode": {
+          "description": "dry-run records would_freeze without attaching anything; enforce attaches the freeze policy.",
+          "enum": ["dry-run", "enforce"]
+        },
+        "month_end": {
+          "description": "What happens to a frozen scope when a new budget period starts.",
+          "enum": ["auto_lift", "stay_frozen"]
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ceiling_usd"],
+      "oneOf": [
+        { "required": ["account_id"], "not": { "required": ["ou_id"] } },
+        { "required": ["ou_id"], "not": { "required": ["account_id"] } }
+      ],
+      "properties": {
+        "account_id": { "$ref": "#/$defs/account_id" },
+        "ou_id": { "$ref": "#/$defs/ou_id" },
+        "ceiling_usd": {
+          "description": "Budget limit in USD.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "period": { "$ref": "#/$defs/settings/properties/period" },
+        "threshold_pct": { "$ref": "#/$defs/settings/properties/threshold_pct" },
+        "freeze_style": { "$ref": "#/$defs/settings/properties/freeze_style" },
+        "mode": { "$ref": "#/$defs/settings/properties/mode" },
+        "month_end": { "$ref": "#/$defs/settings/properties/month_end" }
+      }
+    }
+  }
+}

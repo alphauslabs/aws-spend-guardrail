@@ -21,7 +21,7 @@ The tables of both datasets SHALL be defined in this repo with a layout version.
 - **THEN** the guard's writes still succeed
 
 ### Requirement: The guard holds two credentials
-The guard SHALL use two Jennah credentials, stored in the payer account. The reader SHALL be able to read the config dataset and create and read approvals, and nothing else. The writer SHALL be able to write the inbox dataset, and nothing else. Neither SHALL be able to write the config dataset.
+The guard SHALL use two Jennah credentials, stored in the payer account. The reader SHALL be able to read the config dataset and create, read and cancel approvals, and nothing else. The writer SHALL be able to write the inbox dataset, and nothing else. Neither SHALL be able to write the config dataset.
 
 #### Scenario: A stolen writer cannot loosen
 - **WHEN** someone uses the guard's writer credential to write a config version

@@ -1,0 +1,12 @@
+{
+  "payer_account_id": "123456789012",
+  "defaults": {
+    "mode": "dry-run",
+    "threshold_pct": 90
+  },
+  "scopes": [
+    { "account_id": "111122223333", "ceiling_usd": 20000 },
+    { "account_id": "444455556666", "ceiling_usd": 5000 },
+    { "ou_id": "ou-ab12-cd34ef56", "ceiling_usd": 50000 }
+  ]
+}

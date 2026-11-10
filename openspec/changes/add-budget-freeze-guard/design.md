@@ -47,12 +47,12 @@ Style A is a deny list of cost-creating actions (the list lives in the template 
 Lifting uses `ExecuteBudgetAction` with `REVERSE_BUDGET_ACTION` where Budgets supports it, so Budgets' own action status stays accurate. If reversal is not available in the needed state, the guard detaches the policy directly and records which path it used. Task 1.1 settles this.
 
 ### D5. Config as immutable JSON documents
-The config dataset has one table, `config_versions (version INT64 PK, document JSON, published_at TIMESTAMP, note STRING)`. A new version is a plain insert: a duplicate version is a primary-key conflict, which gives single-writer semantics without locks. The guard reads the highest version with one `data:query` ordered by `version DESC LIMIT 1`.
+The config dataset has one table, `config_versions (version INT64 PK, document JSON, published_at TIMESTAMP, note STRING, layout_version INT64)`. A new version is a plain insert: a duplicate version is a primary-key conflict, which gives single-writer semantics without locks. The guard reads the highest version with one `data:query` ordered by `version DESC LIMIT 1`.
 
 *Alternative:* one table per concept (scopes, defaults) edited in place. Rejected: no history, no atomic version, and "what changed" would need its own audit table. Whole documents also give phase 2 the budget revision history it needs.
 
 ### D6. Effective config = stricter of applied and desired, until approved
-The guard keeps three things in an SSM parameter in the payer account: the applied config, the pending loosening version (if any) with its approval id, and when it was first seen. On each pull:
+The guard keeps its state in a DynamoDB table in the payer account: the applied version and the effective config, the pending loosening version (if any) with its approval id and when it was first seen, and one item per frozen scope. (An SSM parameter was the first idea, but its 4 to 8 KB limit holds only a few dozen scopes, and one item per frozen scope means the notification handler and the scheduled pull never write the same item.) On each pull:
 
 1. Validate the newest version. If invalid: record `config_rejected`, keep the applied config.
 2. Diff it against the applied config scope by scope, classifying each field as tightening or loosening (rules in `guard-config`).
@@ -65,12 +65,12 @@ Comparing per field means a mixed version never delays its tightening parts.
 `LooseningApprovers` (emails), `LooseningRequiredApprovals`, `LooseningApprovalWindow` and `LooseningDelay` are stack parameters. Changing them takes a stack update in the payer account, which is outside what a Jennah credential can reach. The approvers must be members of the distributor's enterprise or on its outside-approver allowlist. The guard raises the approval with its reader credential, so the requester is a key, which can never decide.
 
 ### D8. Inbox events with deterministic ids and an SQS outbox
-The inbox dataset has `events (event_id STRING PK, occurred_at TIMESTAMP, kind STRING, scope STRING, config_version INT64, guard_version STRING, detail JSON)`. Event ids are derived from what happened (for example `freeze:<scope>:<budget period>:<action execution time>`) so the same occurrence always produces the same id. Every event goes through an SQS queue: the producer enqueues, and a consumer commits to Jennah with `event_id` as the idempotency key. A dead-letter queue after the retention period triggers a local alert.
+The inbox dataset has `events (event_id STRING PK, occurred_at TIMESTAMP, kind STRING, scope STRING, config_version INT64, guard_version STRING, detail JSON, layout_version INT64)`. Event ids are derived from what happened (for example `freeze:<scope>:<budget period>:<action execution time>`) so the same occurrence always produces the same id. Every event goes through an SQS queue: the producer enqueues, and a consumer commits to Jennah with `event_id` as the idempotency key. A dead-letter queue after the retention period triggers a local alert.
 
 *Alternative:* write to Jennah directly and queue only on failure. Rejected: two code paths, and a crash between failure and enqueue loses the event.
 
 ### D9. Two credentials in Secrets Manager
-`guardrail/<msp>/reader` and `guardrail/<msp>/writer` in Secrets Manager. Reader: `datastore.data:read` and `datastore.schema:read` on `guardrail.<msp>.config`, plus `approval.requests:create` and `approval.requests:read`. Writer: `datastore.data:write` on `guardrail.<msp>.inbox`. Today these are personal API keys with their own scope and selectors. If Jennah adds service accounts, they can become one service account each, with a custom role per MSP. The guard doesn't care which; it only needs the secret.
+`guardrail/<msp>/reader` and `guardrail/<msp>/writer` in Secrets Manager. Reader: `datastore.data:read` and `datastore.schema:read` on `guardrail.<msp>.config`, plus `approval.requests:create`, `approval.requests:read` and `approval.requests:cancel` (to cancel a superseded loosening approval). Writer: `datastore.data:write` on `guardrail.<msp>.inbox`. Today these are personal API keys with their own scope and selectors. If Jennah adds service accounts, they can become one service account each, with a custom role per MSP. The guard doesn't care which; it only needs the secret.
 
 ### D10. One Go function, several triggers
 One Lambda (Go, `provided.al2023`, arm64) handles: the 5-minute schedule (pull config, reconcile), the budget notification topic (record freeze or would-freeze), the daily schedule (OU membership, drift, heartbeat, period-start lifts) and the outbox queue (write to Jennah). Reconcile is idempotent, so a run that overlaps another is harmless. The function's reserved concurrency for the schedule path is 1.

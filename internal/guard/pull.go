@@ -1,0 +1,200 @@
+package guard
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/alphauslabs/aws-spend-guardrail/config"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
+	"github.com/alphauslabs/aws-spend-guardrail/schema"
+)
+
+// Pull checks Jennah for a newer config version, applies what may be applied,
+// and reconciles budgets with the effective config. When Jennah is unreachable
+// or the newest version is invalid, the last valid config stays in force.
+func (g *Guard) Pull(ctx context.Context) error {
+	st, err := g.State.Load(ctx)
+	if err != nil {
+		return fmt.Errorf("load state: %w", err)
+	}
+	if err := g.evaluate(ctx, st); err != nil {
+		g.alert(ctx, "guardrail: config not refreshed", err.Error()+"; the last valid config stays in force")
+	}
+	if err := g.State.Save(ctx, st); err != nil {
+		return fmt.Errorf("save state: %w", err)
+	}
+	if st.Effective == nil {
+		return nil // nothing configured yet
+	}
+	return g.Reconcile(ctx, st.Effective)
+}
+
+func (g *Guard) evaluate(ctx context.Context, st *State) error {
+	latest, err := g.Config.LatestVersion(ctx, schema.ConfigDatasetID(g.S.MSPID))
+	if err != nil {
+		return fmt.Errorf("cannot read config from Jennah: %w", err)
+	}
+	if latest == nil {
+		return nil
+	}
+
+	// A newer version supersedes a pending one.
+	if p := st.Pending; p != nil && p.Version != latest.Number && latest.Number > p.Version {
+		if p.Closed == "" {
+			if err := g.Config.CancelApproval(ctx, p.ApprovalID); err != nil {
+				return err
+			}
+			g.emit(ctx, schema.KindLooseningVoid, fmt.Sprintf("%s:%d", schema.KindLooseningVoid, p.Version), "", p.Version,
+				map[string]any{"approval_id": p.ApprovalID, "superseded_by": latest.Number})
+		}
+		st.Pending = nil
+	}
+
+	if latest.Number <= st.AppliedVersion || latest.Number == st.RejectedVersion {
+		return nil
+	}
+
+	doc, err := config.Parse(latest.Document, config.Options{PayerAccountID: g.S.PayerAccountID})
+	if err != nil {
+		st.RejectedVersion = latest.Number
+		var ie *config.InvalidError
+		var probs []string
+		if errors.As(err, &ie) {
+			for _, p := range ie.Problems {
+				probs = append(probs, p.String())
+			}
+		} else {
+			probs = []string{err.Error()}
+		}
+		g.emit(ctx, schema.KindConfigRejected, fmt.Sprintf("%s:%d", schema.KindConfigRejected, latest.Number), "", latest.Number,
+			map[string]any{"problems": probs, "kept_version": st.AppliedVersion})
+		g.alert(ctx, "guardrail: config version rejected",
+			fmt.Sprintf("config version %d is invalid and was not applied; version %d stays in force:\n%s", latest.Number, st.AppliedVersion, strings.Join(probs, "\n")))
+		return nil
+	}
+	desired := doc.Resolve()
+	changes := config.Diff(st.Effective, desired)
+
+	if !config.HasLoosening(changes) {
+		g.applyFull(ctx, st, latest.Number, desired, changes)
+		return nil
+	}
+	return g.handleLoosening(ctx, st, latest.Number, desired, changes)
+}
+
+func (g *Guard) applyFull(ctx context.Context, st *State, version int64, desired *config.Resolved, changes []config.Change) {
+	st.Effective = desired
+	st.AppliedVersion = version
+	st.EffectiveVersion = version
+	st.Pending = nil
+	g.emit(ctx, schema.KindConfigApplied, fmt.Sprintf("%s:%d", schema.KindConfigApplied, version), "", version,
+		map[string]any{"changes": changeStrings(changes)})
+}
+
+func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, desired *config.Resolved, changes []config.Change) error {
+	// Tightening parts apply at once.
+	if st.EffectiveVersion < version {
+		merged := config.Stricter(st.Effective, desired)
+		if !config.Equal(merged, st.Effective) {
+			st.Effective = merged
+			g.emit(ctx, schema.KindConfigPartial, fmt.Sprintf("%s:%d", schema.KindConfigPartial, version), "", version,
+				map[string]any{"applied": changeStrings(only(changes, config.Tightening)), "awaiting_approval": changeStrings(only(changes, config.Loosening))})
+		}
+		st.EffectiveVersion = version
+	}
+
+	p := st.Pending
+	if p == nil || p.Version != version {
+		a, err := g.Config.RaiseApproval(ctx, g.approvalRequest(version, changes))
+		if err != nil {
+			return err
+		}
+		p = &Pending{Version: version, ApprovalID: a.ID, FirstSeen: g.now(), Desired: desired}
+		st.Pending = p
+		g.emit(ctx, schema.KindLooseningRaised, fmt.Sprintf("%s:%d", schema.KindLooseningRaised, version), "", version,
+			map[string]any{"approval_id": a.ID, "loosening": changeStrings(only(changes, config.Loosening))})
+	}
+	if p.Closed != "" {
+		return nil
+	}
+
+	a, err := g.Config.GetApproval(ctx, p.ApprovalID)
+	if err != nil {
+		return err
+	}
+	switch a.Status {
+	case jennah.ApprovalApproved:
+		if g.now().Sub(p.FirstSeen) < g.S.LooseningDelay {
+			return nil // approved, waiting out the delay
+		}
+		g.emit(ctx, schema.KindLooseningOK, fmt.Sprintf("%s:%d", schema.KindLooseningOK, version), "", version,
+			map[string]any{"approval_id": p.ApprovalID})
+		g.applyFull(ctx, st, version, p.Desired, config.Diff(st.Effective, p.Desired))
+	case jennah.ApprovalRejected, jennah.ApprovalExpired, jennah.ApprovalCancelled:
+		p.Closed = a.Status
+		kind := map[jennah.ApprovalStatus]string{
+			jennah.ApprovalRejected:  schema.KindLooseningDenied,
+			jennah.ApprovalExpired:   schema.KindLooseningExpired,
+			jennah.ApprovalCancelled: schema.KindLooseningVoid,
+		}[a.Status]
+		g.emit(ctx, kind, fmt.Sprintf("%s:%d", kind, version), "", version,
+			map[string]any{"approval_id": p.ApprovalID, "kept": "stricter config"})
+	}
+	return nil
+}
+
+func (g *Guard) approvalRequest(version int64, changes []config.Change) jennah.ApprovalRequest {
+	loosen := changeStrings(only(changes, config.Loosening))
+	var b strings.Builder
+	fmt.Fprintf(&b, "Config version %d for payer account %s (MSP %s) loosens protection:\n\n", version, g.S.PayerAccountID, g.S.MSPID)
+	for _, c := range loosen {
+		fmt.Fprintf(&b, "- %s\n", c)
+	}
+	fmt.Fprintf(&b, "\nIf approved, it applies %s after it was first seen. If rejected or unanswered, the stricter config stays in force.", g.S.LooseningDelay)
+	required := g.S.LooseningRequired
+	if required < 1 {
+		required = 1
+	}
+	return jennah.ApprovalRequest{
+		RequestKey: fmt.Sprintf("guardrail:%s:%s:v%d", g.S.PayerAccountID, g.S.MSPID, version),
+		Title:      fmt.Sprintf("Loosen spend guard config v%d (payer %s)", version, g.S.PayerAccountID),
+		Summary:    b.String(),
+		Payload: map[string]any{
+			"payer_account_id": g.S.PayerAccountID,
+			"msp_id":           g.S.MSPID,
+			"config_version":   float64(version),
+			"loosening":        toAny(loosen),
+		},
+		Approvers: g.S.LooseningApprovers,
+		Required:  required,
+		TTL:       g.S.LooseningWindow,
+	}
+}
+
+func only(changes []config.Change, d config.Direction) []config.Change {
+	var out []config.Change
+	for _, c := range changes {
+		if c.Direction == d {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func changeStrings(changes []config.Change) []string {
+	out := make([]string, 0, len(changes))
+	for _, c := range changes {
+		out = append(out, c.String())
+	}
+	return out
+}
+
+func toAny(ss []string) []any {
+	out := make([]any, len(ss))
+	for i, s := range ss {
+		out[i] = s
+	}
+	return out
+}

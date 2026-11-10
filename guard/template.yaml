@@ -1,0 +1,502 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  aws-spend-guardrail guard for one payer (management) account. Freezes new spend
+  in an account or OU when its AWS Budgets ceiling is reached. Config, loosening
+  approvals and the record of every freeze live in Jennah.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: Jennah }
+        Parameters: [MSPId, JennahEndpoint, ReaderSecretArn, WriterSecretArn]
+      - Label: { default: Loosening approvals (kept here so a Jennah credential cannot change them) }
+        Parameters: [LooseningApprovers, LooseningRequiredApprovals, LooseningApprovalWindow, LooseningDelay]
+      - Label: { default: Function package }
+        Parameters: [FunctionPackageBucket, FunctionPackageKey, GuardVersion]
+      - Label: { default: Local alerts }
+        Parameters: [AlertEmail]
+
+Parameters:
+  MSPId:
+    Type: String
+    Description: MSP id used in this org's Jennah dataset names (guardrail.<id>.config and .inbox).
+    AllowedPattern: "^[a-z0-9]([a-z0-9_-]{0,98}[a-z0-9])?$"
+  JennahEndpoint:
+    Type: String
+    Description: Jennah gRPC endpoint, for example api.example.com:443.
+  ReaderSecretArn:
+    Type: String
+    Description: Secrets Manager secret holding the reader API key (read config, create, read and cancel approvals).
+  WriterSecretArn:
+    Type: String
+    Description: Secrets Manager secret holding the writer API key (write the inbox only).
+  LooseningApprovers:
+    Type: CommaDelimitedList
+    Description: Emails asked to approve a loosening. Each must be a member of the Jennah enterprise or on its approver allowlist.
+  LooseningRequiredApprovals:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    Description: Approvals needed. Use 2 when the person who publishes a loosening must not be the only one approving it.
+  LooseningApprovalWindow:
+    Type: String
+    Default: 24h
+    AllowedPattern: "^[0-9]+(h|m)$"
+    Description: How long approvers have to answer. Unanswered means the loosening is not applied.
+  LooseningDelay:
+    Type: String
+    Default: 30m
+    AllowedPattern: "^[0-9]+(h|m)$"
+    Description: Minimum time between the guard first seeing a loosening version and applying it, even when approved sooner.
+  FunctionPackageBucket:
+    Type: String
+    Description: S3 bucket (in us-east-1) holding the guard function zip.
+  FunctionPackageKey:
+    Type: String
+    Description: S3 key of the guard function zip.
+  GuardVersion:
+    Type: String
+    Default: dev
+    Description: Release version of the function package, recorded with every event.
+  AlertEmail:
+    Type: String
+    Default: ""
+    Description: Optional email subscribed to local alerts. Alerts never depend on Jennah.
+
+Rules:
+  UsEast1Only:
+    Assertions:
+      - Assert: !Equals [!Ref AWS::Region, us-east-1]
+        AssertDescription: Deploy in us-east-1. AWS Budgets is served from there.
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+
+Resources:
+  # Freeze policies, created unattached. Budgets attaches one when a scope's
+  # threshold is reached.
+  FreezePolicyA:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub guardrail-freeze-a-${MSPId}
+      Description: aws-spend-guardrail freeze style A. Denies actions that create cost.
+      Type: SERVICE_CONTROL_POLICY
+      Content:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: GuardrailFreezeA
+            Effect: Deny
+            Resource: "*"
+            Action:
+              - ec2:RunInstances
+              - ec2:StartInstances
+              - ec2:RequestSpotInstances
+              - ec2:RequestSpotFleet
+              - ec2:CreateFleet
+              - ec2:RunScheduledInstances
+              - ec2:CreateCapacityReservation
+              - ec2:AllocateHosts
+              - ec2:PurchaseReservedInstancesOffering
+              - ec2:PurchaseHostReservation
+              - ec2:CreateNatGateway
+              - ec2:AllocateAddress
+              - ec2:CreateVolume
+              - ec2:CreateTransitGateway
+              - ec2:CreateVpnConnection
+              - ec2:CreateVpcEndpoint
+              - autoscaling:CreateAutoScalingGroup
+              - autoscaling:UpdateAutoScalingGroup
+              - autoscaling:SetDesiredCapacity
+              - elasticloadbalancing:CreateLoadBalancer
+              - ecs:CreateService
+              - ecs:RunTask
+              - ecs:StartTask
+              - eks:CreateCluster
+              - eks:CreateNodegroup
+              - rds:CreateDBInstance
+              - rds:CreateDBCluster
+              - rds:StartDBInstance
+              - rds:StartDBCluster
+              - rds:RestoreDBInstanceFromDBSnapshot
+              - rds:RestoreDBClusterFromSnapshot
+              - rds:PurchaseReservedDBInstancesOffering
+              - redshift:CreateCluster
+              - redshift:ResumeCluster
+              - elasticache:CreateCacheCluster
+              - elasticache:CreateReplicationGroup
+              - es:CreateDomain
+              - dynamodb:CreateTable
+              - kinesis:CreateStream
+              - kafka:CreateCluster
+              - elasticfilesystem:CreateFileSystem
+              - fsx:CreateFileSystem
+              - elasticmapreduce:RunJobFlow
+              - glue:StartJobRun
+              - sagemaker:CreateEndpoint
+              - sagemaker:CreateNotebookInstance
+              - sagemaker:StartNotebookInstance
+              - sagemaker:CreateTrainingJob
+              - sagemaker:CreateProcessingJob
+              - sagemaker:CreateTransformJob
+              - sagemaker:CreateHyperParameterTuningJob
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+              - bedrock:CreateProvisionedModelThroughput
+              - bedrock:CreateModelCustomizationJob
+              - lightsail:CreateInstances
+              - workspaces:CreateWorkspaces
+              - gamelift:CreateFleet
+              - globalaccelerator:CreateAccelerator
+              - directconnect:CreateConnection
+              - route53domains:RegisterDomain
+              - savingsplans:CreateSavingsPlan
+              - aws-marketplace:Subscribe
+
+  FreezePolicyB:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub guardrail-freeze-b-${MSPId}
+      Description: aws-spend-guardrail freeze style B. Denies everything except reads, cost-reducing actions, and support, billing and security tooling.
+      Type: SERVICE_CONTROL_POLICY
+      Content:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: GuardrailFreezeB
+            Effect: Deny
+            Resource: "*"
+            NotAction:
+              - "*:Describe*"
+              - "*:Get*"
+              - "*:List*"
+              - "*:BatchGet*"
+              - "*:Stop*"
+              - "*:Terminate*"
+              - "*:Delete*"
+              - sts:*
+              - support:*
+              - aws-portal:*
+              - billing:*
+              - ce:*
+              - cur:*
+              - budgets:*
+              - health:*
+              - cloudtrail:*
+              - config:*
+              - guardduty:*
+              - securityhub:*
+              - access-analyzer:*
+              - inspector2:*
+              - detective:*
+
+  # Role AWS Budgets assumes to attach a freeze policy.
+  BudgetsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: budgets.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { aws:SourceAccount: !Ref AWS::AccountId }
+      Policies:
+        - PolicyName: attach-freeze-policies
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [organizations:AttachPolicy, organizations:DetachPolicy]
+                Resource:
+                  - !GetAtt FreezePolicyA.Arn
+                  - !GetAtt FreezePolicyB.Arn
+                  - !Sub arn:${AWS::Partition}:organizations::${AWS::AccountId}:account/o-*/*
+                  - !Sub arn:${AWS::Partition}:organizations::${AWS::AccountId}:ou/o-*/ou-*
+
+  StateTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      SSESpecification: { SSEEnabled: true }
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: aws-spend-guardrail alerts
+
+  AlertEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # Budget notifications and budget action notifications go here.
+  NotifyTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: aws-spend-guardrail budget notifications
+
+  NotifyTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref NotifyTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: budgets.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref NotifyTopic
+            Condition:
+              StringEquals: { aws:SourceAccount: !Ref AWS::AccountId }
+
+  OutboxDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  # Events wait here until Jennah accepts them. With a 5-minute visibility
+  # timeout, 1000 receives is about 3.5 days of retries, well inside the
+  # 14-day retention, so an undeliverable event reaches the dead-letter queue
+  # rather than expiring.
+  OutboxQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt OutboxDeadLetterQueue.Arn
+        maxReceiveCount: 1000
+
+  OutboxDeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: aws-spend-guardrail events could not be delivered to Jennah and are in the dead-letter queue.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - { Name: QueueName, Value: !GetAtt OutboxDeadLetterQueue.QueueName }
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  GuardLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/guardrail-${MSPId}
+      RetentionInDays: 365
+
+  GuardRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: guard
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub ${GuardLogGroup.Arn}:*
+              - Sid: ListBudgets
+                Effect: Allow
+                Action: [budgets:ViewBudget, budgets:DescribeBudgetActionsForAccount]
+                Resource: "*"
+              - Sid: ManageOwnedBudgets
+                Effect: Allow
+                Action:
+                  - budgets:ViewBudget
+                  - budgets:ModifyBudget
+                  - budgets:ListTagsForResource
+                  - budgets:TagResource
+                  - budgets:CreateBudgetAction
+                  - budgets:UpdateBudgetAction
+                  - budgets:DeleteBudgetAction
+                  - budgets:DescribeBudgetAction
+                  - budgets:DescribeBudgetActionsForBudget
+                  - budgets:ExecuteBudgetAction
+                Resource:
+                  - !Sub arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/guardrail-*
+                  - !Sub arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/guardrail-*/action/*
+              - Sid: PassBudgetsRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt BudgetsExecutionRole.Arn
+                Condition:
+                  StringEquals: { iam:PassedToService: budgets.amazonaws.com }
+              - Sid: ReadOrganization
+                Effect: Allow
+                Action:
+                  - organizations:ListAccountsForParent
+                  - organizations:ListOrganizationalUnitsForParent
+                  - organizations:ListTargetsForPolicy
+                Resource: "*"
+              - Sid: DetachFreezePolicies
+                Effect: Allow
+                Action: organizations:DetachPolicy
+                Resource:
+                  - !GetAtt FreezePolicyA.Arn
+                  - !GetAtt FreezePolicyB.Arn
+                  - !Sub arn:${AWS::Partition}:organizations::${AWS::AccountId}:account/o-*/*
+                  - !Sub arn:${AWS::Partition}:organizations::${AWS::AccountId}:ou/o-*/ou-*
+              - Sid: State
+                Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:DeleteItem, dynamodb:Query]
+                Resource: !GetAtt StateTable.Arn
+              - Sid: Outbox
+                Effect: Allow
+                Action: [sqs:SendMessage, sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes, sqs:ChangeMessageVisibility]
+                Resource: !GetAtt OutboxQueue.Arn
+              - Sid: Alerts
+                Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref AlertTopic
+              - Sid: Credentials
+                Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: [!Ref ReaderSecretArn, !Ref WriterSecretArn]
+
+  GuardFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: GuardLogGroup
+    Properties:
+      FunctionName: !Sub guardrail-${MSPId}
+      Description: aws-spend-guardrail guard
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      Handler: bootstrap
+      Code:
+        S3Bucket: !Ref FunctionPackageBucket
+        S3Key: !Ref FunctionPackageKey
+      Role: !GetAtt GuardRole.Arn
+      MemorySize: 256
+      Timeout: 120
+      # One invocation at a time: a pull, a notification and an outbox batch
+      # never run concurrently against the same state.
+      ReservedConcurrentExecutions: 1
+      Environment:
+        Variables:
+          PAYER_ACCOUNT_ID: !Ref AWS::AccountId
+          MSP_ID: !Ref MSPId
+          JENNAH_ENDPOINT: !Ref JennahEndpoint
+          READER_SECRET_ARN: !Ref ReaderSecretArn
+          WRITER_SECRET_ARN: !Ref WriterSecretArn
+          FREEZE_POLICY_A: !GetAtt FreezePolicyA.Id
+          FREEZE_POLICY_B: !GetAtt FreezePolicyB.Id
+          BUDGETS_EXECUTION_ROLE_ARN: !GetAtt BudgetsExecutionRole.Arn
+          NOTIFY_TOPIC_ARN: !Ref NotifyTopic
+          ALERT_TOPIC_ARN: !Ref AlertTopic
+          OUTBOX_QUEUE_URL: !Ref OutboxQueue
+          STATE_TABLE: !Ref StateTable
+          LOOSENING_APPROVERS: !Join [",", !Ref LooseningApprovers]
+          LOOSENING_REQUIRED_APPROVALS: !Ref LooseningRequiredApprovals
+          LOOSENING_APPROVAL_WINDOW: !Ref LooseningApprovalWindow
+          LOOSENING_DELAY: !Ref LooseningDelay
+          GUARD_VERSION: !Ref GuardVersion
+
+  NotifySubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref NotifyTopic
+      Protocol: lambda
+      Endpoint: !GetAtt GuardFunction.Arn
+
+  NotifyInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GuardFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref NotifyTopic
+
+  OutboxEventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref GuardFunction
+      EventSourceArn: !GetAtt OutboxQueue.Arn
+      BatchSize: 10
+      FunctionResponseTypes: [ReportBatchItemFailures]
+
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: scheduler.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { aws:SourceAccount: !Ref AWS::AccountId }
+      Policies:
+        - PolicyName: invoke-guard
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt GuardFunction.Arn
+
+  PullSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Description: Pull config from Jennah and reconcile budgets.
+      ScheduleExpression: rate(5 minutes)
+      FlexibleTimeWindow: { Mode: "OFF" }
+      Target:
+        Arn: !GetAtt GuardFunction.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: '{"task":"pull"}'
+
+  DailySchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Description: Period-start lifts, drift check, OU membership and heartbeat.
+      ScheduleExpression: cron(15 0 * * ? *)
+      FlexibleTimeWindow: { Mode: "OFF" }
+      Target:
+        Arn: !GetAtt GuardFunction.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: '{"task":"daily"}'
+
+  # On stack deletion, lifts every freeze the guard recorded and removes the
+  # budgets it owns, before the function and policies go.
+  Teardown:
+    Type: Custom::GuardrailTeardown
+    DependsOn: [GuardRole, BudgetsExecutionRole, StateTable, OutboxQueue, AlertTopic]
+    Properties:
+      ServiceToken: !GetAtt GuardFunction.Arn
+
+Outputs:
+  GuardFunctionName:
+    Value: !Ref GuardFunction
+  AlertTopicArn:
+    Value: !Ref AlertTopic
+  FreezePolicyAId:
+    Value: !GetAtt FreezePolicyA.Id
+  FreezePolicyBId:
+    Value: !GetAtt FreezePolicyB.Id
+  OutboxDeadLetterQueueUrl:
+    Value: !Ref OutboxDeadLetterQueue

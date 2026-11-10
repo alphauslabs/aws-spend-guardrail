@@ -1,0 +1,15 @@
+{
+  "payer_account_id": "123456789012",
+  "defaults": {
+    "period": "monthly",
+    "threshold_pct": 90,
+    "freeze_style": "B",
+    "mode": "enforce",
+    "month_end": "stay_frozen"
+  },
+  "scopes": [
+    { "account_id": "111122223333", "ceiling_usd": 20000 },
+    { "account_id": "444455556666", "ceiling_usd": 5000, "freeze_style": "A", "month_end": "auto_lift" },
+    { "ou_id": "ou-ab12-cd34ef56", "ceiling_usd": 50000, "mode": "dry-run" }
+  ]
+}

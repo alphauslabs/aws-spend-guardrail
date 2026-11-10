@@ -1,0 +1,249 @@
+package guard
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/alphauslabs/aws-spend-guardrail/config"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah/jennahtest"
+	"github.com/alphauslabs/aws-spend-guardrail/schema"
+)
+
+const payer = "123456789012"
+const msp = "msp_a"
+
+type events struct {
+	mu   sync.Mutex
+	list []jennah.Event
+}
+
+func (e *events) Emit(_ context.Context, ev jennah.Event) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, x := range e.list {
+		if x.ID == ev.ID {
+			return nil // the outbox dedupes by id downstream; mirror that here
+		}
+	}
+	e.list = append(e.list, ev)
+	return nil
+}
+
+func (e *events) kinds() []string {
+	var out []string
+	for _, x := range e.list {
+		out = append(out, x.Kind)
+	}
+	return out
+}
+
+func (e *events) count(kind string) int {
+	n := 0
+	for _, x := range e.list {
+		if x.Kind == kind {
+			n++
+		}
+	}
+	return n
+}
+
+type alerts struct{ list []string }
+
+func (a *alerts) Alert(_ context.Context, subject, msg string) error {
+	a.list = append(a.list, subject+": "+msg)
+	return nil
+}
+
+func (a *alerts) has(substr string) bool {
+	for _, x := range a.list {
+		if strings.Contains(x, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+// memState round-trips through JSON, like the real store would.
+type memState struct {
+	raw    []byte
+	frozen map[config.Target]Frozen
+}
+
+func newMemState() *memState { return &memState{frozen: map[config.Target]Frozen{}} }
+
+func (m *memState) Load(context.Context) (*State, error) {
+	st := &State{}
+	if m.raw != nil {
+		if err := json.Unmarshal(m.raw, st); err != nil {
+			return nil, err
+		}
+	}
+	return st, nil
+}
+
+func (m *memState) Save(_ context.Context, s *State) error {
+	b, err := json.Marshal(s)
+	m.raw = b
+	return err
+}
+
+func (m *memState) MarkFrozen(_ context.Context, f Frozen) error {
+	m.frozen[f.Target] = f
+	return nil
+}
+
+func (m *memState) ClearFrozen(_ context.Context, t config.Target) error {
+	delete(m.frozen, t)
+	return nil
+}
+
+func (m *memState) ListFrozen(context.Context) ([]Frozen, error) {
+	var out []Frozen
+	for _, f := range m.frozen {
+		out = append(out, f)
+	}
+	return out, nil
+}
+
+// fakeBudgets holds every budget in the account, owned or not.
+type fakeBudgets struct {
+	all      map[string]BudgetStatus
+	puts     int
+	deletes  []string
+	releases []string
+}
+
+func newFakeBudgets() *fakeBudgets { return &fakeBudgets{all: map[string]BudgetStatus{}} }
+
+func (f *fakeBudgets) ListOwned(context.Context) ([]BudgetStatus, error) {
+	var out []BudgetStatus
+	for name, b := range f.all {
+		if strings.HasPrefix(name, BudgetPrefix) {
+			out = append(out, b)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeBudgets) Put(_ context.Context, b BudgetSpec) error {
+	f.puts++
+	cur := f.all[b.Name]
+	cur.Spec = b
+	f.all[b.Name] = cur
+	return nil
+}
+
+func (f *fakeBudgets) Delete(_ context.Context, name string) error {
+	if !strings.HasPrefix(name, BudgetPrefix) {
+		panic("guard tried to delete a budget it doesn't own: " + name)
+	}
+	f.deletes = append(f.deletes, name)
+	delete(f.all, name)
+	return nil
+}
+
+func (f *fakeBudgets) Release(_ context.Context, b BudgetSpec) (string, error) {
+	f.releases = append(f.releases, b.Name)
+	return "reverse_budget_action", nil
+}
+
+func (f *fakeBudgets) setActual(name string, usd float64) {
+	b := f.all[name]
+	b.ActualUSD = usd
+	f.all[name] = b
+}
+
+type fakeOrg struct {
+	ous      map[string][]string
+	attached map[string][]config.Target
+}
+
+func (o *fakeOrg) AccountsInOU(_ context.Context, id string) ([]string, error) {
+	return append([]string(nil), o.ous[id]...), nil
+}
+
+func (o *fakeOrg) PolicyTargets(_ context.Context, p string) ([]config.Target, error) {
+	return o.attached[p], nil
+}
+
+type harness struct {
+	t       *testing.T
+	g       *Guard
+	jennah  *jennahtest.Server
+	client  *jennah.Client
+	events  *events
+	alerts  *alerts
+	state   *memState
+	budgets *fakeBudgets
+	org     *fakeOrg
+	now     time.Time
+	nextVer int64
+}
+
+func newHarness(t *testing.T) *harness {
+	srv, c := jennahtest.Start(t)
+	h := &harness{
+		t: t, jennah: srv, client: c,
+		events: &events{}, alerts: &alerts{}, state: newMemState(), budgets: newFakeBudgets(),
+		org: &fakeOrg{ous: map[string][]string{}, attached: map[string][]config.Target{}},
+		now: time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC),
+	}
+	h.g = h.newGuard()
+	return h
+}
+
+func (h *harness) newGuard() *Guard {
+	return &Guard{
+		S: Settings{
+			PayerAccountID:     payer,
+			MSPID:              msp,
+			GuardVersion:       "v0.0.0-test",
+			PolicyA:            "p-styleA",
+			PolicyB:            "p-styleB",
+			LooseningApprovers: []string{"approver@example.com"},
+			LooseningRequired:  1,
+			LooseningWindow:    2 * time.Hour,
+			LooseningDelay:     30 * time.Minute,
+		},
+		Config: h.client, Events: h.events, Alerts: h.alerts, State: h.state,
+		Budgets: h.budgets, Org: h.org,
+		Now: func() time.Time { return h.now },
+	}
+}
+
+func (h *harness) publish(doc string) int64 {
+	h.t.Helper()
+	h.nextVer++
+	err := h.client.InsertVersion(context.Background(), schema.ConfigDatasetID(msp), jennah.Version{
+		Number: h.nextVer, Document: json.RawMessage(doc), PublishedAt: h.now,
+	}, "")
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return h.nextVer
+}
+
+func (h *harness) pull() {
+	h.t.Helper()
+	if err := h.g.Pull(context.Background()); err != nil {
+		h.t.Fatalf("pull: %v", err)
+	}
+}
+
+func (h *harness) st() *State {
+	st, _ := h.state.Load(context.Background())
+	return st
+}
+
+func (h *harness) ceiling(target string) float64 {
+	b, ok := h.budgets.all[target]
+	if !ok {
+		h.t.Fatalf("no budget %s", target)
+	}
+	return b.Spec.LimitUSD
+}

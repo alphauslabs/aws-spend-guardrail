@@ -1,0 +1,237 @@
+package awsx
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/budgets"
+	btypes "github.com/aws/aws-sdk-go-v2/service/budgets/types"
+	"github.com/aws/aws-sdk-go-v2/service/organizations"
+
+	"github.com/alphauslabs/aws-spend-guardrail/config"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
+)
+
+type fakeAPI struct {
+	budgets  map[string]btypes.Budget
+	tags     map[string]bool
+	actions  map[string]btypes.Action
+	notifs   map[string][]btypes.Notification
+	executed []string
+	failExec bool
+}
+
+func newFakeAPI() *fakeAPI {
+	return &fakeAPI{budgets: map[string]btypes.Budget{}, tags: map[string]bool{}, actions: map[string]btypes.Action{}, notifs: map[string][]btypes.Notification{}}
+}
+
+func notFound() error { return &btypes.NotFoundException{Message: aws.String("nf")} }
+
+func (f *fakeAPI) DescribeBudgets(context.Context, *budgets.DescribeBudgetsInput, ...func(*budgets.Options)) (*budgets.DescribeBudgetsOutput, error) {
+	out := &budgets.DescribeBudgetsOutput{}
+	for _, b := range f.budgets {
+		out.Budgets = append(out.Budgets, b)
+	}
+	return out, nil
+}
+func (f *fakeAPI) CreateBudget(_ context.Context, in *budgets.CreateBudgetInput, _ ...func(*budgets.Options)) (*budgets.CreateBudgetOutput, error) {
+	n := aws.ToString(in.Budget.BudgetName)
+	f.budgets[n] = *in.Budget
+	for _, t := range in.ResourceTags {
+		if aws.ToString(t.Key) == OwnedTagKey {
+			f.tags[n] = true
+		}
+	}
+	for _, ns := range in.NotificationsWithSubscribers {
+		f.notifs[n] = append(f.notifs[n], *ns.Notification)
+	}
+	return &budgets.CreateBudgetOutput{}, nil
+}
+func (f *fakeAPI) UpdateBudget(_ context.Context, in *budgets.UpdateBudgetInput, _ ...func(*budgets.Options)) (*budgets.UpdateBudgetOutput, error) {
+	n := aws.ToString(in.NewBudget.BudgetName)
+	if _, ok := f.budgets[n]; !ok {
+		return nil, notFound()
+	}
+	f.budgets[n] = *in.NewBudget
+	return &budgets.UpdateBudgetOutput{}, nil
+}
+func (f *fakeAPI) DeleteBudget(_ context.Context, in *budgets.DeleteBudgetInput, _ ...func(*budgets.Options)) (*budgets.DeleteBudgetOutput, error) {
+	delete(f.budgets, aws.ToString(in.BudgetName))
+	return &budgets.DeleteBudgetOutput{}, nil
+}
+func (f *fakeAPI) ListTagsForResource(_ context.Context, in *budgets.ListTagsForResourceInput, _ ...func(*budgets.Options)) (*budgets.ListTagsForResourceOutput, error) {
+	out := &budgets.ListTagsForResourceOutput{}
+	name := aws.ToString(in.ResourceARN)
+	name = name[len("arn:aws:budgets::123456789012:budget/"):]
+	if f.tags[name] {
+		out.ResourceTags = []btypes.ResourceTag{{Key: aws.String(OwnedTagKey), Value: aws.String("true")}}
+	}
+	return out, nil
+}
+func (f *fakeAPI) DescribeNotificationsForBudget(_ context.Context, in *budgets.DescribeNotificationsForBudgetInput, _ ...func(*budgets.Options)) (*budgets.DescribeNotificationsForBudgetOutput, error) {
+	return &budgets.DescribeNotificationsForBudgetOutput{Notifications: f.notifs[aws.ToString(in.BudgetName)]}, nil
+}
+func (f *fakeAPI) CreateNotification(_ context.Context, in *budgets.CreateNotificationInput, _ ...func(*budgets.Options)) (*budgets.CreateNotificationOutput, error) {
+	n := aws.ToString(in.BudgetName)
+	f.notifs[n] = append(f.notifs[n], *in.Notification)
+	return &budgets.CreateNotificationOutput{}, nil
+}
+func (f *fakeAPI) DeleteNotification(_ context.Context, in *budgets.DeleteNotificationInput, _ ...func(*budgets.Options)) (*budgets.DeleteNotificationOutput, error) {
+	f.notifs[aws.ToString(in.BudgetName)] = nil
+	return &budgets.DeleteNotificationOutput{}, nil
+}
+func (f *fakeAPI) DescribeBudgetActionsForBudget(_ context.Context, in *budgets.DescribeBudgetActionsForBudgetInput, _ ...func(*budgets.Options)) (*budgets.DescribeBudgetActionsForBudgetOutput, error) {
+	a, ok := f.actions[aws.ToString(in.BudgetName)]
+	if !ok {
+		return &budgets.DescribeBudgetActionsForBudgetOutput{}, nil
+	}
+	return &budgets.DescribeBudgetActionsForBudgetOutput{Actions: []btypes.Action{a}}, nil
+}
+func (f *fakeAPI) CreateBudgetAction(_ context.Context, in *budgets.CreateBudgetActionInput, _ ...func(*budgets.Options)) (*budgets.CreateBudgetActionOutput, error) {
+	n := aws.ToString(in.BudgetName)
+	f.actions[n] = btypes.Action{ActionId: aws.String("act-" + n), ActionType: in.ActionType, ActionThreshold: in.ActionThreshold, Definition: in.Definition, ApprovalModel: in.ApprovalModel, Status: btypes.ActionStatusStandby}
+	return &budgets.CreateBudgetActionOutput{}, nil
+}
+func (f *fakeAPI) UpdateBudgetAction(_ context.Context, in *budgets.UpdateBudgetActionInput, _ ...func(*budgets.Options)) (*budgets.UpdateBudgetActionOutput, error) {
+	n := aws.ToString(in.BudgetName)
+	a := f.actions[n]
+	a.ActionThreshold, a.Definition, a.ApprovalModel = in.ActionThreshold, in.Definition, in.ApprovalModel
+	f.actions[n] = a
+	return &budgets.UpdateBudgetActionOutput{}, nil
+}
+func (f *fakeAPI) DeleteBudgetAction(_ context.Context, in *budgets.DeleteBudgetActionInput, _ ...func(*budgets.Options)) (*budgets.DeleteBudgetActionOutput, error) {
+	delete(f.actions, aws.ToString(in.BudgetName))
+	return &budgets.DeleteBudgetActionOutput{}, nil
+}
+func (f *fakeAPI) ExecuteBudgetAction(_ context.Context, in *budgets.ExecuteBudgetActionInput, _ ...func(*budgets.Options)) (*budgets.ExecuteBudgetActionOutput, error) {
+	if f.failExec {
+		return nil, errors.New("cannot reverse")
+	}
+	f.executed = append(f.executed, string(in.ExecutionType))
+	return &budgets.ExecuteBudgetActionOutput{}, nil
+}
+
+type fakeDetach struct{ detached []string }
+
+func (d *fakeDetach) DetachPolicy(_ context.Context, in *organizations.DetachPolicyInput, _ ...func(*organizations.Options)) (*organizations.DetachPolicyOutput, error) {
+	d.detached = append(d.detached, aws.ToString(in.PolicyId)+"@"+aws.ToString(in.TargetId))
+	return &organizations.DetachPolicyOutput{}, nil
+}
+
+func spec(enforce bool) guard.BudgetSpec {
+	return guard.BudgetSpec{
+		Name:         "guardrail-account-111122223333",
+		Target:       config.Target{Kind: "account", ID: "111122223333"},
+		Accounts:     []string{"111122223333"},
+		LimitUSD:     50000,
+		Period:       config.PeriodMonthly,
+		ThresholdPct: 90,
+		PolicyID:     "p-styleB",
+		Enforce:      enforce,
+	}
+}
+
+func newBudgets(api *fakeAPI, d *fakeDetach) *Budgets {
+	return &Budgets{API: api, Org: d, AccountID: "123456789012", ExecutionRoleARN: "arn:role", NotifyTopicARN: "arn:topic"}
+}
+
+func TestPutCreatesTaggedBudgetAndActionThenRoundTrips(t *testing.T) {
+	ctx := context.Background()
+	api := newFakeAPI()
+	b := newBudgets(api, &fakeDetach{})
+	if err := b.Put(ctx, spec(false)); err != nil {
+		t.Fatal(err)
+	}
+	a := api.actions["guardrail-account-111122223333"]
+	if a.ApprovalModel != btypes.ApprovalModelManual || a.ActionType != btypes.ActionTypeScp {
+		t.Fatalf("dry-run should be a manual SCP action: %+v", a)
+	}
+	got, err := b.ListOwned(ctx)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("list: %v %v", got, err)
+	}
+	s := got[0].Spec
+	want := spec(false)
+	if s.Name != want.Name || s.Target != want.Target || s.LimitUSD != want.LimitUSD || s.ThresholdPct != 90 || s.PolicyID != "p-styleB" || s.Enforce || s.Period != config.PeriodMonthly {
+		t.Fatalf("round trip: %+v", s)
+	}
+	if err := b.Put(ctx, spec(true)); err != nil {
+		t.Fatal(err)
+	}
+	if api.actions["guardrail-account-111122223333"].ApprovalModel != btypes.ApprovalModelAuto {
+		t.Fatal("enforce should switch to automatic")
+	}
+}
+
+func TestListOwnedSkipsUntaggedAndUnprefixed(t *testing.T) {
+	api := newFakeAPI()
+	api.budgets["team-budget"] = btypes.Budget{BudgetName: aws.String("team-budget")}
+	api.budgets["guardrail-account-999"] = btypes.Budget{BudgetName: aws.String("guardrail-account-999")} // no tag
+	got, err := newBudgets(api, &fakeDetach{}).ListOwned(context.Background())
+	if err != nil || len(got) != 0 {
+		t.Fatalf("got %v %v", got, err)
+	}
+}
+
+func TestThresholdChangeReplacesNotification(t *testing.T) {
+	ctx := context.Background()
+	api := newFakeAPI()
+	b := newBudgets(api, &fakeDetach{})
+	_ = b.Put(ctx, spec(false))
+	s := spec(false)
+	s.ThresholdPct = 80
+	_ = b.Put(ctx, s)
+	ns := api.notifs[s.Name]
+	if len(ns) != 1 || ns[0].Threshold != 80 {
+		t.Fatalf("notifications %+v", ns)
+	}
+}
+
+func TestReleaseReversesExecutedActionElseDetaches(t *testing.T) {
+	ctx := context.Background()
+	api := newFakeAPI()
+	d := &fakeDetach{}
+	b := newBudgets(api, d)
+	_ = b.Put(ctx, spec(true))
+	a := api.actions["guardrail-account-111122223333"]
+	a.Status = btypes.ActionStatusExecutionSuccess
+	api.actions["guardrail-account-111122223333"] = a
+
+	how, err := b.Release(ctx, spec(true))
+	if err != nil || how != "reverse_budget_action" || len(api.executed) != 1 {
+		t.Fatalf("how %s err %v", how, err)
+	}
+	api.failExec = true
+	how, err = b.Release(ctx, spec(true))
+	if err != nil || how != "detach_policy" || d.detached[0] != "p-styleB@111122223333" {
+		t.Fatalf("fallback: %s %v %v", how, err, d.detached)
+	}
+}
+
+func TestDeleteRemovesActionThenBudget(t *testing.T) {
+	ctx := context.Background()
+	api := newFakeAPI()
+	b := newBudgets(api, &fakeDetach{})
+	_ = b.Put(ctx, spec(true))
+	if err := b.Delete(ctx, "guardrail-account-111122223333"); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.actions) != 0 || len(api.budgets) != 0 {
+		t.Fatal("not deleted")
+	}
+}
+
+func TestBudgetNameFromNotification(t *testing.T) {
+	text := "AWS Budget Notification November 10, 2026\nAWS Account 123456789012\n\nDear AWS Customer,\n\nBudget Name: guardrail-account-111122223333\nBudget Type: Cost\n"
+	if n, err := BudgetNameFromNotification(text); err != nil || n != "guardrail-account-111122223333" {
+		t.Fatalf("text: %q %v", n, err)
+	}
+	if n, err := BudgetNameFromNotification(`{"budgetName":"guardrail-ou-ou-ab12-cd34ef56"}`); err != nil || n != "guardrail-ou-ou-ab12-cd34ef56" {
+		t.Fatalf("json: %q %v", n, err)
+	}
+	if _, err := BudgetNameFromNotification("hello"); err == nil {
+		t.Fatal("want error")
+	}
+}
