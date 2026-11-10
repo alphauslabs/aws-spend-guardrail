@@ -74,7 +74,7 @@ The approval settings are stack parameters on purpose: changing them takes a sta
 
 ## What the stack creates
 
-- Two freeze SCPs, unattached: style A (deny cost-creating actions) and style B (deny all but reads, cost-reducing actions, and support, billing and security tooling).
+- Two freeze SCPs, unattached: style A (deny cost-creating actions) and style B (deny all but reads and cost-reducing actions of common services, and support, billing and security tooling; unlisted services are blocked entirely).
 - The role AWS Budgets assumes to attach them.
 - The guard function, run every 5 minutes and daily, and on budget notifications.
 - A DynamoDB table for the guard's state, an SQS outbox for events (with a dead-letter queue and an alarm), and an SNS alert topic.

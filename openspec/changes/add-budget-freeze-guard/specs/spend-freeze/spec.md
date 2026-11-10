@@ -18,7 +18,7 @@ The guard SHALL be installed by one CloudFormation stack in the payer (managemen
 - **THEN** no stack update is needed, and the stack's resources are unchanged
 
 ### Requirement: Two freeze styles exist as unattached policies
-The stack SHALL create two freeze policies, both unattached at install. Style A SHALL deny a fixed list of actions that create cost. Style B SHALL deny every action except reads, actions that reduce cost (stop, terminate, delete), and support, billing and security tooling. Each scope SHALL select one style.
+The stack SHALL create two freeze policies, both unattached at install. Style A SHALL deny a fixed list of actions that create cost. Style B SHALL deny every action except, for a listed set of common services, reads and actions that reduce cost (stop, terminate, delete), and SHALL allow support, billing, cost and security tooling in full. Each scope SHALL select one style.
 
 #### Scenario: Style B blocks a new launch
 - **WHEN** an account frozen with style B calls `ec2:RunInstances`
@@ -27,6 +27,10 @@ The stack SHALL create two freeze policies, both unattached at install. Style A 
 #### Scenario: Style B allows cleanup
 - **WHEN** an account frozen with style B calls `ec2:StopInstances` or `ec2:DescribeInstances`
 - **THEN** the call is not denied by the freeze policy
+
+#### Scenario: Style B blocks an unlisted service
+- **WHEN** an account frozen with style B calls any action of a service that is not on the list, including a read
+- **THEN** the call is denied, so a service the list misses is blocked rather than allowed
 
 #### Scenario: Style A allows a deploy that adds no listed cost
 - **WHEN** an account frozen with style A updates a Lambda function's code

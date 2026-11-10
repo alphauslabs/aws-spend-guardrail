@@ -28,7 +28,7 @@ payer (management) account, one stack per AWS organization
   freeze SCP attached to the account or OU
 ```
 
-- **Freeze Policies:** A freeze SCP blocks actions that create new cost. Style A denies specific cost-creating actions. Style B denies everything except reads, teardown actions (stop, terminate, and delete), and support, billing, and security tooling.
+- **Freeze Policies:** A freeze SCP blocks actions that create new cost. Style A denies specific cost-creating actions. Style B denies everything except reads and teardown actions (stop, terminate, and delete) of common services, and support, billing, and security tooling. Unlisted services are blocked entirely while frozen.
 - **Dry-Run Mode:** New scopes start in dry-run mode and log `would_freeze` events until switched to enforce.
 - **Asymmetric Updates:** Lowering a limit takes effect within minutes. Raising a limit, removing a scope, or switching to dry-run requires approval in Jennah (from approvers defined in the CloudFormation stack) followed by a cooldown delay.
 - **Offline Enforcement:** If Jennah is unreachable or a new config is invalid, the guard keeps the last valid config. Because AWS Budgets applies the SCP directly, freezes still trigger even if Jennah is down.
