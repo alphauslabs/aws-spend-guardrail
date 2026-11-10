@@ -235,6 +235,14 @@ func linkedAccounts(e *btypes.Expression) []string {
 	return out
 }
 
+// isPercentage reports whether a stored notification's threshold is a
+// percentage. Budgets leaves the type out when it is PERCENTAGE, its default,
+// so an empty type counts as one. Without this every run would replace the
+// notification, which resets the budget's calculated spend.
+func isPercentage(t btypes.ThresholdType) bool {
+	return t == btypes.ThresholdTypePercentage || t == ""
+}
+
 func (b *Budgets) notificationThreshold(ctx context.Context, name string) (int, error) {
 	out, err := b.API.DescribeNotificationsForBudget(ctx, &budgets.DescribeNotificationsForBudgetInput{
 		AccountId: aws.String(b.AccountID), BudgetName: aws.String(name),
@@ -247,7 +255,7 @@ func (b *Budgets) notificationThreshold(ctx context.Context, name string) (int, 
 		return 0, err
 	}
 	for _, n := range out.Notifications {
-		if n.NotificationType == btypes.NotificationTypeActual && n.ThresholdType == btypes.ThresholdTypePercentage {
+		if n.NotificationType == btypes.NotificationTypeActual && isPercentage(n.ThresholdType) {
 			return int(n.Threshold), nil
 		}
 	}
@@ -381,7 +389,7 @@ func (b *Budgets) syncNotification(ctx context.Context, s guard.BudgetSpec) erro
 	want := b.notification(s)
 	if out != nil {
 		for _, n := range out.Notifications {
-			if n.Threshold == want.Threshold && n.NotificationType == want.NotificationType && n.ThresholdType == want.ThresholdType {
+			if n.Threshold == want.Threshold && n.NotificationType == want.NotificationType && isPercentage(n.ThresholdType) {
 				return nil
 			}
 			n := n

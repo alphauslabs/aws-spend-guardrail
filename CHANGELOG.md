@@ -4,6 +4,9 @@ Every release has an entry here. Each entry has a **Security-relevant** section 
 
 ## [Unreleased]
 
+### Fixed
+- The guard no longer replaces each budget's notification on every run. AWS Budgets omits a percentage threshold type from what it returns, so the guard saw every notification as changed, and replacing it reset the budget's calculated spend to zero, which kept spend from ever reaching the threshold.
+
 ## [v0.0.1] - 2026-11-10
 
 Test release of the release workflow. Not for deployment.

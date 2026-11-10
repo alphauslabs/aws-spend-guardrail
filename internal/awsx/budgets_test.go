@@ -21,6 +21,18 @@ type fakeAPI struct {
 	executed []string
 	failExec bool
 	updates  int
+	// notifWrites counts notification creates and deletes. AWS resets a
+	// budget's calculated spend when its notifications change.
+	notifWrites int
+}
+
+// stored mimics what Budgets returns for a notification: a PERCENTAGE
+// threshold type, being the default, is left out.
+func stored(n btypes.Notification) btypes.Notification {
+	if n.ThresholdType == btypes.ThresholdTypePercentage {
+		n.ThresholdType = ""
+	}
+	return n
 }
 
 func newFakeAPI() *fakeAPI {
@@ -52,7 +64,7 @@ func (f *fakeAPI) CreateBudget(_ context.Context, in *budgets.CreateBudgetInput,
 		}
 	}
 	for _, ns := range in.NotificationsWithSubscribers {
-		f.notifs[n] = append(f.notifs[n], *ns.Notification)
+		f.notifs[n] = append(f.notifs[n], stored(*ns.Notification))
 	}
 	return &budgets.CreateBudgetOutput{}, nil
 }
@@ -83,11 +95,13 @@ func (f *fakeAPI) DescribeNotificationsForBudget(_ context.Context, in *budgets.
 }
 func (f *fakeAPI) CreateNotification(_ context.Context, in *budgets.CreateNotificationInput, _ ...func(*budgets.Options)) (*budgets.CreateNotificationOutput, error) {
 	n := aws.ToString(in.BudgetName)
-	f.notifs[n] = append(f.notifs[n], *in.Notification)
+	f.notifs[n] = append(f.notifs[n], stored(*in.Notification))
+	f.notifWrites++
 	return &budgets.CreateNotificationOutput{}, nil
 }
 func (f *fakeAPI) DeleteNotification(_ context.Context, in *budgets.DeleteNotificationInput, _ ...func(*budgets.Options)) (*budgets.DeleteNotificationOutput, error) {
 	f.notifs[aws.ToString(in.BudgetName)] = nil
+	f.notifWrites++
 	return &budgets.DeleteNotificationOutput{}, nil
 }
 func (f *fakeAPI) DescribeBudgetActionsForBudget(_ context.Context, in *budgets.DescribeBudgetActionsForBudgetInput, _ ...func(*budgets.Options)) (*budgets.DescribeBudgetActionsForBudgetOutput, error) {
@@ -226,6 +240,35 @@ func TestThresholdChangeReplacesNotification(t *testing.T) {
 	ns := api.notifs[s.Name]
 	if len(ns) != 1 || ns[0].Threshold != 80 {
 		t.Fatalf("notifications %+v", ns)
+	}
+}
+
+// Budgets leaves a PERCENTAGE threshold type out of what it returns. An
+// unchanged budget must still be left alone on every run: rewriting its
+// notification resets the budget's calculated spend, so it would never reach
+// its threshold. Seen live on 2026-11-10, when every 5-minute run recreated
+// every notification and actual spend stayed at 0.
+func TestUnchangedBudgetWritesNothing(t *testing.T) {
+	ctx := context.Background()
+	for _, s := range []guard.BudgetSpec{dryRunSpec(), spec(true)} {
+		api := newFakeAPI()
+		b := newBudgets(api, &fakeDetach{})
+		if err := b.Put(ctx, s); err != nil {
+			t.Fatal(err)
+		}
+		api.notifWrites, api.updates = 0, 0
+		for i := 0; i < 3; i++ {
+			if err := b.Put(ctx, s); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if api.notifWrites != 0 || api.updates != 0 {
+			t.Fatalf("enforce=%v: unchanged budget rewrote %d notification(s) and %d budget(s)", s.Enforce, api.notifWrites, api.updates)
+		}
+		got, err := b.ListOwned(ctx)
+		if err != nil || len(got) != 1 || got[0].Spec.ThresholdPct != 90 {
+			t.Fatalf("enforce=%v: threshold not read back from the stored notification: %+v %v", s.Enforce, got, err)
+		}
 	}
 }
 
