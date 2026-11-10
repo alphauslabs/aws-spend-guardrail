@@ -56,6 +56,7 @@ The config dataset has one table, `config_versions (version INT64 PK, document J
 ### D6. Effective config = stricter of applied and desired, until approved
 The guard keeps its state in a DynamoDB table in the payer account: the applied version and the effective config, the pending loosening version (if any) with its approval id and when it was first seen, and one item per frozen scope. (An SSM parameter was the first idea, but its 4 to 8 KB limit holds only a few dozen scopes, and one item per frozen scope means the notification handler and the scheduled pull never write the same item.) On each pull:
 
+0. If reading from Jennah fails, keep the effective config and record when failures started in the state item. Alert when they start, remind at most every 6 hours, and alert once on recovery, rather than on every 5-minute pull (about 288 alerts a day otherwise).
 1. Validate the newest version. If invalid: record `config_rejected`, keep the applied config.
 2. Diff it against the applied config scope by scope, classifying each field as tightening or loosening (rules in `guard-config`).
 3. Build the effective config: for each field, the stricter of applied and new. Apply it at once.

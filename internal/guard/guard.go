@@ -51,6 +51,12 @@ type State struct {
 	RejectedVersion int64 `json:"rejected_version,omitempty"`
 	// Pending is the loosening version awaiting approval, if any.
 	Pending *Pending `json:"pending,omitempty"`
+	// FailingSince is when config refresh from Jennah started failing; zero
+	// while it works. LastFailureAlert is when the last alert about it went
+	// out. Together they keep an outage to one alert, a reminder every few
+	// hours, and one recovery alert.
+	FailingSince     time.Time `json:"failing_since,omitempty"`
+	LastFailureAlert time.Time `json:"last_failure_alert,omitempty"`
 }
 
 // Pending is a loosening version and its approval.

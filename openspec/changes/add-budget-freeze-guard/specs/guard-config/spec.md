@@ -46,6 +46,21 @@ If the newest version is invalid, or Jennah cannot be reached, the guard SHALL k
 - **WHEN** the guard function starts and cannot reach Jennah
 - **THEN** it reconciles from the last applied config held in the payer account and alerts locally
 
+### Requirement: An outage is alerted once, not on every pull
+When refreshing config from Jennah starts failing, the guard SHALL publish one local alert. While it keeps failing, it SHALL publish a reminder at most every 6 hours, saying since when. When a refresh succeeds again, it SHALL publish one alert saying it recovered and for how long it was failing. The outage state SHALL survive a restart.
+
+#### Scenario: A two-hour outage
+- **WHEN** every pull fails for two hours, then one succeeds
+- **THEN** exactly two alerts are sent: one when the failures start, and one on recovery naming the duration
+
+#### Scenario: A long outage
+- **WHEN** pulls keep failing for 13 hours
+- **THEN** one alert is sent at the start and reminders after 6 and 12 hours, and no others
+
+#### Scenario: A restart during an outage
+- **WHEN** the function restarts while pulls are failing
+- **THEN** it does not send a new "started failing" alert
+
 ### Requirement: The guard pulls config on a schedule
 The guard SHALL check for a newer config version at least every 5 minutes. Jennah SHALL never push to or call into the payer account.
 

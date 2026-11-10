@@ -36,6 +36,7 @@
 
 - [x] 4.1 Implement the state held in DynamoDB (applied config, pending loosening, first-seen time, frozen scopes) and the pull loop: validate, merge, apply, keep the last valid config when Jennah is unreachable or the version is invalid; verify unit tests with a fake Jennah for an invalid version, an unreachable Jennah and a restart
 - [x] 4.2 Implement loosening approvals: one approval per version with a request key derived from payer account and version, summary listing the loosening differences, delay before applying, and cancellation when superseded; verify tests for approved, rejected, expired and superseded approvals and that a repeated pull raises no second approval
+- [x] 4.3 Alert once when config refresh starts failing, remind at most every 6 hours, and alert once on recovery, with the outage start kept in state; verify tests for a two-hour outage (two alerts), a 13-hour outage (start plus two reminders), and a restart during an outage (no new start alert)
 
 ## 5. Guard: budgets, freeze and lift
 

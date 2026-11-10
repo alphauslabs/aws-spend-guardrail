@@ -2,6 +2,7 @@ package guard
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -229,5 +230,64 @@ func TestPullErrorDoesNotLoseState(t *testing.T) {
 	_ = h.g.Pull(context.Background())
 	if h.st().AppliedVersion != 1 {
 		t.Fatal("state lost")
+	}
+}
+
+func countAlerts(h *harness, substr string) int {
+	n := 0
+	for _, a := range h.alerts.list {
+		if strings.Contains(a, substr) {
+			n++
+		}
+	}
+	return n
+}
+
+func pullEvery5Minutes(h *harness, d time.Duration) {
+	for end := h.now.Add(d); h.now.Before(end); h.now = h.now.Add(5 * time.Minute) {
+		_ = h.g.Pull(context.Background())
+	}
+}
+
+func TestTwoHourOutageSendsTwoAlerts(t *testing.T) {
+	h := newHarness(t)
+	h.publish(doc("50000", "50000"))
+	h.pull()
+	h.jennah.FailReads = true
+	pullEvery5Minutes(h, 2*time.Hour)
+	h.jennah.FailReads = false
+	h.pull()
+	if n := countAlerts(h, "config not refreshed"); n != 1 {
+		t.Fatalf("want 1 start alert, got %d: %v", n, h.alerts.list)
+	}
+	if n := countAlerts(h, "still not refreshed"); n != 0 {
+		t.Fatalf("no reminder within 6 hours, got %d", n)
+	}
+	if n := countAlerts(h, "recovered"); n != 1 || !strings.Contains(strings.Join(h.alerts.list, "\n"), "2h0m0s") {
+		t.Fatalf("want 1 recovery alert naming the duration: %v", h.alerts.list)
+	}
+}
+
+func TestLongOutageRemindsEverySixHours(t *testing.T) {
+	h := newHarness(t)
+	h.publish(doc("50000", "50000"))
+	h.pull()
+	h.jennah.FailReads = true
+	pullEvery5Minutes(h, 13*time.Hour)
+	if start, rem := countAlerts(h, "config not refreshed"), countAlerts(h, "still not refreshed"); start != 1 || rem != 2 {
+		t.Fatalf("want 1 start and 2 reminders, got %d and %d", start, rem)
+	}
+}
+
+func TestRestartDuringOutageSendsNoNewStartAlert(t *testing.T) {
+	h := newHarness(t)
+	h.publish(doc("50000", "50000"))
+	h.pull()
+	h.jennah.FailReads = true
+	pullEvery5Minutes(h, 30*time.Minute)
+	h.g = h.newGuard() // a fresh process, same state store
+	pullEvery5Minutes(h, 30*time.Minute)
+	if n := countAlerts(h, "config not refreshed"); n != 1 {
+		t.Fatalf("a restart should not repeat the start alert, got %d", n)
 	}
 }

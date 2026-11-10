@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/alphauslabs/aws-spend-guardrail/config"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
@@ -19,9 +20,7 @@ func (g *Guard) Pull(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load state: %w", err)
 	}
-	if err := g.evaluate(ctx, st); err != nil {
-		g.alert(ctx, "guardrail: config not refreshed", err.Error()+"; the last valid config stays in force")
-	}
+	g.trackRefresh(ctx, st, g.evaluate(ctx, st))
 	if err := g.State.Save(ctx, st); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
@@ -29,6 +28,36 @@ func (g *Guard) Pull(ctx context.Context) error {
 		return nil // nothing configured yet
 	}
 	return g.Reconcile(ctx, st.Effective)
+}
+
+// OutageReminder is how often an ongoing config refresh failure is alerted
+// again.
+const OutageReminder = 6 * time.Hour
+
+// trackRefresh alerts when config refresh starts failing, reminds at most
+// every OutageReminder while it keeps failing, and alerts once on recovery.
+func (g *Guard) trackRefresh(ctx context.Context, st *State, err error) {
+	now := g.now()
+	if err == nil {
+		if !st.FailingSince.IsZero() {
+			g.alert(ctx, "guardrail: config refresh recovered", fmt.Sprintf(
+				"config refresh from Jennah works again after failing for %s (since %s)",
+				now.Sub(st.FailingSince).Round(time.Minute), st.FailingSince.Format(time.RFC3339)))
+		}
+		st.FailingSince, st.LastFailureAlert = time.Time{}, time.Time{}
+		return
+	}
+	switch {
+	case st.FailingSince.IsZero():
+		st.FailingSince, st.LastFailureAlert = now, now
+		g.alert(ctx, "guardrail: config not refreshed",
+			err.Error()+"; the last valid config stays in force. You'll get a reminder every 6 hours while this lasts, and an alert when it recovers.")
+	case now.Sub(st.LastFailureAlert) >= OutageReminder:
+		st.LastFailureAlert = now
+		g.alert(ctx, "guardrail: config still not refreshed", fmt.Sprintf(
+			"config refresh from Jennah has been failing since %s (%s); the last valid config stays in force. Latest error: %v",
+			st.FailingSince.Format(time.RFC3339), now.Sub(st.FailingSince).Round(time.Minute), err))
+	}
 }
 
 func (g *Guard) evaluate(ctx context.Context, st *State) error {
