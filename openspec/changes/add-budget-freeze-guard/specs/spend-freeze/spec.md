@@ -37,11 +37,15 @@ The stack SHALL create two freeze policies, both unattached at install. Style A 
 - **THEN** the call is not denied by the freeze policy
 
 ### Requirement: The guard reconciles budgets from config
-For every scope in the applied config, the guard SHALL ensure exactly one AWS cost budget it owns, limited to that scope, with the configured ceiling and period, and one action that attaches the scope's freeze policy at the configured threshold. Budgets the guard owns that no longer match any scope SHALL be deleted. Budgets it does not own SHALL never be changed.
+For every scope in the applied config, the guard SHALL ensure exactly one AWS cost budget it owns, limited to that scope, with the configured ceiling, period and threshold, and, for a scope in `enforce` mode, one action that attaches the scope's freeze policy at that threshold. A scope in `dry-run` mode SHALL have no budget action. Budgets the guard owns that no longer match any scope SHALL be deleted. Budgets it does not own SHALL never be changed.
 
 #### Scenario: A new scope gets a budget
-- **WHEN** an applied config adds a scope for account `111122223333` with a monthly ceiling of 50000 USD and a threshold of 90%
+- **WHEN** an applied config adds a scope in `enforce` mode for account `111122223333` with a monthly ceiling of 50000 USD and a threshold of 90%
 - **THEN** the guard creates one budget for that account with limit 50000 USD and one action that attaches the scope's freeze policy at 90% of actual cost
+
+#### Scenario: A dry-run scope gets no action
+- **WHEN** an applied config adds a scope in `dry-run` mode
+- **THEN** the guard creates its budget and its notification at the threshold, and no budget action
 
 #### Scenario: A customer's own budget is left alone
 - **WHEN** the payer account has a budget the guard did not create
@@ -80,11 +84,19 @@ A config that names the payer account, or the organization root, as a scope SHAL
 - **THEN** the version is refused as invalid and the previous config stays applied
 
 ### Requirement: Dry-run records a freeze without making it
-A scope in `dry-run` mode SHALL have its budget and threshold reconciled like an enforcing scope, but no freeze policy SHALL be attached. When its threshold is reached, the guard SHALL record a `would_freeze` event.
+A scope in `dry-run` mode SHALL have its budget, ceiling, threshold and notification reconciled like an enforcing scope, but no budget action, so no freeze policy can be attached and the budget is not billed as an action-enabled budget. When its threshold is reached, the guard SHALL record a `would_freeze` event.
 
 #### Scenario: A dry-run scope crosses its threshold
 - **WHEN** a dry-run scope's actual cost reaches its threshold
 - **THEN** no freeze policy is attached and a `would_freeze` event naming the scope, ceiling and actual cost is recorded
+
+#### Scenario: Switching to enforce adds the action
+- **WHEN** an applied version moves a scope from `dry-run` to `enforce`
+- **THEN** the next reconcile creates the scope's freeze action at its threshold
+
+#### Scenario: Switching back to dry-run removes the action
+- **WHEN** an applied version moves a scope from `enforce` to `dry-run`, after its loosening approval
+- **THEN** the next reconcile deletes the scope's freeze action and keeps its budget and notification
 
 #### Scenario: New scopes start in dry-run
 - **WHEN** a config version adds a scope without stating its mode

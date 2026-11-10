@@ -4,7 +4,7 @@
 
 - [ ] 1.1 In a test AWS organization, confirm each fact the design relies on, and record results in `docs/aws-facts.md`:
   - a Budgets action of type `APPLY_SCP_POLICY` can target a member account and an OU;
-  - a `MANUAL` action stays pending without attaching;
+  - an action added to a budget that is already above its threshold runs (a dry-run scope over budget that moves to enforce must still freeze);
   - `ExecuteBudgetAction` with `REVERSE_BUDGET_ACTION` detaches the policy;
   - what happens to an executed action at the start of a new period;
   - how many actions one budget may have, and the budgets-per-account limit;
@@ -44,6 +44,7 @@
 - [x] 5.3 Implement dry-run (manual-approval action plus notification, design D2) and the notification handler that records `freeze` or `would_freeze` and publishes the local alert; verify handler tests for both modes
 - [x] 5.4 Implement lifting: on an applied raise when actual cost is below the new threshold, and at period start for `auto_lift`, reverse the action or detach as task 1.1 decided; verify tests for a raise that lifts, a raise still too low, `auto_lift` and `stay_frozen`
 - [x] 5.5 Implement the daily drift check and heartbeat; verify a test where a hand-detached policy produces one `drift` event and no re-attachment
+- [ ] 5.6 Give budget actions only to enforcing scopes (design D2): no action for a dry-run scope, add the action when a scope moves to enforce, and remove it when it goes back to dry-run; verify unit tests for both switches and that a dry-run budget has no action
 
 ## 6. Guard: events to Jennah
 
@@ -53,7 +54,7 @@
 
 - [ ] 7.1 Write the template: both freeze policies, the Budgets execution role, the function and its role, schedules, the notification topic, the outbox queue and dead-letter queue, the local alert topic, the state parameter, secret references, the loosening approval parameters, and a delete-time custom resource that detaches freezes and removes owned budgets; verify `cfn-lint` passes and the template deploys and deletes cleanly in the test organization
 - [x] 7.2 Add an install check that reports targets with no free SCP slot; verify it reports a target that already has 5 SCPs
-- [ ] 7.3 Document the install, the stack parameters, the IAM policy that protects the config-source settings in the payer account, and the known gaps (service-linked role scale-out, usage of existing resources, Budgets lag); verify the doc's steps against a fresh install
+- [ ] 7.3 Document the install, the stack parameters, the IAM policy that protects the config-source settings in the payer account, and the known gaps (service-linked role scale-out, usage of existing resources, Budgets lag), and what AWS Budgets costs per enforcing scope with the advice to prefer OU scopes; verify the doc's steps against a fresh install
 
 ## 8. Integration
 

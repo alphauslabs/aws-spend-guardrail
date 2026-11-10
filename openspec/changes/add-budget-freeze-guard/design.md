@@ -29,14 +29,16 @@ See proposal.md for why. The repo is new and empty. Constraints that shape the a
 ## Decisions
 
 ### D1. Budgets actions do the freeze; the guard only reconciles
-The guard turns config into one cost budget per scope and one action per budget (`APPLY_SCP_POLICY`, threshold as a percentage of the budget, `AUTOMATIC` approval model in enforce mode). Budgets evaluates spend and attaches the policy itself.
+The guard turns config into one cost budget per scope and, for each enforcing scope, one action (`APPLY_SCP_POLICY`, threshold as a percentage of the budget, `AUTOMATIC` approval model). Budgets evaluates spend and attaches the policy itself.
 
 *Alternative:* the guard watches spend and attaches the SCP. Rejected: it puts guard code and its failure modes on the freeze path, and Budgets already does this.
 
-### D2. Dry-run as a manual-approval action plus a notification
-A dry-run scope gets the same budget and an action with the `MANUAL` approval model, so the action goes into a pending state instead of executing. A budget notification at the same threshold goes to an SNS topic the guard subscribes to, and the guard records `would_freeze`. Switching to enforce changes only the approval model, so the dry-run tests the exact budget and threshold that will enforce.
+### D2. Dry-run as a plain budget with a notification
+A dry-run scope gets the same budget and a notification at the same threshold, sent to an SNS topic the guard subscribes to, and no budget action. When the threshold is crossed, the guard records `would_freeze`. Moving a scope to enforce adds its action on the next reconcile; moving it back removes the action.
 
-*Alternative:* dry-run budgets with notifications only and no action. Rejected: the action itself (its role, policy and target) would first be exercised on the day it goes live.
+The reason is cost. AWS bills budgets that have an action ("action-enabled") at about $0.10 per budget per day after the first two in an account, whether or not the action ever runs. Plain budgets with notifications are free in their basic form. With dry-run as the default and the recommended first month for every scope, a manual-approval action on each dry-run scope would cost about $3 a month per scope for an action that can never run: about $18 a month for 8 scopes, about $900 for 300.
+
+*Alternative:* dry-run with the same action set to the `MANUAL` approval model, so dry-run exercises the exact action that will enforce. Rejected for cost, above. The action is instead first created when a scope moves to enforce; the risk that brings is covered below.
 
 ### D3. Ownership by name prefix and tag
 Guard-owned budgets are named `guardrail-<scope id>` and tagged `guardrail:owned=true`. Reconcile lists budgets, considers only owned ones, and diffs them against the applied config. Customer budgets are never in the diff.
@@ -88,6 +90,8 @@ One Lambda (Go, `provided.al2023`, arm64) handles: the 5-minute schedule (pull c
 - [SCP limit of 5 per target, and policy size limits] → The guard uses at most one freeze policy per target. Style B is kept short. Install checks how many SCPs each target already has and reports targets with no free slot.
 - [A Jennah credential leak] → Neither credential can write config or decide an approval. The worst a writer can do is add fake events.
 - [The approval requester is the guard, so the person who published a loosening can also approve it] → Use `LooseningRequiredApprovals` of 2 for MSPs that need separation. A proper "not the publisher" rule needs the publisher's verified identity on the version, which Jennah doesn't record per row today.
+- [The freeze action is first created when a scope moves to enforce, so a problem with it (role, policy, target) shows up then, not during dry-run] → Creating the action is part of reconcile, which alerts locally on failure. The e2e test moves a scope from dry-run to enforce. Task 1.1 confirms that an action added to a budget already above its threshold still runs.
+- [Action-enabled budgets cost about $3 a month per enforcing scope after the first two] → Dry-run scopes have no action (D2). The docs recommend OU scopes, so one budget covers many accounts.
 - [Budgets measures AWS cost, not the price a distributor bills its customers] → Agreed with each distributor before any scope enforces. Out of scope here.
 
 ## Migration Plan
