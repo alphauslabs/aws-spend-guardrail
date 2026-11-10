@@ -40,18 +40,31 @@ Do this twice, once for the reader key and once for the writer key.
 ## 4. Upload the function package
 
 1. Open **S3** and choose **Create bucket**. Name it, for example, `guardrail-artifacts-<payer account id>`. Keep **Block all public access** on, and create it.
-2. Open the bucket and **Upload** `guard.zip` from the release you reviewed, under a folder named after its version (for example `guard/v0.1.0/guard.zip`).
-3. Note the bucket name and the object's **Key** (`guard/v0.1.0/guard.zip`).
+2. Open the bucket and **Upload** `guard.zip` and `template.yaml` from the release you reviewed, both into a folder named after its version (for example `guard/v0.1.0/`).
+3. Note the bucket name and the folder (`guard/v0.1.0`).
 
 ## 5. Create the stack
 
+### With an install link (easiest)
+
+If you were given an install link for this payer org, or someone with the `guardrail` CLI made one for you (see [operating](operating.md#make-an-install-link)):
+
+1. Make sure you're signed in to the payer account, in us-east-1, as the same user that uploaded the files.
+2. Open the link. The CloudFormation **Quick create stack** page opens with the template and every known parameter filled in.
+3. Check the values, fill in anything left empty (often the two secret ARNs from step 3), tick **I acknowledge that AWS CloudFormation might create IAM resources**, and choose **Create stack**.
+
+The link only works in the payer account it was made for. Opened in any other account, CloudFormation refuses it before creating anything.
+
+### Without a link
+
 1. Open **CloudFormation**, then **Create stack**, **With new resources (standard)**.
 2. **Upload a template file**, choose `template.yaml` from the same release, and choose **Next**.
-3. Stack name: `guardrail-<msp id>`. Fill in the parameters:
+3. Stack name: `guardrail-<msp id>`, with any `_` in the MSP id written as `-` (stack names can't contain underscores), for example `guardrail-msp-a`. Fill in the parameters:
 
    | Parameter | Value |
    |---|---|
    | `MSPId` | the MSP id used in Jennah |
+   | `ExpectedPayerAccountId` | this payer account's id (optional; refuses the stack in any other account) |
    | `JennahEndpoint` | leave empty |
    | `ReaderSecretArn`, `WriterSecretArn` | the two ARNs from step 3 |
    | `LooseningApprovers` | the emails that approve raising a limit, comma-separated |

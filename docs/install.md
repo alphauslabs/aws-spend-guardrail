@@ -59,6 +59,7 @@ Within 5 minutes the guard pulls the config and creates one budget per scope. Wa
 | Parameter | Default | Purpose |
 |---|---|---|
 | `MSPId` | | MSP id. With the payer account (taken from the stack's account), it names the Jennah datasets `guardrail.<MSPId>.<payer>.config` and `.inbox`. |
+| `ExpectedPayerAccountId` | empty | When set, the stack can only be created in this account. Install links always set it. |
 | `JennahEndpoint` | empty | Jennah gRPC endpoint as `host:port`. Empty uses Jennah's public endpoint. |
 | `ReaderSecretArn` | | Secret with the reader key. |
 | `WriterSecretArn` | | Secret with the writer key. |
@@ -96,26 +97,41 @@ For example, deny these to everyone except the pipeline role:
 ```json
 {
   "Version": "2012-10-17",
-  "Statement": [{
-    "Sid": "ProtectGuardrail",
-    "Effect": "Deny",
-    "Action": [
-      "cloudformation:UpdateStack", "cloudformation:DeleteStack", "cloudformation:CreateChangeSet", "cloudformation:ExecuteChangeSet",
-      "secretsmanager:PutSecretValue", "secretsmanager:UpdateSecret", "secretsmanager:DeleteSecret",
-      "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:UpdateItem",
-      "organizations:UpdatePolicy", "organizations:DeletePolicy"
-    ],
-    "Resource": [
-      "arn:aws:cloudformation:us-east-1:<payer>:stack/guardrail-msp-a/*",
-      "arn:aws:secretsmanager:us-east-1:<payer>:secret:guardrail/msp_a/*",
-      "<state table arn>",
-      "<freeze policy A arn>", "<freeze policy B arn>"
-    ],
-    "Condition": { "ArnNotLike": { "aws:PrincipalArn": [
-      "arn:aws:iam::<payer>:role/<pipeline role>",
-      "arn:aws:iam::<payer>:role/guardrail-*"
-    ] } }
-  }]
+  "Statement": [
+    {
+      "Sid": "ProtectGuardrail",
+      "Effect": "Deny",
+      "Action": [
+        "cloudformation:UpdateStack",
+        "cloudformation:DeleteStack",
+        "cloudformation:CreateChangeSet",
+        "cloudformation:ExecuteChangeSet",
+        "secretsmanager:PutSecretValue",
+        "secretsmanager:UpdateSecret",
+        "secretsmanager:DeleteSecret",
+        "dynamodb:PutItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:UpdateItem",
+        "organizations:UpdatePolicy",
+        "organizations:DeletePolicy"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:*:<payer>:stack/guardrail-msp-a/*",
+        "arn:aws:secretsmanager:*:<payer>:secret:guardrail/msp_a/*",
+        "<state table arn>",
+        "<freeze policy A arn>",
+        "<freeze policy B arn>"
+      ],
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::<payer>:role/<pipeline role>",
+            "arn:aws:iam::<payer>:role/guardrail-*"
+          ]
+        }
+      }
+    }
+  ]
 }
 ```
 

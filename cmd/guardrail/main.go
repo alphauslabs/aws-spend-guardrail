@@ -31,6 +31,10 @@ Usage:
   guardrail diff     --msp ID --payer ACCOUNT FILE
   guardrail publish  --msp ID --payer ACCOUNT [--note TEXT] FILE
   guardrail preflight --msp ID FILE   (run with AWS credentials for the payer account)
+  guardrail install-link --msp ID --payer ACCOUNT --bucket BUCKET --prefix guard/VERSION
+                     [--version V] [--reader-secret-arn ARN] [--writer-secret-arn ARN]
+                     [--approvers EMAIL,...] [--alert-email EMAIL]
+                     (prints a CloudFormation console link; needs no credentials)
   guardrail schema   (print the config JSON schema)
   guardrail version
 
@@ -55,6 +59,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return nil
 	}
 	cmd, rest := args[0], args[1:]
+	if cmd == "install-link" {
+		return installLink(rest, stdout, stderr)
+	}
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	msp := fs.String("msp", "", "MSP id")
@@ -171,5 +178,40 @@ func preflight(ctx context.Context, raw []byte, msp string, stdout io.Writer) er
 	if full > 0 {
 		return fmt.Errorf("%d target(s) have no free SCP slot; detach or merge an SCP on each before installing", full)
 	}
+	return nil
+}
+
+// installLink prints a CloudFormation quick-create link. It parses its own
+// flags because --version here is a release version, not a config version.
+func installLink(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("install-link", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	var o cli.LinkOptions
+	var approvers string
+	fs.StringVar(&o.MSP, "msp", "", "MSP id")
+	fs.StringVar(&o.Payer, "payer", "", "payer (management) account the stack is for")
+	fs.StringVar(&o.Bucket, "bucket", "", "your S3 bucket in us-east-1 holding the release files")
+	fs.StringVar(&o.Prefix, "prefix", "", "folder in the bucket with template.yaml and guard.zip, e.g. guard/v0.1.0")
+	fs.StringVar(&o.Version, "version", "", "release version, recorded with every event")
+	fs.StringVar(&o.ReaderSecretARN, "reader-secret-arn", "", "Secrets Manager ARN of the reader key")
+	fs.StringVar(&o.WriterSecretARN, "writer-secret-arn", "", "Secrets Manager ARN of the writer key")
+	fs.StringVar(&approvers, "approvers", "", "comma-separated emails that approve loosening")
+	fs.StringVar(&o.AlertEmail, "alert-email", "", "email for local alerts")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
+	}
+	for _, a := range strings.Split(approvers, ",") {
+		if a = strings.TrimSpace(a); a != "" {
+			o.Approvers = append(o.Approvers, a)
+		}
+	}
+	link, err := cli.InstallLink(o)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, link)
 	return nil
 }

@@ -57,6 +57,19 @@ What happens next is in [config](config.md): tightening applies within about 5 m
 
 The format of the document, and every field, is in [config](config.md).
 
+## Make an install link
+
+Whoever installs the stack in the AWS console can do it from a link that fills in the form. Make it after the release files are in the client's bucket. It needs no AWS or Jennah credentials:
+
+```
+guardrail install-link --msp msp_a --payer 123456789012 \
+  --bucket guardrail-artifacts-123456789012 --prefix guard/v0.1.0 --version v0.1.0 \
+  --reader-secret-arn <reader secret arn> --writer-secret-arn <writer secret arn> \
+  --approvers finops-lead@example.com --alert-email oncall@example.com
+```
+
+It prints one URL. Options you leave out stay empty in the console form. The link holds no secrets, only ARNs and emails, and the command refuses a Jennah key given as any option. The link sets `ExpectedPayerAccountId`, so it can only create the stack in that payer account. See [install from the console](install-console.md).
+
 ## Before installing: check SCP slots
 
 AWS allows 5 SCPs attached directly to one account or OU. A target that already has 5 can't take a freeze policy. With AWS credentials for the payer account:

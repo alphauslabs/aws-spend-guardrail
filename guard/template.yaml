@@ -8,7 +8,7 @@ Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label: { default: Jennah }
-        Parameters: [MSPId, JennahEndpoint, ReaderSecretArn, WriterSecretArn]
+        Parameters: [MSPId, ExpectedPayerAccountId, JennahEndpoint, ReaderSecretArn, WriterSecretArn]
       - Label: { default: Loosening approvals (kept here so a Jennah credential cannot change them) }
         Parameters: [LooseningApprovers, LooseningRequiredApprovals, LooseningApprovalWindow, LooseningDelay]
       - Label: { default: Function package }
@@ -21,6 +21,11 @@ Parameters:
     Type: String
     Description: MSP id. With this payer account it names the Jennah datasets guardrail.<id>.<payer>.config and .inbox. One MSP may have several payer orgs, each with its own stack.
     AllowedPattern: "^[a-z0-9]([a-z0-9_-]{0,88}[a-z0-9])?$"
+  ExpectedPayerAccountId:
+    Type: String
+    Default: ""
+    AllowedPattern: "^([0-9]{12})?$"
+    Description: Optional. When set, the stack can only be created in this account, so an install link made for one payer org can't install the guard in another. Install links always set it.
   JennahEndpoint:
     Type: String
     Default: ""
@@ -69,6 +74,11 @@ Rules:
     Assertions:
       - Assert: !Equals [!Ref AWS::Region, us-east-1]
         AssertDescription: Deploy in us-east-1. AWS Budgets is served from there.
+  RightAccount:
+    RuleCondition: !Not [!Equals [!Ref ExpectedPayerAccountId, ""]]
+    Assertions:
+      - Assert: !Equals [!Ref ExpectedPayerAccountId, !Ref AWS::AccountId]
+        AssertDescription: This install is for another payer account. Sign in to the payer account named in ExpectedPayerAccountId.
 
 Conditions:
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]

@@ -7,11 +7,11 @@ Lets someone who doesn't use the AWS CLI install the guard in a payer account fr
 ## ADDED Requirements
 
 ### Requirement: The CLI prints a quick-create link
-`guardrail install-link` SHALL print a CloudFormation console quick-create URL for us-east-1. The URL SHALL name the template in the client's S3 bucket under a given prefix, set the stack name to `guardrail-<msp id>`, set `MSPId`, `ExpectedPayerAccountId`, `FunctionPackageBucket` and `FunctionPackageKey`, and set every other parameter given on the command line.
+`guardrail install-link` SHALL print a CloudFormation console quick-create URL for us-east-1. The URL SHALL name the template in the client's S3 bucket under a given prefix, set the stack name to `guardrail-<msp id>` with any `_` turned into `-` (stack names allow only letters, digits and hyphens), set `MSPId`, `ExpectedPayerAccountId`, `FunctionPackageBucket` and `FunctionPackageKey`, and set every other parameter given on the command line.
 
 #### Scenario: A link with everything known
 - **WHEN** an operator runs `guardrail install-link --msp msp_a --payer 123456789012 --bucket guardrail-artifacts-123456789012 --prefix guard/v0.1.0 --version v0.1.0 --approvers a@example.com,b@example.com`
-- **THEN** the printed URL opens the us-east-1 CloudFormation quick-create page for template `guard/v0.1.0/template.yaml` in that bucket, with stack name `guardrail-msp_a`, `FunctionPackageKey` `guard/v0.1.0/guard.zip`, `GuardVersion` `v0.1.0`, and both approvers filled in
+- **THEN** the printed URL opens the us-east-1 CloudFormation quick-create page for template `guard/v0.1.0/template.yaml` in that bucket, with stack name `guardrail-msp-a`, `FunctionPackageKey` `guard/v0.1.0/guard.zip`, `GuardVersion` `v0.1.0`, and both approvers filled in
 
 #### Scenario: Unknown values are left for the form
 - **WHEN** the operator gives no secret ARNs
