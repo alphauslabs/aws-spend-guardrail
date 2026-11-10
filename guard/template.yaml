@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   aws-spend-guardrail guard for one payer (management) account. Freezes new spend
   in an account or OU when its AWS Budgets ceiling is reached. Config, loosening
-  approvals and the record of every freeze live in Jennah.
+  approvals, and the record of every freeze live in Jennah.
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -27,7 +27,7 @@ Parameters:
     Description: Jennah gRPC endpoint as host:port. Leave empty for Jennah's public endpoint (the SDK default).
   ReaderSecretArn:
     Type: String
-    Description: Secrets Manager secret holding the reader API key (read config, create, read and cancel approvals).
+    Description: Secrets Manager secret holding the reader API key (read config; create, read, and cancel approvals).
   WriterSecretArn:
     Type: String
     Description: Secrets Manager secret holding the writer API key (write the inbox only).
@@ -157,7 +157,7 @@ Resources:
     Type: AWS::Organizations::Policy
     Properties:
       Name: !Sub guardrail-freeze-b-${MSPId}
-      Description: aws-spend-guardrail freeze style B. Denies everything except reads and cleanup of common services, and support, billing, cost and security tooling.
+      Description: aws-spend-guardrail freeze style B. Denies everything except reads and cleanup of common services, and support, billing, cost, and security tooling.
       Type: SERVICE_CONTROL_POLICY
       Content:
         Version: "2012-10-17"
@@ -648,7 +648,7 @@ Resources:
       Role: !GetAtt GuardRole.Arn
       MemorySize: 256
       Timeout: 120
-      # One invocation at a time: a pull, a notification and an outbox batch
+      # One invocation at a time: a pull, a notification, and an outbox batch
       # never run concurrently against the same state.
       ReservedConcurrentExecutions: 1
       Environment:
@@ -728,7 +728,7 @@ Resources:
   DailySchedule:
     Type: AWS::Scheduler::Schedule
     Properties:
-      Description: Period-start lifts, drift check, OU membership and heartbeat.
+      Description: Period-start lifts, drift check, OU membership, and heartbeat.
       ScheduleExpression: cron(15 0 * * ? *)
       FlexibleTimeWindow: { Mode: "OFF" }
       Target:
