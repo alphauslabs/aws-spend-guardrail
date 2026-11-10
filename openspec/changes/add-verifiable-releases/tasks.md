@@ -4,7 +4,7 @@
 
 - [x] 1.1 Pin the Go toolchain in `go.mod` and `GOTOOLCHAIN` in the `Makefile`; verify `go version` inside `make` reports the pinned version
 - [x] 1.2 Add `tools/zipdet`, a deterministic zip writer (fixed time from the tag's commit, fixed mode, single `bootstrap` entry, no extra fields); verify a unit test that zipping the same input twice, with different file mtimes, gives identical bytes
-- [ ] 1.3 Add `make release VERSION=vX.Y.Z` building the function package, the four CLI binaries and the template into `dist/` with the flags in design D2, and writing `SHA256SUMS`; verify two runs in fresh clones on different machines produce identical `SHA256SUMS`
+- [x] 1.3 Add `make release VERSION=vX.Y.Z` building the function package, the four CLI binaries and the template into `dist/` with the flags in design D2, and writing `SHA256SUMS`; verify two runs in fresh clones on different machines produce identical `SHA256SUMS`
 
 ## 2. Guard self-report
 
@@ -15,7 +15,7 @@
 
 - [ ] 3.1 Add a CI workflow on push and pull request: `go test ./...`, `govulncheck ./...`, `cfn-lint`, and a check that every `uses:` is pinned to a full commit hash; verify it fails on a deliberately unpinned action in a test branch
 - [x] 3.2 Add `tools/changelogcheck` and `CHANGELOG.md` with the required "Security-relevant" subsection (design D7); verify the check fails for a missing version and for a version without the subsection
-- [ ] 3.3 Add the release workflow on `v*` tags: confirm the tag's commit is in `main`, run the changelog check and `govulncheck`, build `dist/` twice in separate jobs and compare (design D3), generate the SBOM, sign `SHA256SUMS` with cosign keyless (design D1), and publish the release with notes giving the package hash in hex and base64 (design D4); verify on a test tag in a fork that the release appears with every asset
+- [x] 3.3 Add the release workflow on `v*` tags: confirm the tag's commit is in `main`, run the changelog check and `govulncheck`, build `dist/` twice in separate jobs and compare (design D3), generate the SBOM, sign `SHA256SUMS` with cosign keyless (design D1), and publish the release with notes giving the package hash in hex and base64 (design D4); verify on a test tag in a fork that the release appears with every asset
 - [ ] 3.4 Verify the gates in a fork: a tag not on `main`, a tag without a changelog entry, and a forced non-reproducible build each fail with nothing published
 
 ## 4. Verification guide
