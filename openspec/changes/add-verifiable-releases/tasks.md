@@ -13,7 +13,7 @@
 
 ## 3. CI and release workflows
 
-- [ ] 3.1 Add a CI workflow on push and pull request: `go test ./...`, `govulncheck ./...`, `cfn-lint`, and a check that every `uses:` is pinned to a full commit hash; verify it fails on a deliberately unpinned action in a test branch
+- [x] 3.1 Add a CI workflow on push and pull request: `go test ./...`, `govulncheck ./...`, `cfn-lint`, and a check that every `uses:` is pinned to a full commit hash; verify it fails on a deliberately unpinned action in a test branch
 - [x] 3.2 Add `tools/changelogcheck` and `CHANGELOG.md` with the required "Security-relevant" subsection (design D7); verify the check fails for a missing version and for a version without the subsection
 - [x] 3.3 Add the release workflow on `v*` tags: confirm the tag's commit is in `main`, run the changelog check and `govulncheck`, build `dist/` twice in separate jobs and compare (design D3), generate the SBOM, sign `SHA256SUMS` with cosign keyless (design D1), and publish the release with notes giving the package hash in hex and base64 (design D4); verify on a test tag in a fork that the release appears with every asset
 - [ ] 3.4 Verify the gates in a fork: a tag not on `main`, a tag without a changelog entry, and a forced non-reproducible build each fail with nothing published
@@ -24,7 +24,7 @@
 
 ## 5. Repository settings
 
-- [ ] 5.1 Add a tag ruleset: only maintainers may create, move or delete `v*` tags; `main` stays open to direct pushes by maintainers (design D9); verify a `v*` tag push, a tag move and a tag deletion by a non-maintainer are each refused, and a maintainer's direct push to `main` still works
+- [x] 5.1 Add a tag ruleset: only maintainers may create, move or delete `v*` tags; `main` stays open to direct pushes by maintainers (design D9); verify a `v*` tag push, a tag move and a tag deletion by a non-maintainer are each refused, and a maintainer's direct push to `main` still works
 
 ## 6. Integration
 
