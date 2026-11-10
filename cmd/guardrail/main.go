@@ -38,7 +38,7 @@ An MSP can have several payer orgs. Each has its own guard and its own config,
 so every Jennah command names the payer account with --payer.
 
 Jennah connection, for every command except validate, preflight, schema and version:
-  --endpoint (or JENNAH_ENDPOINT)   Jennah gRPC endpoint
+  --endpoint (or JENNAH_ENDPOINT)   optional; defaults to Jennah's public endpoint
   --api-key  (or JENNAH_API_KEY)    optional; otherwise your jennah CLI login is used
 `
 
@@ -58,7 +58,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	msp := fs.String("msp", "", "MSP id")
-	endpoint := fs.String("endpoint", os.Getenv("JENNAH_ENDPOINT"), "Jennah gRPC endpoint")
+	endpoint := fs.String("endpoint", os.Getenv("JENNAH_ENDPOINT"), "Jennah gRPC endpoint (default: the public endpoint)")
 	apiKey := fs.String("api-key", os.Getenv("JENNAH_API_KEY"), "Jennah API key")
 	ver := fs.Int64("version", 0, "config version (pull; default newest)")
 	out := fs.String("o", "", "write the document to FILE (pull)")
@@ -97,9 +97,6 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 
 	if *msp == "" || *payer == "" {
 		return errors.New("--msp and --payer are required")
-	}
-	if *endpoint == "" {
-		return errors.New("--endpoint or JENNAH_ENDPOINT is required")
 	}
 	j, err := jennah.Dial(*endpoint, *apiKey)
 	if err != nil {

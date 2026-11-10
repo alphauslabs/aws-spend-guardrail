@@ -23,7 +23,8 @@ Parameters:
     AllowedPattern: "^[a-z0-9]([a-z0-9_-]{0,88}[a-z0-9])?$"
   JennahEndpoint:
     Type: String
-    Description: Jennah gRPC endpoint, for example api.example.com:443.
+    Default: ""
+    Description: Jennah gRPC endpoint as host:port. Leave empty for Jennah's public endpoint (the SDK default).
   ReaderSecretArn:
     Type: String
     Description: Secrets Manager secret holding the reader API key (read config, create, read and cancel approvals).

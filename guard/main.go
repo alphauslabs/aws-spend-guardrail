@@ -70,7 +70,7 @@ func setup(ctx context.Context) *app {
 		log.Fatalf("aws config: %v", err)
 	}
 	sm := secretsmanager.NewFromConfig(cfg)
-	endpoint := env("JENNAH_ENDPOINT")
+	endpoint := os.Getenv("JENNAH_ENDPOINT") // empty: the SDK's default public endpoint
 	reader, err := jennah.Dial(endpoint, secret(ctx, sm, env("READER_SECRET_ARN")))
 	if err != nil {
 		log.Fatalf("jennah reader: %v", err)

@@ -19,7 +19,6 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides \
     MSPId=msp_a \
-    JennahEndpoint=<jennah grpc endpoint> \
     ReaderSecretArn=<reader secret arn> \
     WriterSecretArn=<writer secret arn> \
     LooseningApprovers=finops-lead@example.com,platform-lead@example.com \
@@ -37,7 +36,7 @@ Within 5 minutes the guard pulls the config and creates one budget per scope. Wa
 | Parameter | Default | Purpose |
 |---|---|---|
 | `MSPId` | | MSP id. With the payer account (taken from the stack's account), it names the Jennah datasets `guardrail.<MSPId>.<payer>.config` and `.inbox`. |
-| `JennahEndpoint` | | Jennah gRPC endpoint. |
+| `JennahEndpoint` | empty | Jennah gRPC endpoint as `host:port`. Empty uses Jennah's public endpoint. |
 | `ReaderSecretArn` | | Secret with the reader key. |
 | `WriterSecretArn` | | Secret with the writer key. |
 | `LooseningApprovers` | | Emails asked to approve a loosening. |
