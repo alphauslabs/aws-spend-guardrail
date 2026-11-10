@@ -44,7 +44,7 @@
 - [x] 5.3 Implement dry-run (manual-approval action plus notification, design D2) and the notification handler that records `freeze` or `would_freeze` and publishes the local alert; verify handler tests for both modes
 - [x] 5.4 Implement lifting: on an applied raise when actual cost is below the new threshold, and at period start for `auto_lift`, reverse the action or detach as task 1.1 decided; verify tests for a raise that lifts, a raise still too low, `auto_lift` and `stay_frozen`
 - [x] 5.5 Implement the daily drift check and heartbeat; verify a test where a hand-detached policy produces one `drift` event and no re-attachment
-- [ ] 5.6 Give budget actions only to enforcing scopes (design D2): no action for a dry-run scope, add the action when a scope moves to enforce, and remove it when it goes back to dry-run; verify unit tests for both switches and that a dry-run budget has no action
+- [x] 5.6 Give budget actions only to enforcing scopes (design D2): no action for a dry-run scope, add the action when a scope moves to enforce, and remove it when it goes back to dry-run; verify unit tests for both switches and that a dry-run budget has no action
 
 ## 6. Guard: events to Jennah
 

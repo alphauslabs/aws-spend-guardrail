@@ -28,6 +28,7 @@ const OwnedTagKey = "guardrail:owned"
 // BudgetsAPI is the part of the Budgets client the guard uses.
 type BudgetsAPI interface {
 	DescribeBudgets(context.Context, *budgets.DescribeBudgetsInput, ...func(*budgets.Options)) (*budgets.DescribeBudgetsOutput, error)
+	DescribeBudget(context.Context, *budgets.DescribeBudgetInput, ...func(*budgets.Options)) (*budgets.DescribeBudgetOutput, error)
 	CreateBudget(context.Context, *budgets.CreateBudgetInput, ...func(*budgets.Options)) (*budgets.CreateBudgetOutput, error)
 	UpdateBudget(context.Context, *budgets.UpdateBudgetInput, ...func(*budgets.Options)) (*budgets.UpdateBudgetOutput, error)
 	DeleteBudget(context.Context, *budgets.DeleteBudgetInput, ...func(*budgets.Options)) (*budgets.DeleteBudgetOutput, error)
@@ -190,6 +191,13 @@ func (b *Budgets) status(ctx context.Context, bd btypes.Budget) (guard.BudgetSta
 			spec.PolicyID = aws.ToString(act.Definition.ScpActionDefinition.PolicyId)
 		}
 		spec.Enforce = act.ApprovalModel == btypes.ApprovalModelAuto
+	} else {
+		// A dry-run budget has no action; its threshold is the notification's.
+		pct, err := b.notificationThreshold(ctx, name)
+		if err != nil {
+			return guard.BudgetStatus{}, err
+		}
+		spec.ThresholdPct = pct
 	}
 	st := guard.BudgetStatus{Spec: spec}
 	if cs := bd.CalculatedSpend; cs != nil && cs.ActualSpend != nil {
@@ -199,6 +207,51 @@ func (b *Budgets) status(ctx context.Context, bd btypes.Budget) (guard.BudgetSta
 		st.PeriodStart = *bd.TimePeriod.Start
 	}
 	return st, nil
+}
+
+// sameBudget compares the fields the guard sets: limit, period and accounts.
+func sameBudget(have btypes.Budget, want *btypes.Budget) bool {
+	hl, _ := strconv.ParseFloat(aws.ToString(spendAmount(have.BudgetLimit)), 64)
+	wl, _ := strconv.ParseFloat(aws.ToString(spendAmount(want.BudgetLimit)), 64)
+	if hl != wl || have.TimeUnit != want.TimeUnit {
+		return false
+	}
+	return strings.Join(linkedAccounts(have.FilterExpression), ",") == strings.Join(linkedAccounts(want.FilterExpression), ",")
+}
+
+func spendAmount(s *btypes.Spend) *string {
+	if s == nil {
+		return nil
+	}
+	return s.Amount
+}
+
+func linkedAccounts(e *btypes.Expression) []string {
+	if e == nil || e.Dimensions == nil || e.Dimensions.Key != btypes.DimensionLinkedAccount {
+		return nil
+	}
+	out := append([]string(nil), e.Dimensions.Values...)
+	sort.Strings(out)
+	return out
+}
+
+func (b *Budgets) notificationThreshold(ctx context.Context, name string) (int, error) {
+	out, err := b.API.DescribeNotificationsForBudget(ctx, &budgets.DescribeNotificationsForBudgetInput{
+		AccountId: aws.String(b.AccountID), BudgetName: aws.String(name),
+	})
+	var nf *btypes.NotFoundException
+	if errors.As(err, &nf) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	for _, n := range out.Notifications {
+		if n.NotificationType == btypes.NotificationTypeActual && n.ThresholdType == btypes.ThresholdTypePercentage {
+			return int(n.Threshold), nil
+		}
+	}
+	return 0, nil
 }
 
 func (b *Budgets) action(ctx context.Context, name string) (*btypes.Action, error) {
@@ -220,15 +273,30 @@ func (b *Budgets) action(ctx context.Context, name string) (*btypes.Action, erro
 	return nil, nil
 }
 
-// Put creates or updates the budget, its notification and its freeze action.
+// Put creates or updates the budget and its notification. An enforcing budget
+// also gets its freeze action; a dry-run budget has none, so it is not billed
+// as an action-enabled budget, and an action left from enforce is deleted.
 func (b *Budgets) Put(ctx context.Context, s guard.BudgetSpec) error {
 	existing, err := b.action(ctx, s.Name)
 	if err != nil {
 		return err
 	}
-	_, err = b.API.UpdateBudget(ctx, &budgets.UpdateBudgetInput{AccountId: aws.String(b.AccountID), NewBudget: b.budget(s)})
+	cur, err := b.API.DescribeBudget(ctx, &budgets.DescribeBudgetInput{AccountId: aws.String(b.AccountID), BudgetName: aws.String(s.Name)})
 	var nf *btypes.NotFoundException
-	if errors.As(err, &nf) {
+	switch {
+	case errors.As(err, &nf):
+		err = nil
+		cur = nil
+	case err != nil:
+		return fmt.Errorf("describe budget: %w", err)
+	}
+	if cur != nil && cur.Budget != nil && sameBudget(*cur.Budget, b.budget(s)) {
+		// Nothing about the budget itself changed: leave it alone, so Budgets
+		// keeps its spend calculation and notification state untouched.
+		if err := b.syncNotification(ctx, s); err != nil {
+			return err
+		}
+	} else if cur == nil || cur.Budget == nil {
 		_, err = b.API.CreateBudget(ctx, &budgets.CreateBudgetInput{
 			AccountId: aws.String(b.AccountID),
 			Budget:    b.budget(s),
@@ -240,10 +308,25 @@ func (b *Budgets) Put(ctx context.Context, s guard.BudgetSpec) error {
 		if err != nil {
 			return fmt.Errorf("create budget: %w", err)
 		}
-	} else if err != nil {
-		return fmt.Errorf("update budget: %w", err)
-	} else if err := b.syncNotification(ctx, s); err != nil {
-		return err
+	} else {
+		if _, err := b.API.UpdateBudget(ctx, &budgets.UpdateBudgetInput{AccountId: aws.String(b.AccountID), NewBudget: b.budget(s)}); err != nil {
+			return fmt.Errorf("update budget: %w", err)
+		}
+		if err := b.syncNotification(ctx, s); err != nil {
+			return err
+		}
+	}
+
+	if !s.Enforce {
+		if existing == nil {
+			return nil
+		}
+		if _, err := b.API.DeleteBudgetAction(ctx, &budgets.DeleteBudgetActionInput{
+			AccountId: aws.String(b.AccountID), BudgetName: aws.String(s.Name), ActionId: existing.ActionId,
+		}); err != nil {
+			return fmt.Errorf("delete budget action of dry-run scope: %w", err)
+		}
+		return nil
 	}
 
 	threshold := &btypes.ActionThreshold{ActionThresholdValue: float64(s.ThresholdPct), ActionThresholdType: btypes.ThresholdTypePercentage}

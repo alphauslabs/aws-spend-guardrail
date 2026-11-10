@@ -47,12 +47,34 @@ func TestBudgetCarriesScopeSettings(t *testing.T) {
 	}
 }
 
-func TestDryRunScopeIsManualApproval(t *testing.T) {
+func TestDryRunScopeGetsNoAction(t *testing.T) {
 	h := newHarness(t)
 	h.publish(doc("50000", "50000"))
 	h.pull()
-	if h.budgets.all[bX].Spec.Enforce {
-		t.Fatal("dry-run scope must not enforce")
+	if s := h.budgets.all[bX].Spec; s.Enforce || s.PolicyID != "" {
+		t.Fatalf("a dry-run scope must have no action: %+v", s)
+	}
+}
+
+func TestEnforceAddsActionAndDryRunRemovesIt(t *testing.T) {
+	h := newHarness(t)
+	h.publish(doc("50000", "50000"))
+	h.pull()
+	h.publish(enforceDoc("50000", "stay_frozen")) // tightening: applies at once
+	h.pull()
+	if s := h.budgets.all[bX].Spec; !s.Enforce || s.PolicyID != "p-styleB" {
+		t.Fatalf("enforce should give the scope its action: %+v", s)
+	}
+	h.publish(`{"payer_account_id":"123456789012","defaults":{"threshold_pct":90,"month_end":"stay_frozen"},
+		"scopes":[{"account_id":"111122223333","ceiling_usd":50000}]}`) // back to dry-run: loosening
+	h.pull()
+	if !h.budgets.all[bX].Spec.Enforce {
+		t.Fatal("going back to dry-run must wait for approval")
+	}
+	approveAndWait(h, "3", time.Hour)
+	h.pull()
+	if s := h.budgets.all[bX].Spec; s.Enforce || s.PolicyID != "" {
+		t.Fatalf("approved dry-run should drop the action: %+v", s)
 	}
 }
 

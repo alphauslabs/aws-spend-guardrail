@@ -20,6 +20,7 @@ type fakeAPI struct {
 	notifs   map[string][]btypes.Notification
 	executed []string
 	failExec bool
+	updates  int
 }
 
 func newFakeAPI() *fakeAPI {
@@ -34,6 +35,13 @@ func (f *fakeAPI) DescribeBudgets(context.Context, *budgets.DescribeBudgetsInput
 		out.Budgets = append(out.Budgets, b)
 	}
 	return out, nil
+}
+func (f *fakeAPI) DescribeBudget(_ context.Context, in *budgets.DescribeBudgetInput, _ ...func(*budgets.Options)) (*budgets.DescribeBudgetOutput, error) {
+	b, ok := f.budgets[aws.ToString(in.BudgetName)]
+	if !ok {
+		return nil, notFound()
+	}
+	return &budgets.DescribeBudgetOutput{Budget: &b}, nil
 }
 func (f *fakeAPI) CreateBudget(_ context.Context, in *budgets.CreateBudgetInput, _ ...func(*budgets.Options)) (*budgets.CreateBudgetOutput, error) {
 	n := aws.ToString(in.Budget.BudgetName)
@@ -54,6 +62,7 @@ func (f *fakeAPI) UpdateBudget(_ context.Context, in *budgets.UpdateBudgetInput,
 		return nil, notFound()
 	}
 	f.budgets[n] = *in.NewBudget
+	f.updates++
 	return &budgets.UpdateBudgetOutput{}, nil
 }
 func (f *fakeAPI) DeleteBudget(_ context.Context, in *budgets.DeleteBudgetInput, _ ...func(*budgets.Options)) (*budgets.DeleteBudgetOutput, error) {
@@ -136,31 +145,63 @@ func newBudgets(api *fakeAPI, d *fakeDetach) *Budgets {
 	return &Budgets{API: api, Org: d, AccountID: "123456789012", ExecutionRoleARN: "arn:role", NotifyTopicARN: "arn:topic"}
 }
 
-func TestPutCreatesTaggedBudgetAndActionThenRoundTrips(t *testing.T) {
+func dryRunSpec() guard.BudgetSpec {
+	s := spec(false)
+	s.PolicyID = "" // the guard gives dry-run scopes no policy
+	return s
+}
+
+func TestDryRunBudgetHasNoAction(t *testing.T) {
 	ctx := context.Background()
 	api := newFakeAPI()
 	b := newBudgets(api, &fakeDetach{})
-	if err := b.Put(ctx, spec(false)); err != nil {
+	if err := b.Put(ctx, dryRunSpec()); err != nil {
 		t.Fatal(err)
 	}
-	a := api.actions["guardrail-account-111122223333"]
-	if a.ApprovalModel != btypes.ApprovalModelManual || a.ActionType != btypes.ActionTypeScp {
-		t.Fatalf("dry-run should be a manual SCP action: %+v", a)
+	if len(api.actions) != 0 {
+		t.Fatalf("a dry-run budget must have no action: %+v", api.actions)
+	}
+	if !api.tags["guardrail-account-111122223333"] || len(api.notifs["guardrail-account-111122223333"]) != 1 {
+		t.Fatal("dry-run budget should be tagged and have its notification")
 	}
 	got, err := b.ListOwned(ctx)
 	if err != nil || len(got) != 1 {
 		t.Fatalf("list: %v %v", got, err)
 	}
-	s := got[0].Spec
-	want := spec(false)
-	if s.Name != want.Name || s.Target != want.Target || s.LimitUSD != want.LimitUSD || s.ThresholdPct != 90 || s.PolicyID != "p-styleB" || s.Enforce || s.Period != config.PeriodMonthly {
-		t.Fatalf("round trip: %+v", s)
+	s, want := got[0].Spec, dryRunSpec()
+	if s.Name != want.Name || s.Target != want.Target || s.LimitUSD != want.LimitUSD || s.ThresholdPct != 90 ||
+		s.PolicyID != "" || s.Enforce || s.Period != config.PeriodMonthly {
+		t.Fatalf("round trip of a dry-run budget: %+v", s)
 	}
+}
+
+func TestSwitchingModeAddsAndRemovesTheAction(t *testing.T) {
+	ctx := context.Background()
+	api := newFakeAPI()
+	b := newBudgets(api, &fakeDetach{})
+	_ = b.Put(ctx, dryRunSpec())
+
 	if err := b.Put(ctx, spec(true)); err != nil {
 		t.Fatal(err)
 	}
-	if api.actions["guardrail-account-111122223333"].ApprovalModel != btypes.ApprovalModelAuto {
-		t.Fatal("enforce should switch to automatic")
+	a, ok := api.actions["guardrail-account-111122223333"]
+	if !ok || a.ApprovalModel != btypes.ApprovalModelAuto || a.ActionType != btypes.ActionTypeScp ||
+		aws.ToString(a.Definition.ScpActionDefinition.PolicyId) != "p-styleB" {
+		t.Fatalf("switching to enforce should add an automatic SCP action: %+v", a)
+	}
+	got, _ := b.ListOwned(ctx)
+	if s := got[0].Spec; !s.Enforce || s.PolicyID != "p-styleB" || s.ThresholdPct != 90 {
+		t.Fatalf("round trip of an enforcing budget: %+v", s)
+	}
+
+	if err := b.Put(ctx, dryRunSpec()); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.actions) != 0 {
+		t.Fatal("switching back to dry-run should delete the action")
+	}
+	if _, ok := api.budgets["guardrail-account-111122223333"]; !ok || len(api.notifs["guardrail-account-111122223333"]) != 1 {
+		t.Fatal("the budget and its notification must stay")
 	}
 }
 
@@ -232,5 +273,23 @@ func TestBudgetNameFromNotification(t *testing.T) {
 	}
 	if _, err := BudgetNameFromNotification("hello"); err == nil {
 		t.Fatal("want error")
+	}
+}
+
+func TestUnchangedBudgetIsNotUpdated(t *testing.T) {
+	ctx := context.Background()
+	api := newFakeAPI()
+	b := newBudgets(api, &fakeDetach{})
+	_ = b.Put(ctx, dryRunSpec())
+	_ = b.Put(ctx, dryRunSpec())
+	_ = b.Put(ctx, spec(true)) // only the action changes
+	if api.updates != 0 {
+		t.Fatalf("UpdateBudget called %d times for an unchanged budget", api.updates)
+	}
+	s := spec(true)
+	s.LimitUSD = 60000
+	_ = b.Put(ctx, s)
+	if api.updates != 1 {
+		t.Fatalf("a new limit should update the budget once, got %d", api.updates)
 	}
 }

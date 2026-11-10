@@ -91,8 +91,8 @@ type BudgetSpec struct {
 	LimitUSD     float64
 	Period       string // config period
 	ThresholdPct int
-	PolicyID     string // freeze policy the action attaches
-	Enforce      bool   // false: dry-run (manual-approval action)
+	PolicyID     string // freeze policy the action attaches; empty for dry-run
+	Enforce      bool   // false: dry-run, a plain budget with no action
 }
 
 // BudgetStatus is a guard-owned budget as it exists in AWS.

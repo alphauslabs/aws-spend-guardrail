@@ -31,6 +31,10 @@ func (g *Guard) Specs(ctx context.Context, eff *config.Resolved) ([]BudgetSpec, 
 			}
 			sort.Strings(accounts)
 		}
+		policy := ""
+		if s.Mode == config.ModeEnforce {
+			policy = g.policyFor(s.FreezeStyle) // only enforcing scopes get an action
+		}
 		out = append(out, BudgetSpec{
 			Name:         BudgetName(s.Target),
 			Target:       s.Target,
@@ -38,7 +42,7 @@ func (g *Guard) Specs(ctx context.Context, eff *config.Resolved) ([]BudgetSpec, 
 			LimitUSD:     s.CeilingUSD,
 			Period:       s.Period,
 			ThresholdPct: s.ThresholdPct,
-			PolicyID:     g.policyFor(s.FreezeStyle),
+			PolicyID:     policy,
 			Enforce:      s.Mode == config.ModeEnforce,
 		})
 	}
