@@ -21,6 +21,8 @@ type fakeAPI struct {
 	executed []string
 	failExec bool
 	updates  int
+	// actionUpdates counts UpdateBudgetAction calls.
+	actionUpdates int
 	// notifWrites counts notification creates and deletes. AWS resets a
 	// budget's calculated spend when its notifications change.
 	notifWrites int
@@ -33,6 +35,21 @@ func stored(n btypes.Notification) btypes.Notification {
 		n.ThresholdType = ""
 	}
 	return n
+}
+
+// storedThreshold returns an action threshold the way the guard must accept
+// it back. Live Budgets returns the PERCENTAGE type (seen 2026-11-11), but the
+// fake leaves it out, as Budgets does for notifications, so the guard is
+// tested against the less forgiving form.
+func storedThreshold(t *btypes.ActionThreshold) *btypes.ActionThreshold {
+	if t == nil {
+		return nil
+	}
+	c := *t
+	if c.ActionThresholdType == btypes.ThresholdTypePercentage {
+		c.ActionThresholdType = ""
+	}
+	return &c
 }
 
 func newFakeAPI() *fakeAPI {
@@ -113,13 +130,17 @@ func (f *fakeAPI) DescribeBudgetActionsForBudget(_ context.Context, in *budgets.
 }
 func (f *fakeAPI) CreateBudgetAction(_ context.Context, in *budgets.CreateBudgetActionInput, _ ...func(*budgets.Options)) (*budgets.CreateBudgetActionOutput, error) {
 	n := aws.ToString(in.BudgetName)
-	f.actions[n] = btypes.Action{ActionId: aws.String("act-" + n), ActionType: in.ActionType, ActionThreshold: in.ActionThreshold, Definition: in.Definition, ApprovalModel: in.ApprovalModel, Status: btypes.ActionStatusStandby}
+	f.actions[n] = btypes.Action{ActionId: aws.String("act-" + n), ActionType: in.ActionType, NotificationType: in.NotificationType,
+		ActionThreshold: storedThreshold(in.ActionThreshold), Definition: in.Definition, ExecutionRoleArn: in.ExecutionRoleArn,
+		ApprovalModel: in.ApprovalModel, Subscribers: in.Subscribers, Status: btypes.ActionStatusStandby}
 	return &budgets.CreateBudgetActionOutput{}, nil
 }
 func (f *fakeAPI) UpdateBudgetAction(_ context.Context, in *budgets.UpdateBudgetActionInput, _ ...func(*budgets.Options)) (*budgets.UpdateBudgetActionOutput, error) {
 	n := aws.ToString(in.BudgetName)
 	a := f.actions[n]
-	a.ActionThreshold, a.Definition, a.ApprovalModel = in.ActionThreshold, in.Definition, in.ApprovalModel
+	f.actionUpdates++
+	a.NotificationType, a.ActionThreshold, a.Definition, a.ApprovalModel = in.NotificationType, storedThreshold(in.ActionThreshold), in.Definition, in.ApprovalModel
+	a.ExecutionRoleArn, a.Subscribers = in.ExecutionRoleArn, in.Subscribers
 	f.actions[n] = a
 	return &budgets.UpdateBudgetActionOutput{}, nil
 }
@@ -262,8 +283,8 @@ func TestUnchangedBudgetWritesNothing(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if api.notifWrites != 0 || api.updates != 0 {
-			t.Fatalf("enforce=%v: unchanged budget rewrote %d notification(s) and %d budget(s)", s.Enforce, api.notifWrites, api.updates)
+		if api.notifWrites != 0 || api.updates != 0 || api.actionUpdates != 0 {
+			t.Fatalf("enforce=%v: unchanged budget rewrote %d notification(s), %d budget(s), and %d action(s)", s.Enforce, api.notifWrites, api.updates, api.actionUpdates)
 		}
 		got, err := b.ListOwned(ctx)
 		if err != nil || len(got) != 1 || got[0].Spec.ThresholdPct != 90 {
@@ -335,4 +356,55 @@ func TestUnchangedBudgetIsNotUpdated(t *testing.T) {
 	if api.updates != 1 {
 		t.Fatalf("a new limit should update the budget once, got %d", api.updates)
 	}
+}
+
+// Each field the guard sets on an action, when changed, updates the action
+// once; a frozen action with unchanged config is left alone.
+func TestActionUpdatedOnlyWhenChanged(t *testing.T) {
+	ctx := context.Background()
+	changes := map[string]func(*Budgets, *guard.BudgetSpec, *fakeAPI){
+		"threshold": func(_ *Budgets, s *guard.BudgetSpec, _ *fakeAPI) { s.ThresholdPct = 80 },
+		"policy":    func(_ *Budgets, s *guard.BudgetSpec, _ *fakeAPI) { s.PolicyID = "p-styleA" },
+		"role":      func(b *Budgets, _ *guard.BudgetSpec, _ *fakeAPI) { b.ExecutionRoleARN = "arn:role2" },
+		"subscriber changed outside": func(_ *Budgets, _ *guard.BudgetSpec, api *fakeAPI) {
+			a := api.actions[spec(true).Name]
+			a.Subscribers = append(a.Subscribers, btypes.Subscriber{SubscriptionType: btypes.SubscriptionTypeEmail, Address: aws.String("x@example.com")})
+			api.actions[spec(true).Name] = a
+		},
+	}
+	for name, change := range changes {
+		t.Run(name, func(t *testing.T) {
+			api := newFakeAPI()
+			b := newBudgets(api, &fakeDetach{})
+			s := spec(true)
+			if err := b.Put(ctx, s); err != nil {
+				t.Fatal(err)
+			}
+			change(b, &s, api)
+			for i := 0; i < 3; i++ {
+				if err := b.Put(ctx, s); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if api.actionUpdates != 1 {
+				t.Fatalf("%d action updates, want 1", api.actionUpdates)
+			}
+			if a := api.actions[s.Name]; len(a.Subscribers) != 1 || a.ActionThreshold.ActionThresholdValue != float64(s.ThresholdPct) {
+				t.Fatalf("action not put back: %+v", a)
+			}
+		})
+	}
+	t.Run("frozen", func(t *testing.T) {
+		api := newFakeAPI()
+		b := newBudgets(api, &fakeDetach{})
+		s := spec(true)
+		_ = b.Put(ctx, s)
+		a := api.actions[s.Name]
+		a.Status = btypes.ActionStatusExecutionSuccess
+		api.actions[s.Name] = a
+		_ = b.Put(ctx, s)
+		if api.actionUpdates != 0 || api.actions[s.Name].Status != btypes.ActionStatusExecutionSuccess {
+			t.Fatalf("a frozen action with unchanged config must be left alone: %d updates", api.actionUpdates)
+		}
+	})
 }

@@ -339,6 +339,19 @@ func (b *Budgets) Put(ctx context.Context, s guard.BudgetSpec) error {
 
 	threshold := &btypes.ActionThreshold{ActionThresholdValue: float64(s.ThresholdPct), ActionThresholdType: btypes.ThresholdTypePercentage}
 	def := &btypes.Definition{ScpActionDefinition: &btypes.ScpActionDefinition{PolicyId: aws.String(s.PolicyID), TargetIds: []string{s.Target.ID}}}
+	want := btypes.Action{
+		NotificationType: btypes.NotificationTypeActual,
+		ActionThreshold:  threshold,
+		Definition:       def,
+		ExecutionRoleArn: aws.String(b.ExecutionRoleARN),
+		ApprovalModel:    approvalModel(s.Enforce),
+		Subscribers:      b.subscribers(),
+	}
+	if existing != nil && sameAction(*existing, want) {
+		// Leave an unchanged action alone, whatever its status: rewriting it
+		// on every run might reset what Budgets has calculated or is doing.
+		return nil
+	}
 	if existing == nil {
 		_, err = b.API.CreateBudgetAction(ctx, &budgets.CreateBudgetActionInput{
 			AccountId:        aws.String(b.AccountID),
@@ -371,6 +384,52 @@ func (b *Budgets) Put(ctx context.Context, s guard.BudgetSpec) error {
 		return fmt.Errorf("update budget action: %w", err)
 	}
 	return nil
+}
+
+// sameAction reports whether an existing action already has every field the
+// guard sets. A missing threshold type counts as a percentage, as for
+// notifications; target ids and subscribers are compared as sets.
+func sameAction(cur, want btypes.Action) bool {
+	if cur.NotificationType != want.NotificationType || cur.ApprovalModel != want.ApprovalModel ||
+		aws.ToString(cur.ExecutionRoleArn) != aws.ToString(want.ExecutionRoleArn) {
+		return false
+	}
+	if cur.ActionThreshold == nil || cur.ActionThreshold.ActionThresholdValue != want.ActionThreshold.ActionThresholdValue ||
+		!isPercentage(cur.ActionThreshold.ActionThresholdType) {
+		return false
+	}
+	if cur.Definition == nil || cur.Definition.ScpActionDefinition == nil {
+		return false
+	}
+	c, w := cur.Definition.ScpActionDefinition, want.Definition.ScpActionDefinition
+	if aws.ToString(c.PolicyId) != aws.ToString(w.PolicyId) || !sameSet(c.TargetIds, w.TargetIds) {
+		return false
+	}
+	subs := func(list []btypes.Subscriber) []string {
+		var out []string
+		for _, s := range list {
+			out = append(out, string(s.SubscriptionType)+" "+aws.ToString(s.Address))
+		}
+		return out
+	}
+	return sameSet(subs(cur.Subscribers), subs(want.Subscribers))
+}
+
+func sameSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := map[string]int{}
+	for _, x := range a {
+		seen[x]++
+	}
+	for _, x := range b {
+		if seen[x] == 0 {
+			return false
+		}
+		seen[x]--
+	}
+	return true
 }
 
 // syncNotification replaces the budget's notification when its threshold
