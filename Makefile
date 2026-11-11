@@ -1,6 +1,6 @@
 # The Go toolchain is pinned so a release tag always builds with the same
 # compiler; keep it equal to the toolchain line in go.mod.
-export GOTOOLCHAIN := go1.27.3
+export GOTOOLCHAIN := go1.27.4
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)

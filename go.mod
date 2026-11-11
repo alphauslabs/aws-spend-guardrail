@@ -1,6 +1,6 @@
 module github.com/alphauslabs/aws-spend-guardrail
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/alphauslabs/jennah-sdk-go v0.77.0
