@@ -66,7 +66,7 @@ Within 5 minutes the guard pulls the config and creates one budget per scope. Wa
 | `LooseningApprovers` | | Emails asked to approve a loosening. |
 | `LooseningRequiredApprovals` | `1` | Approvals needed: `1` for any one approver, or the number of approvers to require all of them. Jennah supports no other count; with any other value the guard raises no approval, alerts, and keeps the stricter config. For separation of duties, list two approvers and set `2`. |
 | `LooseningApprovalWindow` | `24h` | How long approvers have. Unanswered means not applied. |
-| `LooseningDelay` | `30m` | Minimum time from first seeing a loosening version to applying it. |
+| `LooseningDelay` | `30m` | Minimum time from first seeing a loosening version to applying it, even when it's approved sooner. See [Why the delay](#why-the-delay). |
 | `FunctionPackageBucket`, `FunctionPackageKey` | | Where the function zip is. |
 | `GuardVersion` | `dev` | Recorded with every event. |
 | `AlertEmail` | empty | Optional email for local alerts. Config can add more recipients (`alert_emails`), but can never remove this one, so use an address that will stay monitored, such as a distribution list. |
@@ -77,6 +77,12 @@ Within 5 minutes the guard pulls the config and creates one budget per scope. Wa
 | `ReactToAccountEvents` | `false` | When `true`, a new, invited, or moved account is checked within minutes instead of at the daily run. Only works when a CloudTrail trail in the payer account records management events; without one, account events never reach EventBridge, and the daily check is the only one. |
 
 The approval settings are stack parameters on purpose: changing them takes a stack update in the payer account, which a Jennah credential can't do.
+
+### Why the delay
+
+An approval alone doesn't guard against a fast mistake: a careless click, or an approver talked into approving a loosening they didn't check. `LooseningDelay` gives everyone else time to notice. The guard records a `loosening_raised` event when it first sees the version, and the delay is counted from then, not from the approval. Within that time, anyone who can publish config can publish a stricter version, which cancels the pending approval, so the loosening never applies. Tightening is never delayed.
+
+`0m` turns the delay off, which can help in a test organization. For production, keep it long enough for someone to see the event or the approval email and react.
 
 ## What the stack creates
 
