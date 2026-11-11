@@ -2,7 +2,7 @@
 
 ## Context
 
-`Budgets.Put` (`internal/awsx/budgets.go`) already compares the budget (`sameBudget`) and the notification (`syncNotification`, with `isPercentage` because Budgets omits a percentage threshold type) before writing. For an enforcing scope it then always calls `UpdateBudgetAction` with the full wanted action. `DescribeBudgetActionsForBudget` returns the current action, which `Put` already reads (`b.action`) to decide between create, update, and delete.
+`Budgets.Put` (`internal/awsx/budgets.go`) already compares the budget (`sameBudget`) and the notification (`syncNotification`, with `isPercentage` because Budgets omits a percentage threshold type) before writing. For an enforcing scope it then always calls `UpdateBudgetAction` with the full wanted action. `Put` runs only when the guard's reconcile (`internal/guard/reconcile.go`) sees the scope's spec differ from the budget it lists, so today the action is rewritten whenever any part of the scope changes, not on every run. `DescribeBudgetActionsForBudget` returns the current action, which `Put` already reads (`b.action`) to decide between create, update, and delete.
 
 ## Goals / Non-Goals
 
@@ -22,5 +22,5 @@
 
 ## Risks / Trade-offs
 
-- **Budgets returns another field in a different form than it accepts** (like the threshold type), making every comparison differ and the guard write every run, as today. Mitigation: the e2e check (task 3.1) looks for `UpdateBudgetAction` in the payer's CloudTrail event history after a few runs; there should be none.
+- **Budgets returns another field in a different form than it accepts** (like the threshold type), making every comparison differ and the guard rewrite the action on every scope change, as today. Mitigation: the e2e check (task 3.1) looks for `UpdateBudgetAction` in the payer's CloudTrail event history after a few runs; there should be none.
 - **A field Budgets adds later and the guard doesn't set** is ignored, so it isn't put back. Acceptable: the guard only owns what it sets.

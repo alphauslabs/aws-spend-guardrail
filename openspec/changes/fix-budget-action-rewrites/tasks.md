@@ -7,9 +7,9 @@
 
 ## 2. Docs and build
 
-- [x] 2.1 Add a `CHANGELOG.md` entry under Fixed (the guard rewrote each enforcing scope's freeze action on every run), with Security-relevant: None for this change; no em-dashes, Oxford comma
+- [x] 2.1 Add a `CHANGELOG.md` entry under Fixed (the guard rewrote an enforcing scope's freeze action whenever any part of the scope changed), with Security-relevant: None for this change; no em-dashes, Oxford comma
 - [x] 2.2 Run `goimports`, `make`, and `go test ./...`; verify all pass
 
 ## 3. Live check
 
-- [ ] 3.1 With the e2e guard on this build, after at least three runs, confirm `aws cloudtrail lookup-events` in the payer account shows no `UpdateBudgetAction` since the deploy, and that the e2estandard03 action still has its threshold, policy, and target
+- [ ] 3.1 With the e2e guard on this build, change only one scope's limit in config, and after at least three runs confirm `aws cloudtrail lookup-events` in the payer account shows an `UpdateBudget` but no `UpdateBudgetAction` since the deploy, and that the e2estandard03 action still has its threshold, policy, and target

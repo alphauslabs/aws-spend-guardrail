@@ -25,7 +25,7 @@ Every release has an entry here. Each entry has a **Security-relevant** section 
 
 ### Fixed
 - `guardrail preflight` reported an account or OU as having no free SCP slot at 5 attached policies. AWS now allows 10, so the check and the install docs use 10.
-- The guard no longer updates each enforcing scope's freeze action on every run. It now writes the action only when its threshold, policy, target, execution role, approval model, or subscribers differ from config, so an unchanged scope makes no Budgets write at all.
+- The guard rewrote an enforcing scope's freeze action whenever any part of the scope changed, for example only its limit. It now writes the action only when its threshold, policy, target, execution role, approval model, or subscribers differ from config.
 - The guard no longer replaces each budget's notification on every run. AWS Budgets omits a percentage threshold type from what it returns, so the guard saw every notification as changed, and replacing it reset the budget's calculated spend to zero, which kept spend from ever reaching the threshold.
 
 ## [v0.0.1] - 2026-11-10
