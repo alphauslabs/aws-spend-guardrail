@@ -19,11 +19,11 @@ AWS attaches its default `FullAWSAccess` policy everywhere, so nobody's access c
 
 ## 2. Check SCP slots
 
-An account or OU can have at most 5 SCPs attached directly. A scope whose target already has 5 can't take a freeze policy.
+An account or OU can have at most 10 SCPs attached directly. A scope whose target already has 10 can't take a freeze policy.
 
 1. In **AWS Organizations**, choose **AWS accounts**.
 2. For each account (or OU) in your config, open it and look at the **Policies** tab, under **Service control policies**, **Attached directly**.
-3. If any has 5, detach or merge one before going further.
+3. If any has 10, detach or merge one before going further.
 
 With many scopes, `guardrail preflight` does this check for you.
 

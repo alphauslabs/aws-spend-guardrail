@@ -146,7 +146,7 @@ Each line is one event, oldest first. A typical inbox holds a few events a day, 
 
 ## Before installing: check SCP slots
 
-AWS allows 5 SCPs attached directly to one account or OU. A target that already has 5 can't take a freeze policy. With AWS credentials for the payer account:
+AWS allows 10 SCPs attached directly to one account or OU. A target that already has 10, none of them a freeze policy, can't take one. With AWS credentials for the payer account:
 
 ```
 guardrail preflight --msp msp_a config.json

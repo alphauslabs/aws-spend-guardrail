@@ -11,8 +11,10 @@ import (
 )
 
 // MaxSCPsPerTarget is the AWS Organizations limit on SCPs attached directly to
-// one account or OU.
-const MaxSCPsPerTarget = 5
+// one root, OU, or account. It is a hard limit; see "Number of policies that you
+// can attach to an entity" in the AWS Organizations quotas documentation
+// (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_reference_limits.html).
+const MaxSCPsPerTarget = 10
 
 // PoliciesForTargetAPI lists the SCPs attached to a target.
 type PoliciesForTargetAPI interface {
