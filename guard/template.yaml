@@ -17,6 +17,8 @@ Metadata:
         Parameters: [AlertEmail]
       - Label: { default: Account coverage }
         Parameters: [ReactToAccountEvents]
+      - Label: { default: AI guard (optional) }
+        Parameters: [EnableAIGuard, TrailBucket, TrailPrefix, TrailKmsKeyArn]
 
 Parameters:
   MSPId:
@@ -75,6 +77,25 @@ Parameters:
     Default: "false"
     AllowedValues: ["true", "false"]
     Description: When true, an account created, invited, or moved in the organization runs the coverage check within minutes instead of at the next daily run. Only works when a CloudTrail trail records the account's management events; without one, these events never reach EventBridge.
+  EnableAIGuard:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: When true, the guard reads the organization CloudTrail trail every minute, prices Bedrock calls, and can cut off an account's AI access with the AI deny policy. Needs a multi-region organization trail logging management events.
+  TrailBucket:
+    Type: String
+    Default: ""
+    Description: S3 bucket the organization trail writes to. Required when EnableAIGuard is true. If it is in another account, its bucket policy must grant this stack's guard role read access (see docs/ai-guard.md).
+  TrailPrefix:
+    Type: String
+    Default: ""
+    AllowedPattern: "^([A-Za-z0-9!_.*'()/-]*[^/])?$"
+    Description: The trail's S3 key prefix, if it has one, without a trailing slash.
+  TrailKmsKeyArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^(arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+)?$"
+    Description: KMS key the trail encrypts its files with, if any. A key in another account must also allow this stack's guard role to decrypt (see docs/ai-guard.md).
 
 Rules:
   UsEast1Only:
@@ -86,12 +107,44 @@ Rules:
     Assertions:
       - Assert: !Equals [!Ref ExpectedPayerAccountId, !Ref AWS::AccountId]
         AssertDescription: This install is for another payer account. Sign in to the payer account named in ExpectedPayerAccountId.
+  AIGuardNeedsTrail:
+    RuleCondition: !Equals [!Ref EnableAIGuard, "true"]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref TrailBucket, ""]]
+        AssertDescription: The AI guard reads the organization trail. Set TrailBucket to the bucket it writes to.
 
 Conditions:
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
   ReactToAccounts: !Equals [!Ref ReactToAccountEvents, "true"]
+  AIGuard: !Equals [!Ref EnableAIGuard, "true"]
+  AIGuardKms: !And [!Condition AIGuard, !Not [!Equals [!Ref TrailKmsKeyArn, ""]]]
+  HasTrailPrefix: !Not [!Equals [!Ref TrailPrefix, ""]]
 
 Resources:
+  # The AI pack's cutoff, created unattached. The guard attaches it to an
+  # account that passes an AI cap or trips an AI rule. It denies AI access
+  # only: Bedrock model invocation (which also governs Converse), Bedrock API
+  # keys, and AgentCore invoke and session actions.
+  AIDenyPolicy:
+    Type: AWS::Organizations::Policy
+    Condition: AIGuard
+    Properties:
+      Name: !Sub guardrail-ai-cutoff-${MSPId}
+      Description: aws-spend-guardrail AI cutoff. Attached by the guard; lifted through an approved config change.
+      Type: SERVICE_CONTROL_POLICY
+      Content:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: GuardrailAICutoff
+            Effect: Deny
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+              - bedrock:CallWithBearerToken
+              - bedrock-agentcore:Invoke*
+              - bedrock-agentcore:Start*
+            Resource: "*"
+
   # Freeze policies, created unattached. Budgets attaches one when a scope's
   # threshold is reached.
   FreezePolicyA:
@@ -498,6 +551,8 @@ Resources:
         - { AttributeName: pk, KeyType: HASH }
         - { AttributeName: sk, KeyType: RANGE }
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      # Usage counters set "expires" so they are dropped after about 40 days.
+      TimeToLiveSpecification: { AttributeName: expires, Enabled: true }
       SSESpecification: { SSEEnabled: true }
 
   AlertTopic:
@@ -668,6 +723,57 @@ Resources:
                 # Only the guard itself, so it can report its deployed package hash.
                 Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:guardrail-${MSPId}
 
+  # The AI guard's extra permissions: read the organization trail, decrypt it
+  # when it is encrypted, and attach or detach the AI cutoff policy, on
+  # accounts only.
+  AIGuardPolicy:
+    Type: AWS::IAM::RolePolicy
+    Condition: AIGuard
+    Properties:
+      RoleName: !Ref GuardRole
+      PolicyName: ai-guard
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ListTrail
+            Effect: Allow
+            Action: [s3:ListBucket, s3:GetBucketLocation]
+            Resource: !Sub arn:${AWS::Partition}:s3:::${TrailBucket}
+          - Sid: ReadTrail
+            Effect: Allow
+            Action: s3:GetObject
+            Resource: !If
+              - HasTrailPrefix
+              - !Sub arn:${AWS::Partition}:s3:::${TrailBucket}/${TrailPrefix}/AWSLogs/*
+              - !Sub arn:${AWS::Partition}:s3:::${TrailBucket}/AWSLogs/*
+          - Sid: AICutoff
+            Effect: Allow
+            Action: [organizations:AttachPolicy, organizations:DetachPolicy]
+            Resource:
+              - !GetAtt AIDenyPolicy.Arn
+              - !Sub arn:${AWS::Partition}:organizations::${AWS::AccountId}:account/o-*/*
+          - !If
+            - AIGuardKms
+            - Sid: DecryptTrail
+              Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Ref TrailKmsKeyArn
+              Condition:
+                StringLike: { kms:ViaService: s3.*.amazonaws.com }
+            - !Ref AWS::NoValue
+
+  TrailSchedule:
+    Type: AWS::Scheduler::Schedule
+    Condition: AIGuard
+    Properties:
+      Description: Read new organization trail files for the AI guard.
+      ScheduleExpression: rate(1 minute)
+      FlexibleTimeWindow: { Mode: "OFF" }
+      Target:
+        Arn: !GetAtt GuardFunction.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: '{"task":"trail"}'
+
   GuardFunction:
     Type: AWS::Lambda::Function
     DependsOn: GuardLogGroup
@@ -699,6 +805,9 @@ Resources:
           NOTIFY_TOPIC_ARN: !Ref NotifyTopic
           ALERT_TOPIC_ARN: !Ref AlertTopic
           ALERT_EMAIL: !Ref AlertEmail
+          AI_POLICY_ID: !If [AIGuard, !GetAtt AIDenyPolicy.Id, ""]
+          TRAIL_BUCKET: !If [AIGuard, !Ref TrailBucket, ""]
+          TRAIL_PREFIX: !Ref TrailPrefix
           OUTBOX_QUEUE_URL: !Ref OutboxQueue
           STATE_TABLE: !Ref StateTable
           LOOSENING_APPROVERS: !Join [",", !Ref LooseningApprovers]
@@ -809,6 +918,10 @@ Resources:
     DependsOn: [GuardRole, BudgetsExecutionRole, StateTable, OutboxQueue, AlertTopic]
     Properties:
       ServiceToken: !GetAtt GuardFunction.Arn
+      # References, not DependsOn, so these exist only with the AI guard on:
+      # the teardown runs (and detaches AI cutoffs) before they are deleted.
+      AIPolicy: !If [AIGuard, !Ref AIDenyPolicy, ""]
+      AIPermissions: !If [AIGuard, !Ref AIGuardPolicy, ""]
 
 Outputs:
   GuardFunctionName:

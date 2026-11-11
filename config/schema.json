@@ -32,9 +32,74 @@
       "maxItems": 20,
       "uniqueItems": true,
       "items": { "type": "string", "format": "email" }
+    },
+    "ai": {
+      "description": "The AI pack: caps on estimated Bedrock spend per account, allowlists, and tripwires. Absent: the AI pack watches nothing.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaults": { "description": "Caps and mode every AI scope takes unless it sets its own.", "$ref": "#/$defs/ai_caps" },
+        "scopes": { "description": "Accounts and OUs with AI caps.", "type": "array", "items": { "$ref": "#/$defs/ai_scope" } },
+        "models": {
+          "description": "Models allowed. Absent: any model the price table knows. A call to another model cuts off the account.",
+          "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 }
+        },
+        "regions": {
+          "description": "Regions allowed for Bedrock calls. Absent: any region.",
+          "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]$" }
+        },
+        "api_key_callers": {
+          "description": "IAM users or roles allowed to use Bedrock API keys. Absent: nobody; any API-key use cuts off the account.",
+          "type": "array", "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^arn:aws[a-z-]*:(iam|sts)::[0-9]{12}:[A-Za-z0-9+=,.@_/-]+$" }
+        },
+        "prices": {
+          "description": "Per-model price overrides in USD per 1,000 tokens.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["input_per_1k", "output_per_1k"],
+            "properties": {
+              "input_per_1k": { "type": "number", "minimum": 0 },
+              "output_per_1k": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "lifts": {
+          "description": "Cutoff ids to lift. Adding one is a loosening and needs approval.",
+          "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^ai:[0-9]{12}:[0-9]{8}T[0-9]{4}$" }
+        }
+      }
     }
   },
   "$defs": {
+    "ai_caps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hourly_usd": { "description": "Cap on estimated AI spend over the last hour, in USD. 0 or absent: no cap.", "type": "number", "minimum": 0 },
+        "daily_usd": { "description": "Cap on estimated AI spend in the current UTC day, in USD. 0 or absent: no cap.", "type": "number", "minimum": 0 },
+        "monthly_usd": { "description": "Cap on estimated AI spend in the current calendar month, in USD. 0 or absent: no cap.", "type": "number", "minimum": 0 },
+        "mode": { "$ref": "#/$defs/settings/properties/mode" }
+      }
+    },
+    "ai_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        { "required": ["account_id"], "not": { "required": ["ou_id"] } },
+        { "required": ["ou_id"], "not": { "required": ["account_id"] } }
+      ],
+      "properties": {
+        "account_id": { "$ref": "#/$defs/account_id" },
+        "ou_id": { "$ref": "#/$defs/ou_id" },
+        "hourly_usd": { "$ref": "#/$defs/ai_caps/properties/hourly_usd" },
+        "daily_usd": { "$ref": "#/$defs/ai_caps/properties/daily_usd" },
+        "monthly_usd": { "$ref": "#/$defs/ai_caps/properties/monthly_usd" },
+        "mode": { "$ref": "#/$defs/settings/properties/mode" }
+      }
+    },
     "account_id": {
       "type": "string",
       "pattern": "^[0-9]{12}$"

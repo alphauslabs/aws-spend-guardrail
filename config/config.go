@@ -64,6 +64,8 @@ type Document struct {
 	Scopes           []Scope   `json:"scopes"`
 	ExcludedAccounts []string  `json:"excluded_accounts,omitempty"`
 	AlertEmails      []string  `json:"alert_emails,omitempty"`
+	// AI configures the AI pack; nil means the AI pack has no config.
+	AI *AISection `json:"ai,omitempty"`
 }
 
 // Target is what a scope protects: one account or one OU.
@@ -104,6 +106,8 @@ type Resolved struct {
 	// AlertEmails receive local alerts besides the stack's AlertEmail,
 	// lowercased and sorted. Changing them needs approval.
 	AlertEmails []string `json:"alert_emails,omitempty"`
+	// AI is the AI pack's config in force, nil when the document has none.
+	AI *ResolvedAI `json:"ai,omitempty"`
 }
 
 // Excluded reports whether an account is excluded on purpose. The payer
@@ -141,6 +145,7 @@ func (d *Document) Resolve() *Resolved {
 		r.AlertEmails = append(r.AlertEmails, strings.ToLower(e))
 	}
 	sort.Strings(r.AlertEmails)
+	r.AI = d.AI.resolve()
 	var docDefaults Settings
 	if d.Defaults != nil {
 		docDefaults = *d.Defaults
@@ -302,5 +307,6 @@ func checkSemantics(d *Document, opts Options) []Problem {
 		}
 		firstAt[k] = i
 	}
+	probs = append(probs, aiSemantics(d.AI)...)
 	return probs
 }

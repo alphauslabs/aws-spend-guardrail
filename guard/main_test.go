@@ -9,6 +9,7 @@ func TestRoute(t *testing.T) {
 	cases := map[string]string{
 		`{"task":"pull"}`:  routePull,
 		`{"task":"daily"}`: routeDaily,
+		`{"task":"trail"}`: routeTrail,
 		`{"RequestType":"Delete","ResponseURL":"https://example.com"}`:  routeTeardown,
 		`{"Records":[{"eventSource":"aws:sqs","body":"{}"}]}`:           routeOutbox,
 		`{"Records":[{"EventSource":"aws:sns","Sns":{"Message":"x"}}]}`: routeNotify,

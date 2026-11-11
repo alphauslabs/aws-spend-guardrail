@@ -191,5 +191,31 @@ func (g *Guard) Teardown(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("delete %s: %w", b.Spec.Name, err))
 		}
 	}
+	if err := g.teardownAI(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+// teardownAI detaches the AI cutoff policy from every account it is attached
+// to, as AWS reports it, so the stack can delete the policy even if the
+// guard's own records were lost.
+func (g *Guard) teardownAI(ctx context.Context) error {
+	if g.Fast == nil || g.Fast.AIPolicyID == "" {
+		return nil
+	}
+	targets, err := g.Org.PolicyTargets(ctx, g.Fast.AIPolicyID)
+	if err != nil {
+		return fmt.Errorf("list AI cutoff targets: %w", err)
+	}
+	var errs []error
+	for _, t := range targets {
+		if err := g.Fast.Engine.Policies.Detach(ctx, g.Fast.AIPolicyID, t.ID); err != nil {
+			errs = append(errs, fmt.Errorf("detach AI cutoff from %s: %w", t.ID, err))
+			continue
+		}
+		_ = g.Fast.Engine.Store.DeleteCutoff(ctx, "ai", t.ID)
+		g.alert(ctx, fmt.Sprintf("guardrail: %s cutoff lifted", t.ID), "The AI cutoff on account "+t.ID+" was lifted because the guard's stack is being deleted.")
+	}
 	return errors.Join(errs...)
 }

@@ -70,6 +70,10 @@ Within 5 minutes the guard pulls the config and creates one budget per scope. Wa
 | `FunctionPackageBucket`, `FunctionPackageKey` | | Where the function zip is. |
 | `GuardVersion` | `dev` | Recorded with every event. |
 | `AlertEmail` | empty | Optional email for local alerts. Config can add more recipients (`alert_emails`), but can never remove this one, so use an address that will stay monitored, such as a distribution list. |
+| `EnableAIGuard` | `false` | When `true`, adds the [AI guard](ai-guard.md): reads the organization trail every minute and can cut off an account's Bedrock and AgentCore access. |
+| `TrailBucket` | empty | Bucket the organization trail writes to. Required with `EnableAIGuard=true`. |
+| `TrailPrefix` | empty | The trail's S3 key prefix, if it has one. |
+| `TrailKmsKeyArn` | empty | KMS key the trail encrypts its files with, if any. |
 | `ReactToAccountEvents` | `false` | When `true`, a new, invited, or moved account is checked within minutes instead of at the daily run. Only works when a CloudTrail trail in the payer account records management events; without one, account events never reach EventBridge, and the daily check is the only one. |
 
 The approval settings are stack parameters on purpose: changing them takes a stack update in the payer account, which a Jennah credential can't do.
@@ -82,6 +86,7 @@ The approval settings are stack parameters on purpose: changing them takes a sta
 - A DynamoDB table for the guard's state, an SQS outbox for events (with a dead-letter queue and an alarm), and an SNS alert topic.
 - A delete-time step that lifts every freeze the guard recorded and removes the budgets it owns.
 - With `ReactToAccountEvents=true`, an EventBridge rule that runs the coverage check when accounts change.
+- With `EnableAIGuard=true`, the AI cutoff SCP (unattached), a one-minute schedule to read the organization trail, and permission for the guard to read the trail's bucket (and decrypt with its KMS key, if set) and to attach or detach the AI cutoff policy on accounts only. The delete-time step also detaches every AI cutoff.
 
 Budgets are not stack resources. The guard creates and updates them from config, named `guardrail-<account|ou>-<id>` and tagged `guardrail:owned=true`. It never touches other budgets.
 

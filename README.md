@@ -6,7 +6,7 @@ Budget caps for AWS organizations that block new spend in an account or OU when 
 
 Each management account runs a guard stack. AWS Budgets tracks spend and attaches a freeze SCP when a budget hits its threshold, so enforcement does not depend on any external service. [Jennah](https://getjennah.alphaus.cloud/) stores the config, handles approvals for relaxing limits, and logs freeze and unfreeze events.
 
-> **Status:** first implementation, not yet tested in a real AWS organization. Tracked in [`add-budget-freeze-guard`](openspec/changes/add-budget-freeze-guard/). Docs: [install](docs/install.md) (or [from the AWS console](docs/install-console.md)), [operating](docs/operating.md), [config](docs/config.md), [verify a release](docs/verify.md).
+> **Status:** first implementation, not yet tested in a real AWS organization. Tracked in [`add-budget-freeze-guard`](openspec/changes/add-budget-freeze-guard/). Docs: [install](docs/install.md) (or [from the AWS console](docs/install-console.md)), [operating](docs/operating.md), [config](docs/config.md), [AI guard](docs/ai-guard.md), [verify a release](docs/verify.md).
 
 ## How it works
 

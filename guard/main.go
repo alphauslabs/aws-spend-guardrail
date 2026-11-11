@@ -14,10 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alphauslabs/aws-spend-guardrail/internal/activity"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/awsx"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/outbox"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/packs/ai"
 	"github.com/alphauslabs/aws-spend-guardrail/schema"
 	"github.com/aws/aws-lambda-go/cfn"
 	"github.com/aws/aws-lambda-go/events"
@@ -28,6 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	lambdasvc "github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -117,6 +120,16 @@ func setup(ctx context.Context) *app {
 		},
 		consumer: &outbox.Consumer{Jennah: writer, DatasetID: schema.InboxDatasetID(mspID, payer)},
 	}
+	if policy := os.Getenv("AI_POLICY_ID"); policy != "" {
+		fast, err := fastPath(ctx, cfg, orgs, policy)
+		if err != nil {
+			// The budget guard keeps working; the AI guard reports why it
+			// can't start.
+			a.g.Alerts.Alert(ctx, "guardrail: AI guard not started", err.Error())
+		} else {
+			a.g.Fast = fast
+		}
+	}
 	hash, err := awsx.CodeSHA256(ctx, lambdasvc.NewFromConfig(cfg), os.Getenv("AWS_LAMBDA_FUNCTION_NAME"))
 	a.g.SetCodeHash(ctx, hash, err)
 	return a
@@ -140,6 +153,7 @@ const (
 	routeOutbox   = "outbox"
 	routeNotify   = "notification"
 	routeCoverage = "coverage"
+	routeTrail    = "trail"
 )
 
 // route names what an incoming event is, without acting on it.
@@ -155,6 +169,8 @@ func route(raw json.RawMessage) (string, error) {
 		return routePull, nil
 	case p.Task == "daily":
 		return routeDaily, nil
+	case p.Task == "trail":
+		return routeTrail, nil
 	case p.Source == "aws.organizations":
 		return routeCoverage, nil // an account created, invited or moved
 	case len(p.Records) > 0 && p.Records[0].EventSource == "aws:sqs":
@@ -187,6 +203,8 @@ func (a *app) handle(ctx context.Context, raw json.RawMessage) (any, error) {
 		return nil, a.g.Pull(ctx)
 	case routeDaily:
 		return nil, a.g.Daily(ctx)
+	case routeTrail:
+		return nil, a.g.Trail(ctx)
 	case routeCoverage:
 		return nil, a.g.CheckCoverage(ctx)
 	case routeOutbox:
@@ -222,4 +240,43 @@ func main() {
 	}
 	a := setup(context.Background())
 	lambda.Start(a.handle)
+}
+
+// fastPath builds the AI guard from the stack's environment: the trail bucket
+// (in its own region), the organization id in the trail's key layout, the
+// state table, and the AI cutoff policy.
+func fastPath(ctx context.Context, cfg aws.Config, orgs *organizations.Client, policyID string) (*guard.FastPath, error) {
+	bucket := env("TRAIL_BUCKET")
+	s3c := s3.NewFromConfig(cfg)
+	loc, err := s3c.GetBucketLocation(ctx, &s3.GetBucketLocationInput{Bucket: aws.String(bucket)})
+	if err != nil {
+		return nil, fmt.Errorf("find the region of trail bucket %s: %w", bucket, err)
+	}
+	region := string(loc.LocationConstraint)
+	if region == "" {
+		region = "us-east-1"
+	}
+	s3c = s3.NewFromConfig(cfg, func(o *s3.Options) { o.Region = region })
+	org, err := orgs.DescribeOrganization(ctx, &organizations.DescribeOrganizationInput{})
+	if err != nil {
+		return nil, fmt.Errorf("read the organization id: %w", err)
+	}
+	base := "AWSLogs/" + aws.ToString(org.Organization.Id) + "/"
+	if p := os.Getenv("TRAIL_PREFIX"); p != "" {
+		base = p + "/" + base
+	}
+	prices, err := ai.Prices()
+	if err != nil {
+		return nil, err
+	}
+	store := &awsx.ActivityStore{API: dynamodb.NewFromConfig(cfg), Table: env("STATE_TABLE")}
+	return &guard.FastPath{
+		Engine: &activity.Engine{
+			Reader:   &activity.Reader{Bucket: &awsx.TrailBucket{API: s3c, Name: bucket}, Store: store, Base: base},
+			Store:    store,
+			Policies: &awsx.PackPolicies{API: orgs},
+		},
+		Prices:     prices,
+		AIPolicyID: policyID,
+	}, nil
 }

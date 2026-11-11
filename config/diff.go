@@ -27,6 +27,15 @@ type Change struct {
 
 func (c Change) String() string {
 	switch {
+	case c.Target.Kind == "" && strings.HasPrefix(c.Field, "ai."):
+		from, to := c.From, c.To
+		if from == "" {
+			from = "(none)"
+		}
+		if to == "" {
+			to = "(none)"
+		}
+		return fmt.Sprintf("%s: %s -> %s (%s)", c.Field, from, to, c.Direction)
 	case c.Field == FieldAlertEmail && c.To != "":
 		return fmt.Sprintf("alert recipient added: %s (%s)", c.To, c.Direction)
 	case c.Field == FieldAlertEmail:
@@ -86,6 +95,7 @@ func Diff(applied, desired *Resolved) []Change {
 		}
 	}
 	out = append(out, recipientChanges(applied.AlertEmails, desired.AlertEmails)...)
+	out = append(out, aiChanges(applied.AI, desired.AI)...)
 	return out
 }
 
@@ -183,7 +193,8 @@ func Stricter(applied, desired *Resolved) *Resolved {
 		applied = &Resolved{}
 	}
 	// Recipients stay as applied until a change to them is approved.
-	out := &Resolved{PayerAccountID: desired.PayerAccountID, ExcludedAccounts: desired.ExcludedAccounts, AlertEmails: applied.AlertEmails}
+	out := &Resolved{PayerAccountID: desired.PayerAccountID, ExcludedAccounts: desired.ExcludedAccounts, AlertEmails: applied.AlertEmails,
+		AI: stricterAI(applied.AI, desired.AI)}
 	for _, d := range desired.Scopes {
 		a, ok := applied.Scope(d.Target)
 		if !ok {
@@ -225,7 +236,8 @@ func Equal(a, b *Resolved) bool {
 	}
 	if a.PayerAccountID != b.PayerAccountID || len(a.Scopes) != len(b.Scopes) ||
 		strings.Join(a.ExcludedAccounts, ",") != strings.Join(b.ExcludedAccounts, ",") ||
-		strings.Join(a.AlertEmails, ",") != strings.Join(b.AlertEmails, ",") {
+		strings.Join(a.AlertEmails, ",") != strings.Join(b.AlertEmails, ",") ||
+		!equalAI(a.AI, b.AI) {
 		return false
 	}
 	for i := range a.Scopes {

@@ -10,13 +10,18 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/alphauslabs/aws-spend-guardrail/config"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/activity"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/awsx"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/cli"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -30,7 +35,8 @@ Usage:
   guardrail validate [--payer ACCOUNT] FILE
   guardrail diff     --msp ID --payer ACCOUNT FILE
   guardrail publish  --msp ID --payer ACCOUNT [--note TEXT] FILE
-  guardrail preflight --msp ID FILE   (run with AWS credentials for the payer account)
+  guardrail preflight --msp ID [--ai --trail-bucket BUCKET [--trail-prefix P] [--trail-kms-key ARN]] FILE
+                     (run with AWS credentials for the payer account)
   guardrail install-link --msp ID --payer ACCOUNT --bucket BUCKET --prefix guard/VERSION
                      [--version V] [--reader-secret-arn ARN] [--writer-secret-arn ARN]
                      [--approvers EMAIL,...] [--alert-email EMAIL]
@@ -71,6 +77,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	out := fs.String("o", "", "write the document to FILE (pull)")
 	note := fs.String("note", "", "note stored with the version (publish)")
 	payer := fs.String("payer", "", "payer (management) account of the org")
+	aiCheck := fs.Bool("ai", false, "also check the organization trail for the AI guard (preflight)")
+	trailBucket := fs.String("trail-bucket", "", "bucket the organization trail writes to (preflight --ai)")
+	trailPrefix := fs.String("trail-prefix", "", "the trail's S3 key prefix, if any (preflight --ai)")
+	trailKMS := fs.String("trail-kms-key", "", "KMS key the trail encrypts with, if any (preflight --ai)")
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
@@ -96,7 +106,16 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if *msp == "" {
 			return errors.New("--msp is required")
 		}
-		return preflight(ctx, raw, *msp, stdout)
+		if err := preflight(ctx, raw, *msp, stdout); err != nil {
+			return err
+		}
+		if !*aiCheck {
+			return nil
+		}
+		if *trailBucket == "" {
+			return errors.New("--trail-bucket is required with --ai")
+		}
+		return preflightAI(ctx, awsx.TrailCheck{Bucket: *trailBucket, Prefix: *trailPrefix, KMSKeyARN: *trailKMS}, stdout)
 	case "setup", "pull", "diff", "publish":
 	default:
 		return fmt.Errorf("unknown command %q\n\n%s", cmd, usage)
@@ -214,4 +233,64 @@ func installLink(args []string, stdout, stderr io.Writer) error {
 	}
 	fmt.Fprintln(stdout, link)
 	return nil
+}
+
+// preflightAI checks that the organization trail can feed the AI guard, then
+// reads and decrypts one recent file of the management account. It runs with
+// the operator's credentials: the guard's own access is confirmed by its first
+// trail tick, which alerts on an access error.
+func preflightAI(ctx context.Context, c awsx.TrailCheck, stdout io.Writer) error {
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-east-1"))
+	if err != nil {
+		return err
+	}
+	name, probs, err := awsx.CheckTrail(ctx, cloudtrail.NewFromConfig(cfg), c)
+	if err != nil {
+		return err
+	}
+	if len(probs) > 0 {
+		return fmt.Errorf("the organization trail can't feed the AI guard:\n  - %s", strings.Join(probs, "\n  - "))
+	}
+	fmt.Fprintf(stdout, "organization trail %s: multi-region, logging, all management events\n", name)
+
+	org, err := organizations.NewFromConfig(cfg).DescribeOrganization(ctx, &organizations.DescribeOrganizationInput{})
+	if err != nil {
+		return fmt.Errorf("read the organization: %w", err)
+	}
+	s3c := s3.NewFromConfig(cfg)
+	loc, err := s3c.GetBucketLocation(ctx, &s3.GetBucketLocationInput{Bucket: aws.String(c.Bucket)})
+	if err != nil {
+		return fmt.Errorf("find the bucket's region: %w", err)
+	}
+	if r := string(loc.LocationConstraint); r != "" {
+		s3c = s3.NewFromConfig(cfg, func(o *s3.Options) { o.Region = r })
+	}
+	base := "AWSLogs/" + aws.ToString(org.Organization.Id) + "/"
+	if c.Prefix != "" {
+		base = strings.Trim(c.Prefix, "/") + "/" + base
+	}
+	bucket := &awsx.TrailBucket{API: s3c, Name: c.Bucket}
+	mgmt := aws.ToString(org.Organization.MasterAccountId)
+	now := time.Now().UTC()
+	for _, day := range []time.Time{now, now.Add(-24 * time.Hour)} {
+		objs, err := bucket.List(ctx, awsx.RecentTrailDay(base, mgmt, "us-east-1", day), "")
+		if err != nil {
+			return fmt.Errorf("list trail files: %w", err)
+		}
+		if len(objs) == 0 {
+			continue
+		}
+		latest := objs[len(objs)-1]
+		body, err := bucket.Get(ctx, latest.Key)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", latest.Key, err)
+		}
+		recs, err := activity.ParseFile(body)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", latest.Key, err)
+		}
+		fmt.Fprintf(stdout, "read %s (%d records); the guard's own access is confirmed by its first run\n", latest.Key, len(recs))
+		return nil
+	}
+	return fmt.Errorf("no trail file for the management account in us-east-1 today or yesterday under %s", base)
 }

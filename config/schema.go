@@ -38,7 +38,7 @@ var (
 		"month_end":    {MonthEndAutoLift, MonthEndStayFrozen},
 	}
 
-	documentFields = []string{"payer_account_id", "defaults", "scopes", "excluded_accounts", "alert_emails"}
+	documentFields = []string{"payer_account_id", "defaults", "scopes", "excluded_accounts", "alert_emails", "ai"}
 	settingsFields = []string{"period", "threshold_pct", "freeze_style", "mode", "month_end"}
 	scopeFields    = append([]string{"account_id", "ou_id", "ceiling_usd"}, settingsFields...)
 )
@@ -86,6 +86,9 @@ func checkSchema(raw []byte) []Problem {
 	}
 	if v, ok := top["alert_emails"]; ok {
 		c.alertEmails(v)
+	}
+	if v, ok := top["ai"]; ok {
+		c.ai(v)
 	}
 	v, ok := top["scopes"]
 	if !ok {

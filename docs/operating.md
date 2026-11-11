@@ -144,6 +144,10 @@ jnh datasets query guardrail.msp_a.123456789012.inbox --table events \
 
 Each line is one event, oldest first. A typical inbox holds a few events a day, so 1,000 lines cover years. If you get exactly 1,000, run it again with a second `--where 'occurred_at>=<the last line's occurred_at>'` and append, dropping the one repeated line.
 
+## AI guard
+
+Turning it on, its caps and rules, and lifting a cutoff are in [AI guard](ai-guard.md). In short: check the trail with `guardrail preflight --ai`, update the stack with `EnableAIGuard=true`, publish an `ai` section in dry-run, then enforce. A cutoff's alert gives its id; lift it by adding the id to `ai.lifts` in a new version, with a reason in `--note`.
+
 ## Before installing: check SCP slots
 
 AWS allows 10 SCPs attached directly to one account or OU. A target that already has 10, none of them a freeze policy, can't take one. With AWS credentials for the payer account:

@@ -185,6 +185,8 @@ type Guard struct {
 	// Keys are the guard's Jennah keys, checked daily for expiry. Empty skips
 	// the check.
 	Keys []GuardKey
+	// Fast is the trail-reading fast path. Nil disables it.
+	Fast *FastPath
 	Now  func() time.Time
 }
 
