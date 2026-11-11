@@ -129,7 +129,13 @@ func ConfigTables() []*datastorev1.TableDeclaration {
 	}}
 }
 
-// InboxTables declares the inbox dataset's tables.
+// InboxRetentionDays is how long inbox events are kept. Jennah removes an event
+// some time after it is this old, typically within three more days. 400 days
+// keeps a full year plus a month of margin for annual reviews.
+const InboxRetentionDays = 400
+
+// InboxTables declares the inbox dataset's tables. The config dataset declares
+// no retention: config versions are the record of what was enforced.
 func InboxTables() []*datastorev1.TableDeclaration {
 	return []*datastorev1.TableDeclaration{{
 		Name: EventsTable,
@@ -144,6 +150,7 @@ func InboxTables() []*datastorev1.TableDeclaration {
 			col(ColLayoutVersion, datastorev1.ColumnType_COLUMN_TYPE_INT64, false),
 		},
 		PrimaryKey: []string{ColEventID},
+		Retention:  &datastorev1.RowRetention{Column: ColOccurredAt, Days: InboxRetentionDays},
 	}}
 }
 

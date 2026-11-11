@@ -74,12 +74,30 @@ func (c *CLI) Setup(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("read schema of %s: %w", d.id, err)
 		}
-		if !hasTables(have, d.tables) {
-			if _, err := ds.Schema.Declare(ctx, &datastorev1.DeclareTablesRequest{Tables: d.tables}); err != nil {
+		if needsDeclare(have, d.tables) {
+			for _, line := range removalWarnings(have, d.tables) {
+				fmt.Fprintf(c.Out, "%s: %s\n", d.id, line)
+			}
+			resp, err := ds.Schema.Declare(ctx, &datastorev1.DeclareTablesRequest{Tables: d.tables})
+			if err != nil {
 				return fmt.Errorf("declare tables in %s: %w", d.id, err)
 			}
 			changed = true
 			fmt.Fprintf(c.Out, "declared tables in %s (layout version %d)\n", d.id, schema.LayoutVersion)
+			for _, ts := range resp.GetTables() {
+				rc := ts.GetRetentionChange()
+				if rc == nil {
+					continue
+				}
+				msg := fmt.Sprintf("%s: retention %s -> %s", ts.GetName(), retentionLabel(rc.GetFrom()), retentionLabel(rc.GetTo()))
+				if rc.GetRemovesRows() {
+					msg += fmt.Sprintf("; rows older than %d days are being removed", rc.GetTo().GetDays())
+				}
+				if ts.GetStatus() == datastorev1.SchemaStatus_SCHEMA_STATUS_PENDING {
+					msg += " (still applying; run setup again later to confirm)"
+				}
+				fmt.Fprintf(c.Out, "  %s\n", msg)
+			}
 		}
 	}
 	if !changed {
@@ -92,6 +110,61 @@ func (c *CLI) Setup(ctx context.Context) error {
 	fmt.Fprintf(c.Out, "Operators need dataset selector %s for this payer org, or %s for every payer org of the MSP.\n",
 		schema.PayerSelector(c.MSP, c.Payer), schema.MSPSelector(c.MSP))
 	return nil
+}
+
+// needsDeclare reports whether any wanted table is missing a column, or has a
+// retention other than the declared one. A declaration without a retention
+// leaves the table's retention alone, so it is never a reason to re-declare.
+func needsDeclare(have *datastorev1.GetSchemaResponse, want []*datastorev1.TableDeclaration) bool {
+	if !hasTables(have, want) {
+		return true
+	}
+	for _, t := range want {
+		if t.GetRetention() != nil && !sameRetention(retentionOf(have, t.GetName()), t.GetRetention()) {
+			return true
+		}
+	}
+	return false
+}
+
+// removalWarnings says, before declaring, which existing tables will have rows
+// removed: those getting a retention, or a shorter one.
+func removalWarnings(have *datastorev1.GetSchemaResponse, want []*datastorev1.TableDeclaration) []string {
+	exists := map[string]bool{}
+	for _, t := range have.GetTables() {
+		exists[t.GetName()] = true
+	}
+	var out []string
+	for _, t := range want {
+		r, cur := t.GetRetention(), retentionOf(have, t.GetName())
+		if !exists[t.GetName()] || r == nil || r.GetDays() == 0 || sameRetention(cur, r) {
+			continue
+		}
+		if cur == nil || r.GetDays() < cur.GetDays() {
+			out = append(out, fmt.Sprintf("%s: rows whose %s is older than %d days will be removed", t.GetName(), r.GetColumn(), r.GetDays()))
+		}
+	}
+	return out
+}
+
+func retentionOf(have *datastorev1.GetSchemaResponse, table string) *datastorev1.RowRetention {
+	for _, t := range have.GetTables() {
+		if t.GetName() == table {
+			return t.GetRetention()
+		}
+	}
+	return nil
+}
+
+func sameRetention(a, b *datastorev1.RowRetention) bool {
+	return a.GetColumn() == b.GetColumn() && a.GetDays() == b.GetDays()
+}
+
+func retentionLabel(r *datastorev1.RowRetention) string {
+	if r == nil || r.GetDays() == 0 {
+		return "none"
+	}
+	return fmt.Sprintf("%s, %d days", r.GetColumn(), r.GetDays())
 }
 
 func hasTables(have *datastorev1.GetSchemaResponse, want []*datastorev1.TableDeclaration) bool {

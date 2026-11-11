@@ -307,10 +307,30 @@ func (s *Server) DeclareTables(_ context.Context, in *datastorev1.DeclareTablesR
 	}
 	resp := &datastorev1.DeclareTablesResponse{}
 	for _, t := range in.GetTables() {
-		if old, ok := s.tables[in.GetDatasetId()][t.GetName()]; !ok || !proto.Equal(old, t) {
+		old, ok := s.tables[in.GetDatasetId()][t.GetName()]
+		t = proto.Clone(t).(*datastorev1.TableDeclaration)
+		// Retention, as Jennah treats it: unset keeps what the table has,
+		// days 0 removes it, anything else sets it.
+		var had *datastorev1.RowRetention
+		if ok {
+			had = old.GetRetention()
+		}
+		switch r := t.GetRetention(); {
+		case r == nil:
+			t.Retention = had
+		case r.GetDays() == 0:
+			t.Retention = nil
+		}
+		ts := &datastorev1.TableStatus{Name: t.GetName(), Status: datastorev1.SchemaStatus_SCHEMA_STATUS_READY}
+		if !proto.Equal(had, t.GetRetention()) {
+			ts.RetentionChange = &datastorev1.RetentionChange{From: had, To: t.GetRetention(),
+				RemovesRows: t.GetRetention() != nil && (had == nil || t.GetRetention().GetDays() < had.GetDays())}
+		}
+		if !ok || !proto.Equal(old, t) {
 			s.Declares++
 		}
 		s.tables[in.GetDatasetId()][t.GetName()] = t
+		resp.Tables = append(resp.Tables, ts)
 	}
 	return resp, nil
 }
@@ -328,7 +348,7 @@ func (s *Server) GetSchema(_ context.Context, in *datastorev1.GetSchemaRequest) 
 		for _, c := range t.GetColumns() {
 			cols = append(cols, &datastorev1.ColumnSchema{Name: c.GetName(), Type: c.GetType(), Nullable: c.GetNullable()})
 		}
-		resp.Tables = append(resp.Tables, &datastorev1.TableSchema{Name: t.GetName(), Columns: cols, PrimaryKey: t.GetPrimaryKey(), Status: datastorev1.SchemaStatus_SCHEMA_STATUS_READY})
+		resp.Tables = append(resp.Tables, &datastorev1.TableSchema{Name: t.GetName(), Columns: cols, PrimaryKey: t.GetPrimaryKey(), Status: datastorev1.SchemaStatus_SCHEMA_STATUS_READY, Retention: t.GetRetention()})
 	}
 	return resp, nil
 }

@@ -16,7 +16,7 @@ Each MSP has an id: lowercase letters, digits, and `_` or `-` inside, for exampl
 guardrail setup --msp msp_a --payer 123456789012
 ```
 
-It creates two datasets in your Jennah enterprise, `guardrail.msp_a.123456789012.config` and `guardrail.msp_a.123456789012.inbox`, declares their tables, and prints what each guard credential needs. Running it again changes nothing.
+It creates two datasets in your Jennah enterprise, `guardrail.msp_a.123456789012.config` and `guardrail.msp_a.123456789012.inbox`, declares their tables, and prints what each guard credential needs. Running it again changes nothing, unless a newer release declares something the datasets don't have yet, such as the inbox's retention (see [how long events are kept](#how-long-events-are-kept)).
 
 People who manage config need a role with `datastore.data:read` and `datastore.data:write` and a dataset selector of either:
 
@@ -124,6 +124,25 @@ On each run, the guard compares the topic's email subscriptions with `alert_emai
 - A confirmed subscription that the guard made, for an address no longer listed, is unsubscribed and recorded as `alert_recipient_removed`. An address removed while still unconfirmed can't be unsubscribed yet; if its old link is clicked later, the next run unsubscribes it.
 
 The guard never unsubscribes the stack's `AlertEmail`, a subscription someone added in the SNS console, or an address that was already subscribed before the config listed it. Someone who wants to stop receiving alerts should be removed from the config; unsubscribing from the email only lasts until the next run, which subscribes them again.
+
+## How long events are kept
+
+Jennah removes inbox events some time after they are **400 days** old, judged by `occurred_at`, typically within three more days. 400 days is a lower bound: an event is never removed sooner, and an expired one can still show up in a query for a few days. That keeps a full year of history plus a month for annual reviews. Config versions are kept forever, since they're the record of what was enforced.
+
+Inboxes set up before this retention existed get it the next time you run `guardrail setup` for that payer org with this release. Setup says so first, because it removes events already older than 400 days:
+
+```
+guardrail.msp_a.123456789012.inbox: events: rows whose occurred_at is older than 400 days will be removed
+```
+
+To keep older events elsewhere, export them before running setup, or at any time before they turn 400 days old:
+
+```
+jnh datasets query guardrail.msp_a.123456789012.inbox --table events \
+  --where 'occurred_at<2026-01-01T00:00:00Z' --order-by occurred_at:asc --limit 1000 -o ndjson > events.ndjson
+```
+
+Each line is one event, oldest first. A typical inbox holds a few events a day, so 1,000 lines cover years. If you get exactly 1,000, run it again with a second `--where 'occurred_at>=<the last line's occurred_at>'` and append, dropping the one repeated line.
 
 ## Before installing: check SCP slots
 

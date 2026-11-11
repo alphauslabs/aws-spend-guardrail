@@ -95,3 +95,14 @@ func TestReaderCannotWriteAndWriterOnlyWrites(t *testing.T) {
 		}
 	}
 }
+
+func TestInboxKeepsEventsFor400Days(t *testing.T) {
+	inbox := InboxTables()[0]
+	r := inbox.GetRetention()
+	if r.GetColumn() != ColOccurredAt || r.GetDays() != 400 || InboxRetentionDays != 400 {
+		t.Fatalf("inbox retention: %v", r)
+	}
+	if ConfigTables()[0].GetRetention() != nil {
+		t.Fatal("config versions are kept forever: no retention on the config table")
+	}
+}
