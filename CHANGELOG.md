@@ -7,7 +7,6 @@ Every release has an entry here. Each entry has a **Security-relevant** section 
 ### Added
 - Config field `alert_emails`: up to 20 addresses that receive local alerts besides the stack's `AlertEmail`. The guard subscribes and unsubscribes them on the alert topic, and records each change in the inbox (`alert_recipient_subscribed`, `alert_recipient_removed`, and a daily `alert_recipient_unconfirmed`). Any change to the list needs the loosening approval.
 - Once a day the guard reads its reader and writer keys' expiry from Jennah and alerts locally 30, 14, 7, 3, and 1 days before a key expires. The heartbeat event lists both keys' labels and expiry. Needs Jennah v0.192.0 or later; with an older Jennah the expiry is recorded as unknown and nothing is alerted.
-
 - A loosening approval shows the config version's note as the reason given (or says none was given), carries it in its payload, and the `loosening_raised` event records it.
 
 ### Security-relevant
