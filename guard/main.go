@@ -113,6 +113,7 @@ func setup(ctx context.Context) *app {
 			},
 			Org:  &awsx.Org{API: orgs},
 			Subs: &awsx.AlertSubscriptions{API: snsClient, TopicARN: env("ALERT_TOPIC_ARN")},
+			Keys: []guard.GuardKey{{Name: "reader", Key: reader}, {Name: "writer", Key: writer}},
 		},
 		consumer: &outbox.Consumer{Jennah: writer, DatasetID: schema.InboxDatasetID(mspID, payer)},
 	}

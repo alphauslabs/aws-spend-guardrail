@@ -1,5 +1,5 @@
-github.com/alphauslabs/jennah-sdk-go v0.77.0 h1:tccfuGmsbzJeSxEpw7KIjGOm+9YZINXRFpFCQ30JImo=
-github.com/alphauslabs/jennah-sdk-go v0.77.0/go.mod h1:HsRNoGyEmOMOzYPq2tpUWCFnAbi6OlLlMVZ+pUZLi1k=
+github.com/alphauslabs/jennah-sdk-go v0.79.0 h1:VQTLPdBDVV7A8U6Gq2WPS4wMNE63GXKcFyfY5rA5/S8=
+github.com/alphauslabs/jennah-sdk-go v0.79.0/go.mod h1:HsRNoGyEmOMOzYPq2tpUWCFnAbi6OlLlMVZ+pUZLi1k=
 github.com/aws/aws-lambda-go v1.55.1 h1:We2cCp4BwqqH/JW+bEEo1FhgG71rslvjfi4y7KmlrR0=
 github.com/aws/aws-lambda-go v1.55.1/go.mod h1:V+NzkHNR6vBC8C1PDloqSLE+7jYWFiPvJJFiCiTm8nE=
 github.com/aws/aws-sdk-go-v2 v1.47.8 h1:fuClo7Un+Bi0EDTnSIPWxVEoJcze+wkGzNA4Vo3jRcQ=

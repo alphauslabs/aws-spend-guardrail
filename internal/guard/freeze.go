@@ -111,9 +111,15 @@ func (g *Guard) Daily(ctx context.Context) error {
 			errs = append(errs, err)
 		}
 	}
+	hb := map[string]any{"applied_version": st.AppliedVersion, "effective_version": st.EffectiveVersion, "pending": st.Pending != nil}
+	if keys := g.checkKeys(ctx, st); keys != nil {
+		hb["keys"] = keys
+		if err := g.State.Save(ctx, st); err != nil {
+			errs = append(errs, fmt.Errorf("save state: %w", err))
+		}
+	}
 	day := g.now().Format("2006-01-02")
-	g.emit(ctx, schema.KindHeartbeat, schema.KindHeartbeat+":"+day, "", st.AppliedVersion,
-		g.selfReport(map[string]any{"applied_version": st.AppliedVersion, "effective_version": st.EffectiveVersion, "pending": st.Pending != nil}))
+	g.emit(ctx, schema.KindHeartbeat, schema.KindHeartbeat+":"+day, "", st.AppliedVersion, g.selfReport(hb))
 	if st.Effective != nil {
 		if err := g.Reconcile(ctx, st.Effective); err != nil {
 			errs = append(errs, err)

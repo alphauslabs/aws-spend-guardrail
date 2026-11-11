@@ -14,6 +14,7 @@ import (
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 	sdk "github.com/alphauslabs/jennah-sdk-go"
 	approvalv1 "github.com/alphauslabs/jennah-sdk-go/jennah/approval/v1"
+	authv1 "github.com/alphauslabs/jennah-sdk-go/jennah/auth/v1"
 	datastorev1 "github.com/alphauslabs/jennah-sdk-go/jennah/datastore/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -29,6 +30,11 @@ type Server struct {
 	datastorev1.UnimplementedDatasetServiceServer
 	datastorev1.UnimplementedSchemaServiceServer
 	approvalv1.UnimplementedApprovalServiceServer
+	authv1.UnimplementedAuthServiceServer
+
+	// CallingKey is what WhoAmI reports as the calling API key; nil reports
+	// none, as an older Jennah does.
+	CallingKey *authv1.ApiKey
 
 	datasets map[string]bool
 	tables   map[string]map[string]*datastorev1.TableDeclaration
@@ -72,6 +78,7 @@ func Start(t testing.TB) (*Server, *jennah.Client) {
 	datastorev1.RegisterDatasetServiceServer(g, s)
 	datastorev1.RegisterSchemaServiceServer(g, s)
 	approvalv1.RegisterApprovalServiceServer(g, s)
+	authv1.RegisterAuthServiceServer(g, s)
 	go func() { _ = g.Serve(lis) }()
 	t.Cleanup(g.Stop)
 
@@ -336,4 +343,15 @@ func (s *Server) Datasets() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// WhoAmI reports the configured calling key, failing like a read when
+// FailReads is set.
+func (s *Server) WhoAmI(context.Context, *authv1.WhoAmIRequest) (*authv1.WhoAmIResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.FailReads {
+		return nil, status.Error(codes.Unavailable, "fake: reads failing")
+	}
+	return &authv1.WhoAmIResponse{ApiKey: s.CallingKey}, nil
 }

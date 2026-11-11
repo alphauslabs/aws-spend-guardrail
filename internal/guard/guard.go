@@ -60,6 +60,8 @@ type State struct {
 	// OwnSubscriptions are the alert topic subscriptions the guard asked
 	// for, by lowercased address. Only these are ever unsubscribed.
 	OwnSubscriptions map[string]OwnSubscription `json:"own_subscriptions,omitempty"`
+	// KeyWarnings are the expiry warnings sent per guard key, by key name.
+	KeyWarnings map[string]KeyWarning `json:"key_warnings,omitempty"`
 }
 
 // Pending is a loosening version and its approval.
@@ -178,6 +180,9 @@ type Guard struct {
 	// Subs manages the alert topic's email subscriptions. Nil skips
 	// recipient sync.
 	Subs AlertSubscriptions
+	// Keys are the guard's Jennah keys, checked daily for expiry. Empty skips
+	// the check.
+	Keys []GuardKey
 	Now  func() time.Time
 }
 

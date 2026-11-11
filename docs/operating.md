@@ -56,7 +56,9 @@ Pass the two secret ARNs to the stack (see [install](install.md)). `jnh keys lis
 
 ### Rotate a key before it expires
 
-When a key expires, the guard can't read config or record events: protection already in force keeps working, and the stack alerts that config refresh is failing. Rotate a few days before expiry:
+When a key expires, the guard can't read config or record events: protection already in force keeps working, and the stack alerts that config refresh is failing. The guard warns you first. Once a day it asks Jennah about each of its keys, using the key itself, and sends a local alert when one expires within 30, 14, 7, 3, or 1 days, once at each step (a guard that missed some days sends one alert for where it is now). The daily `heartbeat` event in the inbox lists both keys under `keys`, with each key's label and `expires_at`: a time, `never` for a key minted without an expiry, or `unknown` when Jennah couldn't say (for example while it's unreachable), which never triggers a warning.
+
+Rotate a few days before expiry:
 
 1. Mint a new key with the same label, datasets, and scopes, as above.
 2. Store it as the secret's new value: `aws secretsmanager put-secret-value --region us-east-1 --secret-id guardrail/msp_a/reader --secret-string file://reader.key`, then delete the file.
