@@ -71,6 +71,8 @@ type Pending struct {
 	FirstSeen  time.Time             `json:"first_seen"`
 	Desired    *config.Resolved      `json:"desired"`
 	Closed     jennah.ApprovalStatus `json:"closed,omitempty"` // set once rejected, expired or cancelled
+	// Note is the version's note, shown to approvers as the reason given.
+	Note string `json:"note,omitempty"`
 }
 
 // Frozen records that a scope was frozen by the guard's budget action.

@@ -71,7 +71,7 @@ The guard compares each new version with the config in force, field by field:
 | Address added to or removed from `alert_emails` | needs approval, like a loosening: removing one can silence freeze alerts, and adding one can send them to someone outside the MSP. This holds in a first version too. |
 
 - A version that only tightens applies on the guard's next pull, within about 5 minutes.
-- A version that loosens anything applies its tightening parts at once. For the rest, the guard raises one Jennah approval to the approvers set in the stack. The loosening applies only once the approval is approved **and** the stack's delay has passed since the guard first saw the version.
+- A version that loosens anything applies its tightening parts at once. For the rest, the guard raises one Jennah approval to the approvers set in the stack. The loosening applies only once the approval is approved **and** the stack's delay has passed since the guard first saw the version. The approval shows the version's note (`guardrail publish --note`) as the reason given, so write why the change is needed there: approvers decide from it.
 - If the approval is rejected, expires or is cancelled, the stricter config stays in force.
 - When a version's only changes awaiting approval are to `alert_emails`, the approval is titled "Change alert recipients" instead of "Loosen", and lists each address added or removed. Until it's approved, the recipients in force stay as they are.
 - A newer version supersedes a pending one, and the pending approval is cancelled.

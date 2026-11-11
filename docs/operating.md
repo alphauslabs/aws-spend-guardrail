@@ -78,7 +78,7 @@ guardrail publish --msp msp_a --payer 123456789012 --note "raise acme dev for th
 
 - `pull` writes the newest version, or `--version N`, and tells you on stderr which version the guard last applied and whether the newest one is still pending.
 - `diff` compares with the version the guard last applied.
-- `publish` refuses an invalid document, or one whose `payer_account_id` is not `--payer`, shows the classified diff, and writes the next version number. Publishing the same document again writes nothing. If someone else published first, it fails and asks you to pull again.
+- `publish` refuses an invalid document, or one whose `payer_account_id` is not `--payer`, shows the classified diff, and writes the next version number. Publishing the same document again writes nothing. If someone else published first, it fails and asks you to pull again. For a version that loosens anything, `--note` is the reason approvers see in the approval request (up to 4,000 characters shown), so say why.
 
 What happens next is in [config](config.md): tightening applies within about 5 minutes, loosening after approval and the stack's delay.
 

@@ -113,7 +113,7 @@ func (g *Guard) evaluate(ctx context.Context, st *State) error {
 		g.applyFull(ctx, st, latest.Number, desired, changes)
 		return nil
 	}
-	return g.handleLoosening(ctx, st, latest.Number, desired, changes)
+	return g.handleLoosening(ctx, st, latest.Number, latest.Note, desired, changes)
 }
 
 func (g *Guard) applyFull(ctx context.Context, st *State, version int64, desired *config.Resolved, changes []config.Change) {
@@ -125,7 +125,7 @@ func (g *Guard) applyFull(ctx context.Context, st *State, version int64, desired
 		g.selfReport(map[string]any{"changes": changeStrings(changes)}))
 }
 
-func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, desired *config.Resolved, changes []config.Change) error {
+func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, note string, desired *config.Resolved, changes []config.Change) error {
 	// Tightening parts apply at once.
 	if st.EffectiveVersion < version {
 		merged := config.Stricter(st.Effective, desired)
@@ -139,14 +139,14 @@ func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, d
 
 	p := st.Pending
 	if p == nil || p.Version != version {
-		a, err := g.Config.RaiseApproval(ctx, g.approvalRequest(version, changes))
+		a, err := g.Config.RaiseApproval(ctx, g.approvalRequest(version, note, changes))
 		if err != nil {
 			return err
 		}
-		p = &Pending{Version: version, ApprovalID: a.ID, FirstSeen: g.now(), Desired: desired}
+		p = &Pending{Version: version, ApprovalID: a.ID, FirstSeen: g.now(), Desired: desired, Note: note}
 		st.Pending = p
 		g.emit(ctx, schema.KindLooseningRaised, fmt.Sprintf("%s:%d", schema.KindLooseningRaised, version), "", version,
-			map[string]any{"approval_id": a.ID, "loosening": changeStrings(only(changes, config.Loosening))})
+			map[string]any{"approval_id": a.ID, "loosening": changeStrings(only(changes, config.Loosening)), "reason": note})
 	}
 	if p.Closed != "" {
 		return nil
@@ -177,7 +177,23 @@ func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, d
 	return nil
 }
 
-func (g *Guard) approvalRequest(version int64, changes []config.Change) jennah.ApprovalRequest {
+// MaxReasonLen is how much of a version's note an approval shows. Jennah allows
+// 16,000 characters in a summary; this leaves room for the list of changes.
+const MaxReasonLen = 4000
+
+// reasonText is the "Reason given" part of a loosening approval.
+func reasonText(version int64, note string) string {
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return "No reason was given."
+	}
+	if r := []rune(note); len(r) > MaxReasonLen {
+		return string(r[:MaxReasonLen]) + fmt.Sprintf("\n[shortened; the full note is on config version %d]", version)
+	}
+	return note
+}
+
+func (g *Guard) approvalRequest(version int64, note string, changes []config.Change) jennah.ApprovalRequest {
 	loosen := changeStrings(only(changes, config.Loosening))
 	title := fmt.Sprintf("Loosen spend guard config v%d (payer %s)", version, g.S.PayerAccountID)
 	what, kept := "loosens protection", "the stricter config stays in force"
@@ -190,6 +206,7 @@ func (g *Guard) approvalRequest(version int64, changes []config.Change) jennah.A
 	for _, c := range loosen {
 		fmt.Fprintf(&b, "- %s\n", c)
 	}
+	fmt.Fprintf(&b, "\nReason given:\n%s\n", reasonText(version, note))
 	fmt.Fprintf(&b, "\nIf approved, it applies %s after it was first seen. If rejected or unanswered, %s.", g.S.LooseningDelay, kept)
 	required := g.S.LooseningRequired
 	if required < 1 {
@@ -204,6 +221,7 @@ func (g *Guard) approvalRequest(version int64, changes []config.Change) jennah.A
 			"msp_id":           g.S.MSPID,
 			"config_version":   float64(version),
 			"loosening":        toAny(loosen),
+			"reason":           strings.TrimSpace(note),
 		},
 		Approvers: g.S.LooseningApprovers,
 		Required:  required,
