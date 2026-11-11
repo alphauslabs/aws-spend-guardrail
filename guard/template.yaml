@@ -85,6 +85,7 @@ Parameters:
   TrailBucket:
     Type: String
     Default: ""
+    AllowedPattern: "^([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])?$"
     Description: S3 bucket the organization trail writes to. Required when EnableAIGuard is true. If it is in another account, its bucket policy must grant this stack's guard role read access (see docs/ai-guard.md).
   TrailPrefix:
     Type: String
@@ -729,6 +730,13 @@ Resources:
   AIGuardPolicy:
     Type: AWS::IAM::RolePolicy
     Condition: AIGuard
+    Metadata:
+      cfn-lint:
+        config:
+          # cfn-lint resolves TrailBucket to its empty default, which isn't a
+          # valid ARN; that never happens, since this resource only exists with
+          # the AI guard on, and the AIGuardNeedsTrail rule then requires it.
+          ignore_checks: [W1031]
     Properties:
       RoleName: !Ref GuardRole
       PolicyName: ai-guard
