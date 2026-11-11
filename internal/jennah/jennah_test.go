@@ -117,7 +117,7 @@ func TestApprovalsAreIdempotentByRequestKey(t *testing.T) {
 		Summary:    "raise",
 		Payload:    map[string]any{"payer_account_id": "123456789012", "config_version": 6},
 		Approvers:  []string{"a@example.com"},
-		Required:   1,
+		Quorum:     jennah.QuorumAnyOne,
 		TTL:        time.Hour,
 	}
 	a1, err := c.RaiseApproval(ctx, req)
@@ -135,5 +135,36 @@ func TestApprovalsAreIdempotentByRequestKey(t *testing.T) {
 	}
 	if err := c.CancelApproval(ctx, a1.ID); err != nil {
 		t.Fatalf("cancelling a decided approval should be a no-op: %v", err)
+	}
+}
+
+func TestApprovalsCarryAQuorumRuleJennahAccepts(t *testing.T) {
+	ctx := context.Background()
+	f, c := jennahtest.Start(t)
+	approvers := []string{"a@example.com", "b@example.com", "c@example.com"}
+	for _, tc := range []struct {
+		q        jennah.Quorum
+		want     approvalv1.Quorum
+		required int32
+	}{
+		{jennah.QuorumAnyOne, approvalv1.Quorum_QUORUM_ANY_ONE, 1},
+		{jennah.QuorumAll, approvalv1.Quorum_QUORUM_ALL, 3},
+	} {
+		key := "guardrail:123456789012:" + string(tc.q)
+		_, err := c.RaiseApproval(ctx, jennah.ApprovalRequest{RequestKey: key, Title: "t", Approvers: approvers, Quorum: tc.q, TTL: time.Hour})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.q, err)
+		}
+		a := f.Approval(key)
+		if a.GetQuorum() != tc.want || a.GetRequiredApprovals() != tc.required {
+			t.Fatalf("%s: got %v with %d required", tc.q, a.GetQuorum(), a.GetRequiredApprovals())
+		}
+	}
+	// No rule is refused before anything is sent.
+	if _, err := c.RaiseApproval(ctx, jennah.ApprovalRequest{RequestKey: "k", Title: "t", Approvers: approvers, TTL: time.Hour}); err == nil {
+		t.Fatal("an approval without a quorum rule was raised")
+	}
+	if f.CreatedApprovals != 2 {
+		t.Fatalf("created %d approvals, want 2", f.CreatedApprovals)
 	}
 }

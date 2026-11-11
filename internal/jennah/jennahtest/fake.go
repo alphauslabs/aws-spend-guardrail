@@ -231,8 +231,25 @@ func (s *Server) Rows(dataset, table string) []*datastorev1.Row {
 	return out
 }
 
-// CreateApproval is idempotent on request key.
+// CreateApproval is idempotent on request key. Like Jennah, it refuses an
+// approval with no quorum rule (quorumFromProto in Jennah's approvalconv.go) and
+// a required count that disagrees with the rule (approvals.ErrThresholdMismatch).
 func (s *Server) CreateApproval(_ context.Context, in *approvalv1.CreateApprovalRequest) (*approvalv1.CreateApprovalResponse, error) {
+	var required int32
+	switch in.GetQuorum() {
+	case approvalv1.Quorum_QUORUM_ANY_ONE:
+		required = 1
+	case approvalv1.Quorum_QUORUM_ALL:
+		required = int32(len(in.GetApprovers()))
+	case approvalv1.Quorum_QUORUM_UNSPECIFIED:
+		return nil, status.Error(codes.InvalidArgument, "A quorum rule is required: ANY_ONE or ALL.")
+	default:
+		return nil, status.Errorf(codes.InvalidArgument, "Quorum rule %v is not one this platform accepts.", in.GetQuorum())
+	}
+	if r := in.GetRequiredApprovals(); r != 0 && r != required {
+		return nil, status.Errorf(codes.InvalidArgument, "required_approvals disagrees with the quorum rule: %v with %d approvers needs %d, got %d",
+			in.GetQuorum(), len(in.GetApprovers()), required, r)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if id, ok := s.byKey[in.GetRequestKey()]; ok {
@@ -245,7 +262,8 @@ func (s *Server) CreateApproval(_ context.Context, in *approvalv1.CreateApproval
 		Title:             in.GetTitle(),
 		Summary:           in.GetSummary(),
 		Payload:           in.GetPayload(),
-		RequiredApprovals: in.GetRequiredApprovals(),
+		Quorum:            in.GetQuorum(),
+		RequiredApprovals: required,
 		Status:            approvalv1.ApprovalStatus_APPROVAL_STATUS_PENDING,
 	}
 	s.approvals[id] = a

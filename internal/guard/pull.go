@@ -140,7 +140,11 @@ func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, n
 
 	p := st.Pending
 	if p == nil || p.Version != version {
-		a, err := g.Config.RaiseApproval(ctx, g.approvalRequest(version, note, changes))
+		req, err := g.approvalRequest(version, note, changes)
+		if err != nil {
+			return err
+		}
+		a, err := g.Config.RaiseApproval(ctx, req)
 		if err != nil {
 			return err
 		}
@@ -194,7 +198,7 @@ func reasonText(version int64, note string) string {
 	return note
 }
 
-func (g *Guard) approvalRequest(version int64, note string, changes []config.Change) jennah.ApprovalRequest {
+func (g *Guard) approvalRequest(version int64, note string, changes []config.Change) (jennah.ApprovalRequest, error) {
 	loosen := changeStrings(only(changes, config.Loosening))
 	title := fmt.Sprintf("Loosen spend guard config v%d (payer %s)", version, g.S.PayerAccountID)
 	what, kept := "loosens protection", "the stricter config stays in force"
@@ -209,9 +213,10 @@ func (g *Guard) approvalRequest(version int64, note string, changes []config.Cha
 	}
 	fmt.Fprintf(&b, "\nReason given:\n%s\n", reasonText(version, note))
 	fmt.Fprintf(&b, "\nIf approved, it applies %s after it was first seen. If rejected or unanswered, %s.", g.S.LooseningDelay, kept)
-	required := g.S.LooseningRequired
-	if required < 1 {
-		required = 1
+	approvers := cleanApprovers(g.S.LooseningApprovers)
+	quorum, err := approvalQuorum(g.S.LooseningRequired, len(approvers))
+	if err != nil {
+		return jennah.ApprovalRequest{}, err
 	}
 	return jennah.ApprovalRequest{
 		RequestKey: fmt.Sprintf("guardrail:%s:%s:v%d", g.S.PayerAccountID, g.S.MSPID, version),
@@ -224,9 +229,46 @@ func (g *Guard) approvalRequest(version int64, note string, changes []config.Cha
 			"loosening":        toAny(loosen),
 			"reason":           strings.TrimSpace(note),
 		},
-		Approvers: g.S.LooseningApprovers,
-		Required:  required,
+		Approvers: approvers,
+		Quorum:    quorum,
 		TTL:       g.S.LooseningWindow,
+	}, nil
+}
+
+// cleanApprovers trims the stack's approver list, drops blanks, and drops
+// repeats (ignoring case, keeping the first spelling), so the count used for the
+// quorum is the count Jennah sees.
+func cleanApprovers(in []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, a := range in {
+		a = strings.TrimSpace(a)
+		k := strings.ToLower(a)
+		if a == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, a)
+	}
+	return out
+}
+
+// approvalQuorum maps LooseningRequiredApprovals to one of the two rules Jennah
+// supports. Any other count is a setup error: no approval is raised, and the
+// stricter config stays in force until the stack is fixed.
+func approvalQuorum(required, approvers int) (jennah.Quorum, error) {
+	switch {
+	case approvers == 0:
+		return "", fmt.Errorf("setup error: LooseningApprovers lists no approvers, so no loosening can be approved. Update the stack")
+	case required <= 1:
+		return jennah.QuorumAnyOne, nil
+	case required == approvers:
+		return jennah.QuorumAll, nil
+	case approvers == 1:
+		return "", fmt.Errorf("setup error: LooseningRequiredApprovals is %d but LooseningApprovers lists 1 approver. Jennah needs 1. Update the stack", required)
+	default:
+		return "", fmt.Errorf("setup error: LooseningRequiredApprovals is %d but LooseningApprovers lists %d approvers. Jennah needs 1 (any one approver) or %d (all of them). Update the stack",
+			required, approvers, approvers)
 	}
 }
 

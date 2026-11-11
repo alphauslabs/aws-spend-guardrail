@@ -47,7 +47,7 @@ Parameters:
     Type: Number
     Default: 1
     MinValue: 1
-    Description: Approvals needed. Use 2 when the person who publishes a loosening must not be the only one approving it.
+    Description: Approvals needed. 1 for any one approver, or the number of LooseningApprovers to require all of them. No other value works.
   LooseningApprovalWindow:
     Type: String
     Default: 24h

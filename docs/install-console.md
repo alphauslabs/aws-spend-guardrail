@@ -68,7 +68,7 @@ The link only works in the payer account it was made for. Opened in any other ac
    | `JennahEndpoint` | leave empty |
    | `ReaderSecretArn`, `WriterSecretArn` | the two ARNs from step 3 |
    | `LooseningApprovers` | the emails that approve raising a limit, comma-separated |
-   | `LooseningRequiredApprovals` | `1`, or `2` if the person who changes a limit must not be its only approver |
+   | `LooseningRequiredApprovals` | `1` for any one approver, or the number of approvers to require all of them (for example, two approvers and `2`, so the person who changes a limit can't approve it alone) |
    | `LooseningApprovalWindow`, `LooseningDelay` | keep `24h` and `30m` unless you've agreed otherwise |
    | `FunctionPackageBucket`, `FunctionPackageKey` | from step 4 |
    | `GuardVersion` | the release version, for example `v0.1.0` |

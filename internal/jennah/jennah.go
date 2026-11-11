@@ -52,6 +52,15 @@ const (
 	ApprovalCancelled ApprovalStatus = "cancelled"
 )
 
+// Quorum is how many of an approval's approvers must approve it. Jennah supports
+// these two rules only, so N of M approvers can't be asked for.
+type Quorum string
+
+const (
+	QuorumAnyOne Quorum = "any_one" // one approval is enough
+	QuorumAll    Quorum = "all"     // every approver must approve
+)
+
 // ApprovalRequest is what the guard asks humans to approve.
 type ApprovalRequest struct {
 	RequestKey string
@@ -59,7 +68,7 @@ type ApprovalRequest struct {
 	Summary    string
 	Payload    map[string]any
 	Approvers  []string
-	Required   int
+	Quorum     Quorum
 	TTL        time.Duration
 }
 
@@ -230,13 +239,26 @@ func (c *Client) RaiseApproval(ctx context.Context, r ApprovalRequest) (*Approva
 	for _, a := range r.Approvers {
 		approvers = append(approvers, &approvalv1.ApproverSpec{Email: a})
 	}
+	// Jennah refuses an approval without a quorum rule, and a required count
+	// that disagrees with the rule, so both are sent and they always agree.
+	var quorum approvalv1.Quorum
+	var required int32
+	switch r.Quorum {
+	case QuorumAnyOne:
+		quorum, required = approvalv1.Quorum_QUORUM_ANY_ONE, 1
+	case QuorumAll:
+		quorum, required = approvalv1.Quorum_QUORUM_ALL, int32(len(approvers))
+	default:
+		return nil, fmt.Errorf("raise approval: unknown quorum rule %q", r.Quorum)
+	}
 	resp, err := c.c.Approvals.Create(ctx, &approvalv1.CreateApprovalRequest{
 		RequestKey:        r.RequestKey,
 		Title:             r.Title,
 		Summary:           r.Summary,
 		Payload:           payload,
 		Approvers:         approvers,
-		RequiredApprovals: int32(r.Required),
+		Quorum:            quorum,
+		RequiredApprovals: required,
 		TtlSeconds:        int32(r.TTL / time.Second),
 		OnExpire:          approvalv1.OnExpire_ON_EXPIRE_EXPIRE,
 	})

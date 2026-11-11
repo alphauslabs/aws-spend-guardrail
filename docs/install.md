@@ -64,7 +64,7 @@ Within 5 minutes the guard pulls the config and creates one budget per scope. Wa
 | `ReaderSecretArn` | | Secret with the reader key. |
 | `WriterSecretArn` | | Secret with the writer key. |
 | `LooseningApprovers` | | Emails asked to approve a loosening. |
-| `LooseningRequiredApprovals` | `1` | Approvals needed. Use 2 when whoever publishes a loosening must not be its only approver. |
+| `LooseningRequiredApprovals` | `1` | Approvals needed: `1` for any one approver, or the number of approvers to require all of them. Jennah supports no other count; with any other value the guard raises no approval, alerts, and keeps the stricter config. For separation of duties, list two approvers and set `2`. |
 | `LooseningApprovalWindow` | `24h` | How long approvers have. Unanswered means not applied. |
 | `LooseningDelay` | `30m` | Minimum time from first seeing a loosening version to applying it. |
 | `FunctionPackageBucket`, `FunctionPackageKey` | | Where the function zip is. |
