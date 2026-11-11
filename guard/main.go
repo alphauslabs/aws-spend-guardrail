@@ -114,9 +114,10 @@ func setup(ctx context.Context) *app {
 				ExecutionRoleARN: env("BUDGETS_EXECUTION_ROLE_ARN"),
 				NotifyTopicARN:   env("NOTIFY_TOPIC_ARN"),
 			},
-			Org:  &awsx.Org{API: orgs},
-			Subs: &awsx.AlertSubscriptions{API: snsClient, TopicARN: env("ALERT_TOPIC_ARN")},
-			Keys: []guard.GuardKey{{Name: "reader", Key: reader}, {Name: "writer", Key: writer}},
+			Org:    &awsx.Org{API: orgs},
+			Subs:   &awsx.AlertSubscriptions{API: snsClient, TopicARN: env("ALERT_TOPIC_ARN")},
+			Keys:   []guard.GuardKey{{Name: "reader", Key: reader}, {Name: "writer", Key: writer}},
+			Prices: reader,
 		},
 		consumer: &outbox.Consumer{Jennah: writer, DatasetID: schema.InboxDatasetID(mspID, payer)},
 	}

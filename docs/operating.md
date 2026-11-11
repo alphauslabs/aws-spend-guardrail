@@ -10,13 +10,13 @@ export JENNAH_API_KEY=<key>   # optional; otherwise your jnh login is used
 
 ## 1. Set up a payer org
 
-Each MSP has an id: lowercase letters, digits, and `_` or `-` inside, for example `msp_a`. An MSP can have several payer orgs (AWS organizations). Each payer org has its own guard and its own config, named by the MSP id and the payer (management) account. Run this once per payer org, with an operator credential that can create datasets and declare tables:
+Each MSP has an id: lowercase letters, digits, and `_` or `-` inside, for example `msp_a`. The id `prices` is reserved for the shared prices dataset. An MSP can have several payer orgs (AWS organizations). Each payer org has its own guard and its own config, named by the MSP id and the payer (management) account. Run this once per payer org, with an operator credential that can create datasets and declare tables:
 
 ```
 guardrail setup --msp msp_a --payer 123456789012
 ```
 
-It creates two datasets in your Jennah enterprise, `guardrail.msp_a.123456789012.config` and `guardrail.msp_a.123456789012.inbox`, declares their tables, and prints what each guard credential needs. Running it again changes nothing, unless a newer release declares something the datasets don't have yet, such as the inbox's retention (see [how long events are kept](#how-long-events-are-kept)).
+It creates two datasets in your Jennah enterprise, `guardrail.msp_a.123456789012.config` and `guardrail.msp_a.123456789012.inbox`, declares their tables, and prints what each guard credential needs. The first `setup` in an enterprise also creates `guardrail.prices`, the AI price table every guard in the enterprise reads (see [shared prices](#shared-ai-prices)); later runs leave it unchanged. Running it again changes nothing, unless a newer release declares something the datasets don't have yet, such as the inbox's retention (see [how long events are kept](#how-long-events-are-kept)).
 
 People who manage config need a role with `datastore.data:read` and `datastore.data:write` and a dataset selector of either:
 
@@ -25,11 +25,11 @@ People who manage config need a role with `datastore.data:read` and `datastore.d
 
 ## 2. Mint the guard's credentials
 
-Each payer org's guard uses two keys of its own. Neither can write config or decide an approval, so a leaked key can't loosen protection, and it reaches only that payer org.
+Each payer org's guard uses two keys of its own. Neither can write config or decide an approval, so a leaked key can't loosen protection, and it reaches only that payer org (the reader also reads the enterprise's shared prices, which can only tighten).
 
 | Key | Dataset selector | Permissions |
 |---|---|---|
-| reader | `guardrail.msp_a.123456789012.config` | `datastore.data:read`, `datastore.schema:read`, `approval.requests:create`, `approval.requests:read`, `approval.requests:cancel` |
+| reader | `guardrail.msp_a.123456789012.config`, `guardrail.prices` | `datastore.data:read`, `datastore.schema:read`, `approval.requests:create`, `approval.requests:read`, `approval.requests:cancel` |
 | writer | `guardrail.msp_a.123456789012.inbox` | `datastore.data:write` |
 
 Today these are API keys with their own scope and dataset selector, minted by a long-lived admin of the enterprise with `jnh` (signed in with `jnh login`; an API key can't mint keys). Once Jennah supports service accounts, use one service account per key instead, each with a custom role carrying the same reach. The guard only needs the secret, so switching doesn't touch the stack.
@@ -39,7 +39,7 @@ Mint both keys and store each as a plain-text secret in Secrets Manager in the p
 ```
 umask 077
 jnh keys create --label guardrail-msp_a-123456789012-reader \
-  --datasets guardrail.msp_a.123456789012.config \
+  --datasets guardrail.msp_a.123456789012.config,guardrail.prices \
   --scopes datastore.data:read,datastore.schema:read,approval.requests:create,approval.requests:read,approval.requests:cancel \
   --expires-in 1y -o json | jq -r .secret > reader.key
 jnh keys create --label guardrail-msp_a-123456789012-writer \
@@ -147,6 +147,19 @@ Each line is one event, oldest first. A typical inbox holds a few events a day, 
 ## AI guard
 
 Turning it on, its caps and rules, and lifting a cutoff are in [AI guard](ai-guard.md). In short: check the trail with `guardrail preflight --ai`, update the stack with `EnableAIGuard=true`, publish an `ai` section in dry-run, then enforce. A cutoff's alert gives its id; lift it by adding the id to `ai.lifts` in a new version, with a reason in `--note`.
+
+## Shared AI prices
+
+The AI guard prices Bedrock calls from the table in its release, merged with the enterprise's shared table in `guardrail.prices`, which every guard reads on its 5-minute pull. Publish it when AWS changes prices, once per enterprise (not per MSP or payer org), with an operator credential that can write that dataset and the AWS credentials of any account that can call the Price List API and `bedrock:ListFoundationModels`:
+
+```
+guardrail prices publish --dry-run
+guardrail prices publish --note "Nova price change, Dec 2026"
+```
+
+It prints the enterprise it acts on and the models added, raised, lowered, and removed against the latest version, then writes a new version (nothing, if nothing changed). Versions are never edited. Shared prices only tighten: a guard takes the higher of its release's price and the shared one, so a lowered or removed price changes nothing until a release with the lower price is installed, and a payer org's own `ai.prices` still wins. Each guard records the version it starts using as a `prices_applied` event, and every AI cutoff names the price version behind it. A guard that can't read shared prices alerts once and keeps the last version it read, or its release's prices.
+
+`guardrail prices build -o internal/packs/ai/prices.json` regenerates the release's table the same way.
 
 ## Before installing: check SCP slots
 

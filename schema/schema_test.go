@@ -90,7 +90,7 @@ func TestReaderCannotWriteAndWriterOnlyWrites(t *testing.T) {
 				t.Error("reader must not write")
 			}
 		}
-		if c.Name == "writer" && (len(c.Permissions) != 1 || c.Permissions[0] != "datastore.data:write" || c.DatasetID != InboxDatasetID("msp_a", "123456789012")) {
+		if c.Name == "writer" && (len(c.Permissions) != 1 || c.Permissions[0] != "datastore.data:write" || len(c.DatasetIDs) != 1 || c.DatasetIDs[0] != InboxDatasetID("msp_a", "123456789012")) {
 			t.Errorf("writer reach: %+v", c)
 		}
 	}
@@ -104,5 +104,33 @@ func TestInboxKeepsEventsFor400Days(t *testing.T) {
 	}
 	if ConfigTables()[0].GetRetention() != nil {
 		t.Fatal("config versions are kept forever: no retention on the config table")
+	}
+}
+
+func TestReaderReachesSharedPricesReadOnly(t *testing.T) {
+	for _, c := range GuardCredentials("msp_a", "123456789012") {
+		if c.Name != "reader" {
+			continue
+		}
+		if len(c.DatasetIDs) != 2 || c.DatasetIDs[1] != PricesDatasetID {
+			t.Fatalf("reader reach: %v", c.DatasetIDs)
+		}
+	}
+}
+
+func TestPricesIsReservedAsAnMSPID(t *testing.T) {
+	err := ValidateMSPID("prices")
+	if err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("prices must be refused as an MSP id: %v", err)
+	}
+	if ValidateMSPID("prices2") != nil {
+		t.Fatal("only the exact name is reserved")
+	}
+}
+
+func TestPricesTables(t *testing.T) {
+	tabs := PricesTables()
+	if len(tabs) != 2 || tabs[1].GetName() != PriceChunksTable || strings.Join(tabs[1].GetPrimaryKey(), ",") != "version,pack,region" {
+		t.Fatalf("prices tables: %v", tabs)
 	}
 }

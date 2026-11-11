@@ -7,11 +7,13 @@ require (
 	github.com/aws/aws-lambda-go v1.55.1
 	github.com/aws/aws-sdk-go-v2 v1.48.0
 	github.com/aws/aws-sdk-go-v2/config v1.33.17
+	github.com/aws/aws-sdk-go-v2/service/bedrock v1.74.7
 	github.com/aws/aws-sdk-go-v2/service/budgets v1.53.8
 	github.com/aws/aws-sdk-go-v2/service/cloudtrail v1.65.12
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.73.2
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.114.3
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.62.7
+	github.com/aws/aws-sdk-go-v2/service/pricing v1.51.6
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.10
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.50.11
 	github.com/aws/aws-sdk-go-v2/service/sns v1.47.10

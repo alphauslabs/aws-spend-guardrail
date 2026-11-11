@@ -45,7 +45,10 @@ The guard writes to the payer org's inbox:
 - `cutoff` and `would_cutoff`, with the cutoff id, account, rule, and evidence;
 - `cutoff_lifted`;
 - `trail_stalled` and `trail_resumed`;
-- `usage_summary` once an hour per account and model: calls, input and output tokens, and estimated USD.
+- `usage_summary` once an hour per account and model: calls, input and output tokens, and estimated USD;
+- `prices_applied` when it starts using a new shared price version, with how many models it raised, added, or listed lower (ignored).
+
+Each `cutoff` and `would_cutoff` names the shared price version in use (0 for the release's prices only).
 
 Raw trail records and prompts never leave your AWS.
 
@@ -56,6 +59,14 @@ If no new trail file arrives for 30 minutes, or the guard can't read the trail (
 ## Prices
 
 `internal/packs/ai/prices.json` lists each Bedrock model's on-demand input and output price per 1,000 tokens in us-east-1, from the AWS Price List API, with the date it was published. It uses the standard (regional) rate where AWS lists one, so estimates lean high against the cheaper global rate. It leaves out batch, provisioned, prompt-cache, and long-context rates, so a heavy long-context user is estimated low.
+
+The enterprise's shared table in Jennah (`guardrail.prices`, published with `guardrail prices publish`, see [operating](operating.md#shared-ai-prices)) is merged in tighten-only, input and output separately:
+
+- a model in both tables costs the higher of the two prices;
+- a model only the shared table lists costs at least its provider's highest release price (or the release's highest overall, for a provider the release lacks), so a new model is never priced as cheap by mistake;
+- a payer org's own `ai.prices` wins over both.
+
+So when AWS raises a price or adds a model, publishing the shared table applies it to every guard within 5 minutes, with no stack update. When AWS lowers a price, guards keep the higher one, estimating high, until a release with the lower price is installed (or an org approves a lower `ai.prices`). A guard that can't read the shared table keeps the last version it read, or its release's prices, and alerts once.
 
 To price a model the table lacks, or to correct a price, add it to `ai.prices` (and to `ai.models` if you use an allowlist). A higher price applies at once; a lower or new one needs approval, since it lets more spend through.
 

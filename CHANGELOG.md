@@ -11,6 +11,7 @@ Every release has an entry here. Each entry has a **Security-relevant** section 
 
 - The AI guard (opt-in with `EnableAIGuard`): reads the organization CloudTrail trail every minute, prices Bedrock calls from their token counts, and cuts off an account's AI access when it passes an hourly, daily, or monthly cap, or calls a model or region not allowed, uses a Bedrock API key without being allowed to, or changes Bedrock's logging settings. Configured in the config's new `ai` section; lifts go through the loosening approval. Writes cutoff, lift, trail-stall, and hourly usage events. See `docs/ai-guard.md`.
 - `guardrail preflight --ai` checks that the organization trail can feed the AI guard.
+- Shared AI prices: `guardrail prices publish` writes a versioned price table, built from the AWS Price List API, to the enterprise's `guardrail.prices` dataset, which `setup` creates once per enterprise. Guards read it on the 5-minute pull and merge it with their release's table tighten-only, record each version they start using as `prices_applied`, and name the price version in AI cutoff events. `guardrail prices build` regenerates the release's table. The MSP id `prices` is reserved.
 
 ### Security-relevant
 - New SCP, created only with `EnableAIGuard=true`: `guardrail-ai-cutoff-<msp id>`, denying Bedrock model invocation, Bedrock API keys, and AgentCore invoke and session actions. The guard attaches it to accounts (never OUs) itself, so its role gains `organizations:AttachPolicy` and `DetachPolicy` on that policy and on the organization's accounts.
@@ -20,6 +21,7 @@ Every release has an entry here. Each entry has a **Security-relevant** section 
 - Config in Jennah can now direct local alerts to email addresses. Adding or removing an address needs the same approval as a loosening, from the approvers set in the stack, including in a first config. Config can't remove the stack's `AlertEmail`, a subscription made outside the guard, or one that existed before config listed it.
 - The guard's role can subscribe, unsubscribe, and list subscriptions on the stack's alert topic (`sns:Subscribe` and `sns:ListSubscriptionsByTopic` on the topic, `sns:Unsubscribe` on its subscriptions), and no other topic.
 - The guard function receives the stack's `AlertEmail` as `ALERT_EMAIL`, so it can refuse to unsubscribe it.
+- The guard's reader key now also reaches the enterprise's `guardrail.prices` dataset, read-only. Shared prices can only raise a price or add a model, never lower one, so whoever can write that dataset can make the AI guard stricter but not looser. Existing reader keys need reminting with the added dataset; until then the guard alerts once and uses its release's prices.
 
 ### Fixed
 - `guardrail preflight` reported an account or OU as having no free SCP slot at 5 attached policies. AWS now allows 10, so the check and the install docs use 10.

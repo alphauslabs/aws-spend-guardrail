@@ -144,3 +144,39 @@ func TestAllowedAPIKeyCallerAndPricedUnknownModel(t *testing.T) {
 		t.Fatalf("allowlisted and priced model: %+v %+v", u, h)
 	}
 }
+
+func TestSharedPricesOnlyTighten(t *testing.T) {
+	tb := &Table{Models: map[string]config.ModelPrice{
+		"anthropic.claude-a": {InputPer1K: 0.003, OutputPer1K: 0.015},
+		"anthropic.claude-b": {InputPer1K: 0.0055, OutputPer1K: 0.0275},
+		"amazon.nova-micro":  {InputPer1K: 0.000035, OutputPer1K: 0.00014},
+	}}
+	shared := map[string]config.ModelPrice{
+		"anthropic.claude-a":   {InputPer1K: 0.004, OutputPer1K: 0.010}, // input raised, output lower
+		"amazon.nova-micro":    {InputPer1K: 0.00001, OutputPer1K: 0.0001},
+		"anthropic.claude-new": {InputPer1K: 0.001, OutputPer1K: 0.001},
+		"acme.model-x":         {InputPer1K: 0.0001, OutputPer1K: 0.0001},
+	}
+	p := NewShared(tb, shared, nil)
+	cases := map[string]config.ModelPrice{
+		"anthropic.claude-a":   {InputPer1K: 0.004, OutputPer1K: 0.015},      // higher of each
+		"amazon.nova-micro":    {InputPer1K: 0.000035, OutputPer1K: 0.00014}, // lower ignored
+		"anthropic.claude-new": {InputPer1K: 0.0055, OutputPer1K: 0.0275},    // floored at the provider's highest
+		"acme.model-x":         {InputPer1K: 0.0055, OutputPer1K: 0.0275},    // provider absent: the table's highest
+	}
+	for id, want := range cases {
+		if got, ok := p.Price(id); !ok || got != want {
+			t.Errorf("%s: %+v, want %+v", id, got, want)
+		}
+	}
+	over := NewShared(tb, shared, &config.ResolvedAI{Prices: map[string]config.ModelPrice{"amazon.nova-micro": {InputPer1K: 0.00001, OutputPer1K: 0.00001}}})
+	if got, _ := over.Price("amazon.nova-micro"); got.InputPer1K != 0.00001 {
+		t.Errorf("an org's approved override must win: %+v", got)
+	}
+	if r, a, i := SharedEffect(tb.Models, shared); r != 1 || a != 2 || i != 1 {
+		t.Errorf("effect raised %d added %d ignored %d", r, a, i)
+	}
+	if _, h := p.Evaluate(call("Converse", "anthropic.claude-new", 1, 1)); h != nil {
+		t.Errorf("a shared-only model must not trip as unknown: %+v", h)
+	}
+}

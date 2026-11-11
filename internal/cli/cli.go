@@ -58,6 +58,9 @@ func (c *CLI) Setup(ctx context.Context) error {
 	}{
 		{schema.ConfigDatasetID(c.MSP, c.Payer), schema.ConfigTables()},
 		{schema.InboxDatasetID(c.MSP, c.Payer), schema.InboxTables()},
+		// Shared by every payer org of the enterprise: created by the first
+		// setup, left as it is by later ones.
+		{schema.PricesDatasetID, schema.PricesTables()},
 	} {
 		_, _, err := c.J.SDK().Datasets.Create(ctx, &datastorev1.CreateDatasetRequest{DatasetId: d.id, DisplayName: "aws-spend-guardrail " + d.id})
 		switch {
@@ -105,7 +108,7 @@ func (c *CLI) Setup(ctx context.Context) error {
 	}
 	fmt.Fprintln(c.Out, "\nGuard credentials (store each in the payer account's Secrets Manager):")
 	for _, n := range schema.GuardCredentials(c.MSP, c.Payer) {
-		fmt.Fprintf(c.Out, "  %-6s dataset selector %s, permissions %s\n", n.Name, n.DatasetID, strings.Join(n.Permissions, ", "))
+		fmt.Fprintf(c.Out, "  %-6s dataset selectors %s, permissions %s\n", n.Name, strings.Join(n.DatasetIDs, ","), strings.Join(n.Permissions, ", "))
 	}
 	fmt.Fprintf(c.Out, "Operators need dataset selector %s for this payer org, or %s for every payer org of the MSP.\n",
 		schema.PayerSelector(c.MSP, c.Payer), schema.MSPSelector(c.MSP))

@@ -4,397 +4,330 @@
   "basis": "On-demand standard (regional) input and output token rates, USD per 1,000 tokens. Excludes batch, reserved, flex, priority, long-context, latency-optimized, and prompt-cache rates. Where only a global rate is listed, that rate is used.",
   "models": {
     "ai21.jamba-1-5-large-v1:0": {
-      "name": "Jamba 1.5 Large",
       "input_per_1k": 0.002,
       "output_per_1k": 0.008
     },
     "ai21.jamba-1-5-mini-v1:0": {
-      "name": "Jamba 1.5 Mini",
       "input_per_1k": 0.0002,
       "output_per_1k": 0.0004
     },
     "amazon.nova-2-lite-v1:0": {
-      "name": "Nova 2 Lite",
       "input_per_1k": 0.00033,
       "output_per_1k": 0.00275
     },
     "amazon.nova-lite-v1:0": {
-      "name": "Nova Lite",
-      "input_per_1k": 6e-05,
+      "input_per_1k": 0.00006,
       "output_per_1k": 0.00024
     },
     "amazon.nova-micro-v1:0": {
-      "name": "Nova Micro",
-      "input_per_1k": 3.5e-05,
+      "input_per_1k": 0.000035,
       "output_per_1k": 0.00014
     },
     "amazon.nova-pro-v1:0": {
-      "name": "Nova Pro",
       "input_per_1k": 0.0008,
       "output_per_1k": 0.0032
     },
     "anthropic.claude-fable-5": {
-      "name": "Claude Fable 5",
       "input_per_1k": 0.011,
       "output_per_1k": 0.055
     },
     "anthropic.claude-fable-5-1": {
-      "name": "Claude Fable 5.1",
       "input_per_1k": 0.011,
       "output_per_1k": 0.055
     },
     "anthropic.claude-fable-5-2": {
-      "name": "Claude Fable 5.2",
       "input_per_1k": 0.0088,
       "output_per_1k": 0.044
     },
     "anthropic.claude-haiku-4-5-20251001-v1:0": {
-      "name": "Claude Haiku 4.5",
       "input_per_1k": 0.0011,
       "output_per_1k": 0.0055
     },
     "anthropic.claude-haiku-5-5": {
-      "name": "Claude Haiku 5.5",
       "input_per_1k": 0.00011,
       "output_per_1k": 0.00055
     },
     "anthropic.claude-opus-4-1-20250805-v1:0": {
-      "name": "Claude Opus 4.1",
       "input_per_1k": 0.015,
       "output_per_1k": 0.075
     },
     "anthropic.claude-opus-4-5-20251101-v1:0": {
-      "name": "Claude Opus 4.5",
       "input_per_1k": 0.0055,
       "output_per_1k": 0.0275
     },
     "anthropic.claude-opus-4-6-v1": {
-      "name": "Claude Opus 4.6",
       "input_per_1k": 0.0055,
       "output_per_1k": 0.0275
     },
     "anthropic.claude-opus-4-7": {
-      "name": "Claude Opus 4.7",
       "input_per_1k": 0.0055,
       "output_per_1k": 0.0275
     },
     "anthropic.claude-opus-4-8": {
-      "name": "Claude Opus 4.8",
       "input_per_1k": 0.0055,
       "output_per_1k": 0.0275
     },
     "anthropic.claude-opus-5": {
-      "name": "Claude Opus 5",
       "input_per_1k": 0.0055,
       "output_per_1k": 0.0275
     },
     "anthropic.claude-opus-5-5": {
-      "name": "Claude Opus 5.5",
       "input_per_1k": 0.0044,
       "output_per_1k": 0.022
     },
     "anthropic.claude-sonnet-4-5-20250929-v1:0": {
-      "name": "Claude Sonnet 4.5",
       "input_per_1k": 0.0033,
       "output_per_1k": 0.0165
     },
     "anthropic.claude-sonnet-4-6": {
-      "name": "Claude Sonnet 4.6",
       "input_per_1k": 0.0033,
       "output_per_1k": 0.0165
     },
     "anthropic.claude-sonnet-5": {
-      "name": "Claude Sonnet 5",
       "input_per_1k": 0.0022,
       "output_per_1k": 0.011
     },
     "anthropic.claude-sonnet-5-5": {
-      "name": "Claude Sonnet 5.5",
       "input_per_1k": 0.0022,
       "output_per_1k": 0.011
     },
     "deepseek.r1-v1:0": {
-      "name": "DeepSeek-R1",
       "input_per_1k": 0.00135,
       "output_per_1k": 0.0054
     },
     "deepseek.v3.2": {
-      "name": "DeepSeek V3.2",
       "input_per_1k": 0.00062,
       "output_per_1k": 0.00185
     },
     "google.gemma-3-12b-it": {
-      "name": "Gemma 3 12B IT",
-      "input_per_1k": 9e-05,
+      "input_per_1k": 0.00009,
       "output_per_1k": 0.00029
     },
     "google.gemma-3-27b-it": {
-      "name": "Gemma 3 27B PT",
       "input_per_1k": 0.00023,
       "output_per_1k": 0.00038
     },
     "google.gemma-3-4b-it": {
-      "name": "Gemma 3 4B IT",
-      "input_per_1k": 4e-05,
-      "output_per_1k": 8e-05
+      "input_per_1k": 0.00004,
+      "output_per_1k": 0.00008
     },
     "meta.llama3-1-70b-instruct-v1:0": {
-      "name": "Llama 3.1 70B Instruct",
       "input_per_1k": 0.00072,
       "output_per_1k": 0.00072
     },
     "meta.llama3-1-8b-instruct-v1:0": {
-      "name": "Llama 3.1 8B Instruct",
       "input_per_1k": 0.00022,
       "output_per_1k": 0.00022
     },
     "meta.llama3-3-70b-instruct-v1:0": {
-      "name": "Llama 3.3 70B Instruct",
       "input_per_1k": 0.00072,
       "output_per_1k": 0.00072
     },
     "meta.llama3-70b-instruct-v1:0": {
-      "name": "Llama 3 70B Instruct",
       "input_per_1k": 0.00265,
       "output_per_1k": 0.0035
     },
     "meta.llama3-8b-instruct-v1:0": {
-      "name": "Llama 3 8B Instruct",
       "input_per_1k": 0.0003,
       "output_per_1k": 0.0006
     },
     "meta.llama4-maverick-17b-instruct-v1:0": {
-      "name": "Llama 4 Maverick 17B Instruct",
       "input_per_1k": 0.00024,
       "output_per_1k": 0.00097
     },
     "meta.llama4-scout-17b-instruct-v1:0": {
-      "name": "Llama 4 Scout 17B Instruct",
       "input_per_1k": 0.00017,
       "output_per_1k": 0.00066
     },
     "minimax.minimax-m2": {
-      "name": "MiniMax M2",
       "input_per_1k": 0.0003,
       "output_per_1k": 0.0012
     },
     "minimax.minimax-m2.1": {
-      "name": "MiniMax M2.1",
       "input_per_1k": 0.0003,
       "output_per_1k": 0.0012
     },
     "minimax.minimax-m2.5": {
-      "name": "MiniMax M2.5",
       "input_per_1k": 0.0003,
       "output_per_1k": 0.0012
     },
     "mistral.devstral-2-123b": {
-      "name": "Devstral 2 123B",
       "input_per_1k": 0.0004,
       "output_per_1k": 0.002
     },
     "mistral.magistral-small-2509": {
-      "name": "Magistral Small 2509",
       "input_per_1k": 0.0005,
       "output_per_1k": 0.0015
     },
     "mistral.ministral-3-14b-instruct": {
-      "name": "Ministral 14B 3.0",
       "input_per_1k": 0.0002,
       "output_per_1k": 0.0002
     },
     "mistral.ministral-3-3b-instruct": {
-      "name": "Ministral 3B",
       "input_per_1k": 0.0001,
       "output_per_1k": 0.0001
     },
     "mistral.ministral-3-8b-instruct": {
-      "name": "Ministral 3 8B",
       "input_per_1k": 0.00015,
       "output_per_1k": 0.00015
     },
     "mistral.mistral-7b-instruct-v0:2": {
-      "name": "Mistral 7B Instruct",
       "input_per_1k": 0.00015,
       "output_per_1k": 0.0002
     },
     "mistral.mistral-large-2402-v1:0": {
-      "name": "Mistral Large (24.02)",
       "input_per_1k": 0.004,
       "output_per_1k": 0.012
     },
     "mistral.mistral-large-3-675b-instruct": {
-      "name": "Mistral Large 3",
       "input_per_1k": 0.0005,
       "output_per_1k": 0.0015
     },
     "mistral.mistral-small-2402-v1:0": {
-      "name": "Mistral Small (24.02)",
       "input_per_1k": 0.001,
       "output_per_1k": 0.003
     },
     "mistral.mixtral-8x7b-instruct-v0:1": {
-      "name": "Mixtral 8x7B Instruct",
       "input_per_1k": 0.00045,
       "output_per_1k": 0.0007
     },
     "mistral.pixtral-large-2502-v1:0": {
-      "name": "Pixtral Large (25.02)",
       "input_per_1k": 0.002,
       "output_per_1k": 0.006
     },
     "mistral.voxtral-mini-3b-2507": {
-      "name": "Voxtral Mini 3B 2507",
-      "input_per_1k": 4e-05,
-      "output_per_1k": 4e-05
+      "input_per_1k": 0.00004,
+      "output_per_1k": 0.00004
     },
     "moonshot.kimi-k2-thinking": {
-      "name": "Kimi K2 Thinking",
       "input_per_1k": 0.0006,
       "output_per_1k": 0.0025
     },
     "moonshotai.kimi-k2.5": {
-      "name": "Kimi K2.5",
       "input_per_1k": 0.0006,
       "output_per_1k": 0.003
     },
+    "moonshotai.kimi-k3": {
+      "input_per_1k": 0.0033,
+      "output_per_1k": 0.0165
+    },
     "nvidia.nemotron-nano-12b-v2": {
-      "name": "NVIDIA Nemotron Nano 12B v2 VL BF16",
       "input_per_1k": 0.0002,
       "output_per_1k": 0.0006
     },
     "nvidia.nemotron-nano-3-30b": {
-      "name": "Nemotron Nano 3 30B",
-      "input_per_1k": 6e-05,
+      "input_per_1k": 0.00006,
       "output_per_1k": 0.00024
     },
     "nvidia.nemotron-nano-9b-v2": {
-      "name": "NVIDIA Nemotron Nano 9B v2",
-      "input_per_1k": 6e-05,
+      "input_per_1k": 0.00006,
       "output_per_1k": 0.00023
     },
     "nvidia.nemotron-super-3-120b": {
-      "name": "NVIDIA Nemotron 3 Super 120B A12B",
       "input_per_1k": 0.00015,
       "output_per_1k": 0.00065
     },
     "openai.gpt-5.4": {
-      "name": "GPT 5.4",
       "input_per_1k": 0.00275,
       "output_per_1k": 0.0165
     },
     "openai.gpt-5.5": {
-      "name": "GPT 5.5",
       "input_per_1k": 0.0055,
       "output_per_1k": 0.033
     },
     "openai.gpt-5.6-luna": {
-      "name": "GPT-5.6 Luna",
       "input_per_1k": 0.00022,
       "output_per_1k": 0.00132
     },
     "openai.gpt-5.6-sol": {
-      "name": "GPT-5.6 Sol",
       "input_per_1k": 0.0044,
       "output_per_1k": 0.022
     },
     "openai.gpt-5.6-terra": {
-      "name": "GPT-5.6 Terra",
       "input_per_1k": 0.0022,
       "output_per_1k": 0.0132
     },
     "openai.gpt-6-astra": {
-      "name": "GPT-6 Astra",
       "input_per_1k": 0.011,
       "output_per_1k": 0.055
     },
     "openai.gpt-6-luna": {
-      "name": "GPT-6 Luna",
       "input_per_1k": 0.00011,
       "output_per_1k": 0.00055
     },
     "openai.gpt-6-sol": {
-      "name": "GPT-6 Sol",
       "input_per_1k": 0.0022,
       "output_per_1k": 0.011
     },
     "openai.gpt-6.1-sol": {
-      "name": "GPT-6.1 Sol",
       "input_per_1k": 0.0022,
       "output_per_1k": 0.011
     },
     "openai.gpt-6.1-terra": {
-      "name": "GPT-6.1 Terra",
       "input_per_1k": 0.0011,
       "output_per_1k": 0.0055
     },
     "openai.gpt-oss-120b-1:0": {
-      "name": "gpt-oss-120b",
       "input_per_1k": 0.00015,
       "output_per_1k": 0.0006
     },
     "openai.gpt-oss-20b-1:0": {
-      "name": "gpt-oss-20b",
-      "input_per_1k": 7e-05,
+      "input_per_1k": 0.00007,
       "output_per_1k": 0.0003
     },
     "openai.gpt-oss-safeguard-120b": {
-      "name": "GPT OSS Safeguard 120B",
       "input_per_1k": 0.00015,
       "output_per_1k": 0.0006
     },
     "openai.gpt-oss-safeguard-20b": {
-      "name": "GPT OSS Safeguard 20B",
-      "input_per_1k": 7e-05,
+      "input_per_1k": 0.00007,
       "output_per_1k": 0.0002
     },
     "qwen.qwen3-32b-v1:0": {
-      "name": "Qwen3 32B (dense)",
       "input_per_1k": 0.00015,
       "output_per_1k": 0.0006
     },
     "qwen.qwen3-coder-30b-a3b-v1:0": {
-      "name": "Qwen3-Coder-30B-A3B-Instruct",
       "input_per_1k": 0.00015,
       "output_per_1k": 0.0006
     },
     "qwen.qwen3-coder-next": {
-      "name": "Qwen3 Coder Next",
       "input_per_1k": 0.0005,
       "output_per_1k": 0.0012
     },
+    "qwen.qwen3-next-80b-a3b": {
+      "input_per_1k": 0.00014,
+      "output_per_1k": 0.0012
+    },
     "qwen.qwen3-vl-235b-a22b": {
-      "name": "Qwen3 VL 235B A22B",
       "input_per_1k": 0.00053,
       "output_per_1k": 0.00266
     },
     "writer.palmyra-vision-7b": {
-      "name": "Writer Palmyra Vision 7B",
       "input_per_1k": 0.00015,
       "output_per_1k": 0.0006
     },
     "writer.palmyra-x4-v1:0": {
-      "name": "Palmyra X4",
       "input_per_1k": 0.0025,
       "output_per_1k": 0.01
     },
     "writer.palmyra-x5-v1:0": {
-      "name": "Palmyra X5",
       "input_per_1k": 0.0006,
       "output_per_1k": 0.006
     },
+    "xai.grok-4.7": {
+      "input_per_1k": 0.0022,
+      "output_per_1k": 0.0066
+    },
     "zai.glm-4.7": {
-      "name": "GLM 4.7",
       "input_per_1k": 0.0006,
       "output_per_1k": 0.0022
     },
     "zai.glm-4.7-flash": {
-      "name": "GLM 4.7 Flash",
-      "input_per_1k": 7e-05,
+      "input_per_1k": 0.00007,
       "output_per_1k": 0.0004
     },
     "zai.glm-5": {
-      "name": "GLM 5",
       "input_per_1k": 0.001,
       "output_per_1k": 0.0032
     }

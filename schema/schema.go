@@ -62,12 +62,13 @@ const (
 	KindRecipientUnconfirmed = "alert_recipient_unconfirmed" // a recipient hasn't confirmed its subscription; once a day
 
 	// Fast packs (the AI pack first). Each carries the pack name in its detail.
-	KindCutoff      = "cutoff"        // a pack attached its deny policy to an account
-	KindWouldCutoff = "would_cutoff"  // dry-run: a pack would have cut off an account
-	KindCutoffLift  = "cutoff_lifted" // a cutoff was lifted
-	KindTrailStall  = "trail_stalled" // no new trail file, or the trail can't be read
-	KindTrailResume = "trail_resumed"
-	KindUsage       = "usage_summary" // one account and model's usage for an hour
+	KindCutoff        = "cutoff"        // a pack attached its deny policy to an account
+	KindWouldCutoff   = "would_cutoff"  // dry-run: a pack would have cut off an account
+	KindCutoffLift    = "cutoff_lifted" // a cutoff was lifted
+	KindTrailStall    = "trail_stalled" // no new trail file, or the trail can't be read
+	KindTrailResume   = "trail_resumed"
+	KindUsage         = "usage_summary"  // one account and model's usage for an hour
+	KindPricesApplied = "prices_applied" // the guard started using a shared price version
 )
 
 // ValidateMSPID checks that an MSP id can form dataset ids under Jennah's id
@@ -77,6 +78,9 @@ const (
 func ValidateMSPID(msp string) error {
 	if msp == "" || len(msp) > maxMSPIDLen {
 		return fmt.Errorf("msp id must be 1 to %d characters", maxMSPIDLen)
+	}
+	if msp == ReservedPricesMSP {
+		return fmt.Errorf("msp id %q is reserved for the shared prices dataset %s", msp, PricesDatasetID)
 	}
 	for i := 0; i < len(msp); i++ {
 		c := msp[i]
@@ -162,10 +166,10 @@ func InboxTables() []*datastorev1.TableDeclaration {
 	}}
 }
 
-// Permissions each guard credential needs, and on which dataset.
+// Permissions each guard credential needs, and on which datasets.
 type CredentialNeeds struct {
 	Name        string
-	DatasetID   string
+	DatasetIDs  []string
 	Permissions []string
 }
 
@@ -174,13 +178,57 @@ func GuardCredentials(msp, payer string) []CredentialNeeds {
 	return []CredentialNeeds{
 		{
 			Name:        "reader",
-			DatasetID:   ConfigDatasetID(msp, payer),
+			DatasetIDs:  []string{ConfigDatasetID(msp, payer), PricesDatasetID},
 			Permissions: []string{"datastore.data:read", "datastore.schema:read", "approval.requests:create", "approval.requests:read", "approval.requests:cancel"},
 		},
 		{
 			Name:        "writer",
-			DatasetID:   InboxDatasetID(msp, payer),
+			DatasetIDs:  []string{InboxDatasetID(msp, payer)},
 			Permissions: []string{"datastore.data:write"},
+		},
+	}
+}
+
+// Shared prices: one dataset per Jennah enterprise, read by every guard in it.
+const (
+	PricesDatasetID   = datasetPrefix + "prices"
+	ReservedPricesMSP = "prices" // no MSP may be named this
+
+	PriceVersionsTable = "price_versions"
+	PriceChunksTable   = "price_chunks"
+
+	ColManifest = "manifest" // JSON: the version's chunks and their hashes
+	ColPack     = "pack"
+	ColRegion   = "region"
+
+	// PricesLayoutVersion is the shape of price manifests and chunks.
+	PricesLayoutVersion = 1
+)
+
+// PricesTables declares the shared prices dataset's tables (design D1 of
+// add-shared-prices): a manifest per version, and chunks fetched by key.
+func PricesTables() []*datastorev1.TableDeclaration {
+	return []*datastorev1.TableDeclaration{
+		{
+			Name: PriceVersionsTable,
+			Columns: []*datastorev1.ColumnDeclaration{
+				col(ColVersion, datastorev1.ColumnType_COLUMN_TYPE_INT64, false),
+				col(ColPublishedAt, datastorev1.ColumnType_COLUMN_TYPE_TIMESTAMP, false),
+				col(ColNote, datastorev1.ColumnType_COLUMN_TYPE_STRING, true),
+				col(ColLayoutVersion, datastorev1.ColumnType_COLUMN_TYPE_INT64, false),
+				col(ColManifest, datastorev1.ColumnType_COLUMN_TYPE_JSON, false),
+			},
+			PrimaryKey: []string{ColVersion},
+		},
+		{
+			Name: PriceChunksTable,
+			Columns: []*datastorev1.ColumnDeclaration{
+				col(ColVersion, datastorev1.ColumnType_COLUMN_TYPE_INT64, false),
+				col(ColPack, datastorev1.ColumnType_COLUMN_TYPE_STRING, false),
+				col(ColRegion, datastorev1.ColumnType_COLUMN_TYPE_STRING, false),
+				col(ColDocument, datastorev1.ColumnType_COLUMN_TYPE_JSON, false),
+			},
+			PrimaryKey: []string{ColVersion, ColPack, ColRegion},
 		},
 	}
 }

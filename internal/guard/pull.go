@@ -21,6 +21,7 @@ func (g *Guard) Pull(ctx context.Context) error {
 		return fmt.Errorf("load state: %w", err)
 	}
 	g.trackRefresh(ctx, st, g.evaluate(ctx, st))
+	g.pullPrices(ctx)
 	// Recipients follow the config in force, so this runs even when Jennah is
 	// unreachable (and then changes nothing).
 	syncErr := g.syncRecipients(ctx, st)

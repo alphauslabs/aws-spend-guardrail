@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 
@@ -96,19 +97,29 @@ func Start(t testing.TB) (*Server, *jennah.Client) {
 	return s, c
 }
 
-func keyOf(r *datastorev1.Row, table string) string {
-	col := "version"
+// keyOf is a row's primary key: the table's declared key columns, or for an
+// undeclared table, "event_id" for events and "version" otherwise.
+func (s *Server) keyOf(ds string, r *datastorev1.Row, table string) string {
+	cols := []string{"version"}
 	if table == "events" {
-		col = "event_id"
+		cols = []string{"event_id"}
 	}
-	v := r.GetColumns()[col]
-	switch k := v.GetKind().(type) {
-	case *datastorev1.Value_Int64Value:
-		return fmt.Sprintf("%020d", k.Int64Value)
-	case *datastorev1.Value_StringValue:
-		return k.StringValue
+	if t, ok := s.tables[ds][table]; ok && len(t.GetPrimaryKey()) > 0 {
+		cols = t.GetPrimaryKey()
 	}
-	return ""
+	parts := make([]string, 0, len(cols))
+	for _, col := range cols {
+		v := r.GetColumns()[col]
+		switch k := v.GetKind().(type) {
+		case *datastorev1.Value_Int64Value:
+			parts = append(parts, fmt.Sprintf("%020d", k.Int64Value))
+		case *datastorev1.Value_StringValue:
+			parts = append(parts, k.StringValue)
+		default:
+			parts = append(parts, "")
+		}
+	}
+	return strings.Join(parts, "\x00")
 }
 
 // CommitData applies inserts and upserts, honoring idempotency keys and
@@ -131,7 +142,7 @@ func (s *Server) CommitData(_ context.Context, in *datastorev1.CommitDataRequest
 	for _, op := range in.GetOperations() {
 		tbl := s.rows[ds][op.GetTable()]
 		if tbl != nil {
-			if _, exists := tbl[keyOf(op.GetRow(), op.GetTable())]; exists && op.GetType() == datastorev1.OperationType_OPERATION_TYPE_INSERT {
+			if _, exists := tbl[s.keyOf(ds, op.GetRow(), op.GetTable())]; exists && op.GetType() == datastorev1.OperationType_OPERATION_TYPE_INSERT {
 				return nil, status.Error(codes.AlreadyExists, "fake: row exists")
 			}
 		}
@@ -140,7 +151,7 @@ func (s *Server) CommitData(_ context.Context, in *datastorev1.CommitDataRequest
 		if s.rows[ds][op.GetTable()] == nil {
 			s.rows[ds][op.GetTable()] = map[string]*datastorev1.Row{}
 		}
-		s.rows[ds][op.GetTable()][keyOf(op.GetRow(), op.GetTable())] = proto.Clone(op.GetRow()).(*datastorev1.Row)
+		s.rows[ds][op.GetTable()][s.keyOf(ds, op.GetRow(), op.GetTable())] = proto.Clone(op.GetRow()).(*datastorev1.Row)
 	}
 	s.Commits++
 	resp := &datastorev1.CommitDataResponse{}

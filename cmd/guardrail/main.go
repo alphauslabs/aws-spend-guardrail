@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,10 +18,13 @@ import (
 	"github.com/alphauslabs/aws-spend-guardrail/internal/awsx"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/cli"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/prices"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
@@ -41,6 +45,9 @@ Usage:
                      [--version V] [--reader-secret-arn ARN] [--writer-secret-arn ARN]
                      [--approvers EMAIL,...] [--alert-email EMAIL]
                      (prints a CloudFormation console link; needs no credentials)
+  guardrail prices build -o FILE   (build the AI price table from the AWS Price List API)
+  guardrail prices publish [--dry-run] [--note TEXT]
+                     (publish it to the enterprise's shared guardrail.prices; run once per enterprise)
   guardrail schema   (print the config JSON schema)
   guardrail version
 
@@ -67,6 +74,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	cmd, rest := args[0], args[1:]
 	if cmd == "install-link" {
 		return installLink(rest, stdout, stderr)
+	}
+	if cmd == "prices" {
+		return pricesCmd(ctx, rest, stdout, stderr)
 	}
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -293,4 +303,56 @@ func preflightAI(ctx context.Context, c awsx.TrailCheck, stdout io.Writer) error
 		return nil
 	}
 	return fmt.Errorf("no trail file for the management account in us-east-1 today or yesterday under %s", base)
+}
+
+// pricesCmd builds the AI price table from the AWS Price List API (with the
+// caller's AWS credentials), and writes it to a file or publishes it to the
+// enterprise's shared prices dataset in Jennah.
+func pricesCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 || (args[0] != "build" && args[0] != "publish") {
+		return fmt.Errorf("usage: guardrail prices build -o FILE | guardrail prices publish [--dry-run] [--note TEXT]")
+	}
+	sub := args[0]
+	fs := flag.NewFlagSet("prices "+sub, flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	out := fs.String("o", "", "write the table to FILE (build)")
+	dry := fs.Bool("dry-run", false, "show the changes without publishing (publish)")
+	note := fs.String("note", "", "note stored with the price version (publish)")
+	endpoint := fs.String("endpoint", os.Getenv("JENNAH_ENDPOINT"), "Jennah gRPC endpoint (default: the public endpoint)")
+	apiKey := fs.String("api-key", os.Getenv("JENNAH_API_KEY"), "Jennah API key")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-east-1"))
+	if err != nil {
+		return err
+	}
+	table, unmatched, err := prices.Fetch(ctx, pricing.NewFromConfig(cfg), bedrock.NewFromConfig(cfg))
+	if err != nil {
+		return err
+	}
+	if sub == "build" {
+		if *out == "" {
+			return errors.New("-o FILE is required")
+		}
+		raw, err := json.MarshalIndent(table, "", "  ")
+		if err != nil {
+			return err
+		}
+		for _, u := range unmatched {
+			fmt.Fprintf(stderr, "no price found for %s (%s)\n", u.ID, u.Name)
+		}
+		fmt.Fprintf(stdout, "%d models priced, %d without a price, Price List published %s\n", len(table.Models), len(unmatched), table.Published)
+		return os.WriteFile(*out, append(raw, '\n'), 0o644)
+	}
+	j, err := jennah.Dial(*endpoint, *apiKey)
+	if err != nil {
+		return fmt.Errorf("connect to Jennah: %w", err)
+	}
+	who, err := j.SDK().Auth.WhoAmI(ctx)
+	if err != nil {
+		return fmt.Errorf("find the active enterprise: %w", err)
+	}
+	c := &cli.CLI{J: j, Out: stdout, Status: stderr}
+	return c.PublishPrices(ctx, who.GetIdentity().GetActiveEnterpriseId(), table, unmatched, *note, *dry)
 }

@@ -48,9 +48,11 @@ func (g *Guard) Trail(ctx context.Context) error {
 	if e.Now == nil && g.Now != nil {
 		e.Now = g.Now
 	}
+	shared, priceVersion := g.sharedAIPrices(ctx)
 	run := activity.PackRun{
 		Name:           "ai",
-		Pack:           ai.New(g.Fast.Prices, cfg),
+		Pack:           ai.NewShared(g.Fast.Prices, shared, cfg),
+		Detail:         map[string]any{"price_version": priceVersion},
 		PolicyID:       g.Fast.AIPolicyID,
 		CapsFor:        func(a string) (activity.Caps, bool) { c, ok := caps[a]; return c, ok },
 		DefaultEnforce: cfg.Mode == config.ModeEnforce,

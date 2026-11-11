@@ -56,6 +56,9 @@ type PackRun struct {
 	// account no scope covers.
 	DefaultEnforce bool
 	Lifts          map[string]bool
+	// Detail is added to every cutoff and would-cutoff event, e.g. the price
+	// version in use.
+	Detail map[string]any
 }
 
 // Totals are an account's estimated spend for one pack.
@@ -253,7 +256,11 @@ func (e *Engine) evaluate(ctx context.Context, run PackRun, now time.Time, activ
 		if !enforce {
 			kind, verb = KindWouldCutoff, "would be cut off (dry-run)"
 		}
-		e.Emit(ctx, kind, c.ID, "account:"+acct, map[string]any{"cutoff_id": c.ID, "pack": run.Name, "account": acct, "rule": c.Rule, "detail": c.Detail, "cap_usd": c.CapUSD})
+		ev := map[string]any{"cutoff_id": c.ID, "pack": run.Name, "account": acct, "rule": c.Rule, "detail": c.Detail, "cap_usd": c.CapUSD}
+		for k, v := range run.Detail {
+			ev[k] = v
+		}
+		e.Emit(ctx, kind, c.ID, "account:"+acct, ev)
 		e.Alert(ctx, fmt.Sprintf("guardrail: %s %s", acct, verb), fmt.Sprintf("The %s pack: account %s %s. Rule %s: %s. Cutoff id %s; to lift it, add it to the config's lifts and approve.", run.Name, acct, verb, c.Rule, c.Detail, c.ID))
 	}
 	return errors.Join(errs...)

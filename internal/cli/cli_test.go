@@ -27,7 +27,7 @@ func TestSetupIsIdempotent(t *testing.T) {
 	if err := c.Setup(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.Datasets(); len(got) != 2 || got[0] != "guardrail.msp_a.123456789012.config" || got[1] != "guardrail.msp_a.123456789012.inbox" {
+	if got := f.Datasets(); len(got) != 3 || got[0] != "guardrail.msp_a.123456789012.config" || got[1] != "guardrail.msp_a.123456789012.inbox" || got[2] != "guardrail.prices" {
 		t.Fatalf("datasets %v", got)
 	}
 	if !strings.Contains(out.String(), "datastore.data:write") {
@@ -189,8 +189,9 @@ func TestTwoPayerOrgsOfOneMSPAreSeparate(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := f.Datasets(); len(got) != 4 {
-		t.Fatalf("want 4 datasets, got %v", got)
+	// Two payer orgs' config and inbox, and one shared prices dataset.
+	if got := f.Datasets(); len(got) != 5 {
+		t.Fatalf("want 5 datasets, got %v", got)
 	}
 	if err := a.Publish(ctx, []byte(v1), ""); err != nil {
 		t.Fatal(err)
@@ -215,5 +216,40 @@ func TestPayerIsRequired(t *testing.T) {
 	c.Payer = ""
 	if err := c.Setup(context.Background()); err == nil {
 		t.Fatal("setup without a payer should fail")
+	}
+}
+
+func TestSecondPayerOrgLeavesPricesAlone(t *testing.T) {
+	ctx := context.Background()
+	f, j := jennahtest.Start(t)
+	first := &CLI{J: j, MSP: "msp_a", Payer: "123456789012", Out: &bytes.Buffer{}, Status: &bytes.Buffer{}}
+	if err := first.Setup(ctx); err != nil {
+		t.Fatal(err)
+	}
+	declares := f.Declares
+	out := &bytes.Buffer{}
+	second := &CLI{J: j, MSP: "msp_b", Payer: "210987654321", Out: out, Status: &bytes.Buffer{}}
+	if err := second.Setup(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "dataset guardrail.prices exists") ||
+		!strings.Contains(got, "guardrail.msp_b.210987654321.config,guardrail.prices") {
+		t.Fatalf("output:\n%s", got)
+	}
+	// Only the new payer org's two datasets were declared.
+	if f.Declares != declares+2 {
+		t.Fatalf("prices re-declared: %d declarations", f.Declares-declares)
+	}
+}
+
+func TestPricesIsNotAnMSP(t *testing.T) {
+	c, _, _, _ := newCLI(t)
+	c.MSP = "prices"
+	if err := c.Setup(context.Background()); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("setup with --msp prices: %v", err)
+	}
+	_, err := InstallLink(LinkOptions{MSP: "prices", Payer: "123456789012", Bucket: "guardrail-artifacts", Prefix: "guard/v0.1.0"})
+	if err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("install-link with --msp prices: %v", err)
 	}
 }

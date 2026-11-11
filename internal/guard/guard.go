@@ -187,7 +187,9 @@ type Guard struct {
 	Keys []GuardKey
 	// Fast is the trail-reading fast path. Nil disables it.
 	Fast *FastPath
-	Now  func() time.Time
+	// Prices reads the enterprise's shared prices. Nil: release prices only.
+	Prices PriceSource
+	Now    func() time.Time
 }
 
 func (g *Guard) now() time.Time {

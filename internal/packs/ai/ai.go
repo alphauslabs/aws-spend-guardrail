@@ -76,17 +76,33 @@ func callerMatches(caller string, allowed []string) bool {
 
 // Pack prices and checks Bedrock calls against one config.
 type Pack struct {
-	table   map[string]config.ModelPrice
+	table   map[string]config.ModelPrice // the release's table
+	shared  map[string]config.ModelPrice // the enterprise's shared table, if any
+	floors  map[string]config.ModelPrice // per provider: the release's highest prices
+	ceiling config.ModelPrice            // the release's highest prices overall
 	cfg     *config.ResolvedAI
 	allowed map[string]bool // normalized model allowlist; nil means any priced model
 }
 
-// New returns the AI pack for a config in force.
-func New(t *Table, cfg *config.ResolvedAI) *Pack {
+// New returns the AI pack for a config in force, pricing from the release
+// table only.
+func New(t *Table, cfg *config.ResolvedAI) *Pack { return NewShared(t, nil, cfg) }
+
+// NewShared returns the AI pack with the enterprise's shared prices merged
+// tighten-only (design D3 of add-shared-prices): a shared price can raise a
+// release price but never lower it, and a model only the shared table lists
+// is priced at no less than its provider's highest release price.
+func NewShared(t *Table, shared map[string]config.ModelPrice, cfg *config.ResolvedAI) *Pack {
 	if cfg == nil {
 		cfg = &config.ResolvedAI{}
 	}
-	p := &Pack{table: t.Models, cfg: cfg}
+	p := &Pack{table: t.Models, shared: shared, cfg: cfg, floors: map[string]config.ModelPrice{}}
+	for id, v := range t.Models {
+		f := p.floors[provider(id)]
+		f.InputPer1K, f.OutputPer1K = max(f.InputPer1K, v.InputPer1K), max(f.OutputPer1K, v.OutputPer1K)
+		p.floors[provider(id)] = f
+		p.ceiling.InputPer1K, p.ceiling.OutputPer1K = max(p.ceiling.InputPer1K, v.InputPer1K), max(p.ceiling.OutputPer1K, v.OutputPer1K)
+	}
 	if cfg.Models != nil {
 		p.allowed = map[string]bool{}
 		for _, m := range cfg.Models {
@@ -96,15 +112,55 @@ func New(t *Table, cfg *config.ResolvedAI) *Pack {
 	return p
 }
 
-// Price returns a model's price: a config override first, then the table.
+// provider is the part of a model id before its first dot.
+func provider(id string) string {
+	if i := strings.Index(id, "."); i > 0 {
+		return id[:i]
+	}
+	return id
+}
+
+// Price returns a model's price: the payer org's config override first (each
+// org approves its own), then the release table merged tighten-only with the
+// shared table.
 func (p *Pack) Price(key string) (config.ModelPrice, bool) {
 	for k, v := range p.cfg.Prices {
 		if ModelKey(k) == key {
 			return v, true
 		}
 	}
-	v, ok := p.table[key]
-	return v, ok
+	r, inRelease := p.table[key]
+	s, inShared := p.shared[key]
+	switch {
+	case inRelease && inShared:
+		return config.ModelPrice{InputPer1K: max(r.InputPer1K, s.InputPer1K), OutputPer1K: max(r.OutputPer1K, s.OutputPer1K)}, true
+	case inRelease:
+		return r, true
+	case inShared:
+		floor, ok := p.floors[provider(key)]
+		if !ok {
+			floor = p.ceiling
+		}
+		return config.ModelPrice{InputPer1K: max(s.InputPer1K, floor.InputPer1K), OutputPer1K: max(s.OutputPer1K, floor.OutputPer1K)}, true
+	}
+	return config.ModelPrice{}, false
+}
+
+// SharedEffect counts how a shared table changes the release's prices:
+// models it raises, models it adds, and models it lists lower (ignored).
+func SharedEffect(release, shared map[string]config.ModelPrice) (raised, added, ignored int) {
+	for id, s := range shared {
+		r, ok := release[id]
+		switch {
+		case !ok:
+			added++
+		case s.InputPer1K > r.InputPer1K || s.OutputPer1K > r.OutputPer1K:
+			raised++
+		case s.InputPer1K < r.InputPer1K || s.OutputPer1K < r.OutputPer1K:
+			ignored++
+		}
+	}
+	return raised, added, ignored
 }
 
 // Wants reports whether a record is a Bedrock runtime or logging call.
