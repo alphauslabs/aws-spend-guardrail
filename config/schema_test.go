@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -59,6 +60,13 @@ func TestGoChecksAgreeWithSchemaJSON(t *testing.T) {
 		sameSet(t, name+" values", p.Enum, enums[name])
 	}
 	sameSet(t, "settings fields", settingNames, settingsFields)
+
+	var emails struct {
+		MaxItems int `json:"maxItems"`
+	}
+	if err := json.Unmarshal(s.Properties["alert_emails"], &emails); err != nil || emails.MaxItems != maxAlertEmails {
+		t.Errorf("alert_emails maxItems: schema %d, Go %d (%v)", emails.MaxItems, maxAlertEmails, err)
+	}
 }
 
 func keys(m map[string]json.RawMessage) []string {
@@ -104,6 +112,11 @@ func TestShapeMessages(t *testing.T) {
 		{`{"payer_account_id":"123456789012","scopes":[{"ou_id":"ou-bad","ceiling_usd":1}]}`, "scopes[0].ou_id", "OU id"},
 		{`{"payer_account_id":"123456789012","defaults":{"mode":"off"},"scopes":[]}`, "defaults.mode", "must be one of dry-run, enforce"},
 		{`{"payer_account_id":"123456789012","defaults":{"ceiling_usd":1},"scopes":[]}`, "defaults.ceiling_usd", "unknown field"},
+		{`{"payer_account_id":"123456789012","scopes":[],"alert_emails":"a@example.com"}`, "alert_emails", "must be an array"},
+		{`{"payer_account_id":"123456789012","scopes":[],"alert_emails":["Ops <ops@example.com>"]}`, "alert_emails[0]", "plain email address"},
+		{`{"payer_account_id":"123456789012","scopes":[],"alert_emails":["ops"]}`, "alert_emails[0]", "plain email address"},
+		{`{"payer_account_id":"123456789012","scopes":[],"alert_emails":[5]}`, "alert_emails[0]", "must be a string"},
+		{`{"payer_account_id":"123456789012","scopes":[],"alert_emails":[` + strings.TrimSuffix(strings.Repeat(`"a@example.com",`, 21), ",") + `]}`, "alert_emails", "at most 20"},
 	}
 	for _, c := range cases {
 		probs := checkSchema([]byte(c.doc))

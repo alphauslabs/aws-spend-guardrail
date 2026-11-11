@@ -648,6 +648,16 @@ Resources:
                 Effect: Allow
                 Action: sns:Publish
                 Resource: !Ref AlertTopic
+              - Sid: AlertRecipients
+                Effect: Allow
+                # Keeps the alert topic's email subscriptions in line with
+                # the config's alert_emails. This topic only.
+                Action: [sns:Subscribe, sns:ListSubscriptionsByTopic]
+                Resource: !Ref AlertTopic
+              - Sid: AlertRecipientsRemove
+                Effect: Allow
+                Action: sns:Unsubscribe
+                Resource: !Sub ${AlertTopic}:*
               - Sid: Credentials
                 Effect: Allow
                 Action: secretsmanager:GetSecretValue
@@ -688,6 +698,7 @@ Resources:
           BUDGETS_EXECUTION_ROLE_ARN: !GetAtt BudgetsExecutionRole.Arn
           NOTIFY_TOPIC_ARN: !Ref NotifyTopic
           ALERT_TOPIC_ARN: !Ref AlertTopic
+          ALERT_EMAIL: !Ref AlertEmail
           OUTBOX_QUEUE_URL: !Ref OutboxQueue
           STATE_TABLE: !Ref StateTable
           LOOSENING_APPROVERS: !Join [",", !Ref LooseningApprovers]

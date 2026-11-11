@@ -69,7 +69,7 @@ Within 5 minutes the guard pulls the config and creates one budget per scope. Wa
 | `LooseningDelay` | `30m` | Minimum time from first seeing a loosening version to applying it. |
 | `FunctionPackageBucket`, `FunctionPackageKey` | | Where the function zip is. |
 | `GuardVersion` | `dev` | Recorded with every event. |
-| `AlertEmail` | empty | Optional email for local alerts. |
+| `AlertEmail` | empty | Optional email for local alerts. Config can add more recipients (`alert_emails`), but can never remove this one, so use an address that will stay monitored, such as a distribution list. |
 | `ReactToAccountEvents` | `false` | When `true`, a new, invited, or moved account is checked within minutes instead of at the daily run. Only works when a CloudTrail trail in the payer account records management events; without one, account events never reach EventBridge, and the daily check is the only one. |
 
 The approval settings are stack parameters on purpose: changing them takes a stack update in the payer account, which a Jennah credential can't do.

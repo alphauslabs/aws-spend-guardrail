@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/mail"
 	"regexp"
 	"sort"
 	"strings"
@@ -23,6 +24,7 @@ const (
 	ouIDPattern      = `^(ou-[0-9a-z]{4,32}-[0-9a-z]{8,32}|r-[0-9a-z]{4,32})$`
 	minThreshold     = 1
 	maxThreshold     = 100
+	maxAlertEmails   = 20
 )
 
 var (
@@ -36,7 +38,7 @@ var (
 		"month_end":    {MonthEndAutoLift, MonthEndStayFrozen},
 	}
 
-	documentFields = []string{"payer_account_id", "defaults", "scopes", "excluded_accounts"}
+	documentFields = []string{"payer_account_id", "defaults", "scopes", "excluded_accounts", "alert_emails"}
 	settingsFields = []string{"period", "threshold_pct", "freeze_style", "mode", "month_end"}
 	scopeFields    = append([]string{"account_id", "ou_id", "ceiling_usd"}, settingsFields...)
 )
@@ -81,6 +83,9 @@ func checkSchema(raw []byte) []Problem {
 				}
 			}
 		}
+	}
+	if v, ok := top["alert_emails"]; ok {
+		c.alertEmails(v)
 	}
 	v, ok := top["scopes"]
 	if !ok {
@@ -204,6 +209,30 @@ func (c *checker) scope(field string, v json.RawMessage) {
 		}
 	}
 	c.settings(field, obj)
+}
+
+func (c *checker) alertEmails(v json.RawMessage) {
+	var list []json.RawMessage
+	if err := json.Unmarshal(v, &list); err != nil || isNull(v) {
+		c.add("alert_emails", "must be an array of email addresses")
+		return
+	}
+	if len(list) > maxAlertEmails {
+		c.add("alert_emails", fmt.Sprintf("lists %d addresses; at most %d are allowed (use a distribution list for more)", len(list), maxAlertEmails))
+	}
+	for i, raw := range list {
+		field := fmt.Sprintf("alert_emails[%d]", i)
+		if s, ok := c.str(field, raw); ok && !IsEmail(s) {
+			c.add(field, fmt.Sprintf("must be a plain email address like oncall@example.com, got %q", s))
+		}
+	}
+}
+
+// IsEmail reports whether s is a bare email address, with no display name
+// or angle brackets.
+func IsEmail(s string) bool {
+	a, err := mail.ParseAddress(s)
+	return err == nil && a.Address == s && strings.Contains(s, "@")
 }
 
 func contains(list []string, s string) bool {

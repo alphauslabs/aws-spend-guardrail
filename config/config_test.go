@@ -199,3 +199,21 @@ func TestExcludedAccounts(t *testing.T) {
 		t.Fatal("a malformed exclusion must be invalid")
 	}
 }
+
+func TestAlertEmails(t *testing.T) {
+	d := mustParse(t, `{"payer_account_id":"123456789012","scopes":[],"alert_emails":["OnCall@Example.com","finops@example.com"]}`)
+	got := d.Resolve().AlertEmails
+	if strings.Join(got, ",") != "finops@example.com,oncall@example.com" {
+		t.Errorf("resolved recipients = %v, want lowercased and sorted", got)
+	}
+
+	d = mustParse(t, `{"payer_account_id":"123456789012","scopes":[]}`)
+	if got := d.Resolve().AlertEmails; got != nil {
+		t.Errorf("absent alert_emails resolved to %v, want none", got)
+	}
+
+	probs := problems(t, `{"payer_account_id":"123456789012","scopes":[],"alert_emails":["ops@example.com","OPS@example.com"]}`, Options{})
+	if !hasProblem(probs, "alert_emails[1]", "already listed at alert_emails[0]") {
+		t.Errorf("case-insensitive duplicate not refused: %v", probs)
+	}
+}

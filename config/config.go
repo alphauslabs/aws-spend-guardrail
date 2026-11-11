@@ -63,6 +63,7 @@ type Document struct {
 	Defaults         *Settings `json:"defaults,omitempty"`
 	Scopes           []Scope   `json:"scopes"`
 	ExcludedAccounts []string  `json:"excluded_accounts,omitempty"`
+	AlertEmails      []string  `json:"alert_emails,omitempty"`
 }
 
 // Target is what a scope protects: one account or one OU.
@@ -100,6 +101,9 @@ type Resolved struct {
 	// ExcludedAccounts are left out of protection on purpose, sorted. They
 	// change what the guard reports, not what it protects.
 	ExcludedAccounts []string `json:"excluded_accounts,omitempty"`
+	// AlertEmails receive local alerts besides the stack's AlertEmail,
+	// lowercased and sorted. Changing them needs approval.
+	AlertEmails []string `json:"alert_emails,omitempty"`
 }
 
 // Excluded reports whether an account is excluded on purpose. The payer
@@ -133,6 +137,10 @@ func (d *Document) Resolve() *Resolved {
 		r.ExcludedAccounts = append([]string(nil), d.ExcludedAccounts...)
 		sort.Strings(r.ExcludedAccounts)
 	}
+	for _, e := range d.AlertEmails {
+		r.AlertEmails = append(r.AlertEmails, strings.ToLower(e))
+	}
+	sort.Strings(r.AlertEmails)
 	var docDefaults Settings
 	if d.Defaults != nil {
 		docDefaults = *d.Defaults
@@ -281,6 +289,18 @@ func checkSemantics(d *Document, opts Options) []Problem {
 				Message: fmt.Sprintf("account %s is also a scope; an account can't be both protected and excluded", a),
 			})
 		}
+	}
+	firstAt := map[string]int{}
+	for i, e := range d.AlertEmails {
+		k := strings.ToLower(e)
+		if prev, ok := firstAt[k]; ok {
+			probs = append(probs, Problem{
+				Field:   fmt.Sprintf("alert_emails[%d]", i),
+				Message: fmt.Sprintf("%s is already listed at alert_emails[%d]", e, prev),
+			})
+			continue
+		}
+		firstAt[k] = i
 	}
 	return probs
 }

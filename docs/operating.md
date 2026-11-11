@@ -83,6 +83,21 @@ To act on a report, publish a new version that either adds the account as a scop
 
 New accounts are found at the daily run, 00:15 UTC. With the stack parameter `ReactToAccountEvents=true`, they're found within minutes of being created, invited, or moved, but only if a CloudTrail trail in the payer account records management events. Without a trail, those events never reach EventBridge.
 
+## Alert recipients
+
+Local alerts (freezes, rejected configs, Jennah outages, and unprotected accounts) go to the stack's alert topic. Two kinds of recipient are subscribed to it:
+
+- the stack's `AlertEmail`, set at install. Config can never remove it, so someone still hears about a freeze if Jennah is unreachable or the config is changed by mistake. A distribution list works well here.
+- the config's `alert_emails`. Every addition or removal needs the same approval as a loosening.
+
+On each run, the guard compares the topic's email subscriptions with `alert_emails` in the config in force:
+
+- An address with no subscription is subscribed, and AWS sends it a confirmation email. The guard records `alert_recipient_subscribed` in the inbox.
+- An address that hasn't confirmed after a day is asked again (one more email), and recorded as `alert_recipient_unconfirmed`. This repeats once a day until it confirms or is removed from the config. AWS drops a subscription that is never confirmed.
+- A confirmed subscription that the guard made, for an address no longer listed, is unsubscribed and recorded as `alert_recipient_removed`. An address removed while still unconfirmed can't be unsubscribed yet; if its old link is clicked later, the next run unsubscribes it.
+
+The guard never unsubscribes the stack's `AlertEmail`, a subscription someone added in the SNS console, or an address that was already subscribed before the config listed it. Someone who wants to stop receiving alerts should be removed from the config; unsubscribing from the email only lasts until the next run, which subscribes them again.
+
 ## Before installing: check SCP slots
 
 AWS allows 5 SCPs attached directly to one account or OU. A target that already has 5 can't take a freeze policy. With AWS credentials for the payer account:

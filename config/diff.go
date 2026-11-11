@@ -18,8 +18,8 @@ const (
 
 // Change is one difference between two resolved configs.
 type Change struct {
-	Target    Target    `json:"target"`
-	Field     string    `json:"field"` // "scope" for an added or removed scope
+	Target    Target    `json:"target"` // empty for a change that isn't about a scope or account
+	Field     string    `json:"field"`  // "scope" for an added or removed scope
 	From      string    `json:"from,omitempty"`
 	To        string    `json:"to,omitempty"`
 	Direction Direction `json:"direction"`
@@ -27,6 +27,10 @@ type Change struct {
 
 func (c Change) String() string {
 	switch {
+	case c.Field == FieldAlertEmail && c.To != "":
+		return fmt.Sprintf("alert recipient added: %s (%s)", c.To, c.Direction)
+	case c.Field == FieldAlertEmail:
+		return fmt.Sprintf("alert recipient removed: %s (%s)", c.From, c.Direction)
 	case c.Field == "excluded" && c.To != "":
 		return fmt.Sprintf("%s: excluded from protection (%s)", c.Target, c.Direction)
 	case c.Field == "excluded":
@@ -39,6 +43,11 @@ func (c Change) String() string {
 		return fmt.Sprintf("%s: %s %s -> %s (%s)", c.Target, c.Field, c.From, c.To, c.Direction)
 	}
 }
+
+// FieldAlertEmail is the Change field for an added or removed alert
+// recipient. Either needs approval: removing one can silence freeze alerts,
+// and adding one can send them outside the MSP.
+const FieldAlertEmail = "alert_email"
 
 // Diff lists the differences from applied to desired, each classified. A nil
 // applied config means nothing is applied yet, so every scope is an addition.
@@ -76,7 +85,45 @@ func Diff(applied, desired *Resolved) []Change {
 			out = append(out, Change{Target: Target{Kind: "account", ID: a}, Field: "excluded", From: "yes", Direction: Notice})
 		}
 	}
+	out = append(out, recipientChanges(applied.AlertEmails, desired.AlertEmails)...)
 	return out
+}
+
+func recipientChanges(applied, desired []string) []Change {
+	var out []Change
+	was := map[string]bool{}
+	for _, e := range applied {
+		was[e] = true
+	}
+	now := map[string]bool{}
+	for _, e := range desired {
+		now[e] = true
+		if !was[e] {
+			out = append(out, Change{Field: FieldAlertEmail, To: e, Direction: Loosening})
+		}
+	}
+	for _, e := range applied {
+		if !now[e] {
+			out = append(out, Change{Field: FieldAlertEmail, From: e, Direction: Loosening})
+		}
+	}
+	return out
+}
+
+// OnlyRecipients reports whether every loosening change is an alert
+// recipient change, so an approval can say what it is really about.
+func OnlyRecipients(changes []Change) bool {
+	found := false
+	for _, c := range changes {
+		if c.Direction != Loosening {
+			continue
+		}
+		if c.Field != FieldAlertEmail {
+			return false
+		}
+		found = true
+	}
+	return found
 }
 
 // HasLoosening reports whether any change loosens protection.
@@ -132,10 +179,11 @@ func money(v float64) string { return fmt.Sprintf("%.2f", v) }
 func Stricter(applied, desired *Resolved) *Resolved {
 	// Exclusions change reporting, not protection, so the desired ones apply
 	// at once.
-	out := &Resolved{PayerAccountID: desired.PayerAccountID, ExcludedAccounts: desired.ExcludedAccounts}
 	if applied == nil {
 		applied = &Resolved{}
 	}
+	// Recipients stay as applied until a change to them is approved.
+	out := &Resolved{PayerAccountID: desired.PayerAccountID, ExcludedAccounts: desired.ExcludedAccounts, AlertEmails: applied.AlertEmails}
 	for _, d := range desired.Scopes {
 		a, ok := applied.Scope(d.Target)
 		if !ok {
@@ -176,7 +224,8 @@ func Equal(a, b *Resolved) bool {
 		return a == b
 	}
 	if a.PayerAccountID != b.PayerAccountID || len(a.Scopes) != len(b.Scopes) ||
-		strings.Join(a.ExcludedAccounts, ",") != strings.Join(b.ExcludedAccounts, ",") {
+		strings.Join(a.ExcludedAccounts, ",") != strings.Join(b.ExcludedAccounts, ",") ||
+		strings.Join(a.AlertEmails, ",") != strings.Join(b.AlertEmails, ",") {
 		return false
 	}
 	for i := range a.Scopes {

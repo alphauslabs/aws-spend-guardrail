@@ -3,6 +3,7 @@ package guard
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -211,6 +212,53 @@ func (o *fakeOrg) PolicyTargets(_ context.Context, p string) ([]config.Target, e
 	return o.attached[p], nil
 }
 
+// fakeSubs is the alert topic's email subscriptions. A subscribe for an
+// address that already has a subscription returns it, as SNS does.
+type fakeSubs struct {
+	byAddr       map[string]Subscription
+	subscribes   []string
+	unsubscribes []string
+	nextARN      int
+}
+
+func newFakeSubs() *fakeSubs { return &fakeSubs{byAddr: map[string]Subscription{}} }
+
+func (f *fakeSubs) List(context.Context) ([]Subscription, error) {
+	var out []Subscription
+	for _, s := range f.byAddr {
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+func (f *fakeSubs) Subscribe(_ context.Context, addr string) error {
+	f.subscribes = append(f.subscribes, addr)
+	if _, ok := f.byAddr[addr]; !ok {
+		f.byAddr[addr] = Subscription{Address: addr, Pending: true}
+	}
+	return nil
+}
+
+func (f *fakeSubs) Unsubscribe(_ context.Context, arn string) error {
+	for addr, s := range f.byAddr {
+		if s.ARN == arn && !s.Pending {
+			f.unsubscribes = append(f.unsubscribes, addr)
+			delete(f.byAddr, addr)
+			return nil
+		}
+	}
+	panic("unsubscribe of an unknown or pending subscription: " + arn)
+}
+
+// confirm is the recipient clicking the link.
+func (f *fakeSubs) confirm(addr string) {
+	f.nextARN++
+	f.byAddr[addr] = Subscription{Address: addr, ARN: fmt.Sprintf("arn:aws:sns:us-east-1:%s:alerts:%d", payer, f.nextARN)}
+}
+
+// subscribed adds a confirmed subscription the guard didn't make.
+func (f *fakeSubs) subscribed(addr string) { f.confirm(addr) }
+
 type harness struct {
 	t       *testing.T
 	g       *Guard
@@ -221,6 +269,7 @@ type harness struct {
 	state   *memState
 	budgets *fakeBudgets
 	org     *fakeOrg
+	subs    *fakeSubs
 	now     time.Time
 	nextVer int64
 }
@@ -229,7 +278,7 @@ func newHarness(t *testing.T) *harness {
 	srv, c := jennahtest.Start(t)
 	h := &harness{
 		t: t, jennah: srv, client: c,
-		events: &events{}, alerts: &alerts{}, state: newMemState(), budgets: newFakeBudgets(),
+		events: &events{}, alerts: &alerts{}, state: newMemState(), budgets: newFakeBudgets(), subs: newFakeSubs(),
 		org: &fakeOrg{ous: map[string][]string{}, attached: map[string][]config.Target{}},
 		now: time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC),
 	}
@@ -249,9 +298,10 @@ func (h *harness) newGuard() *Guard {
 			LooseningRequired:  1,
 			LooseningWindow:    2 * time.Hour,
 			LooseningDelay:     30 * time.Minute,
+			AlertEmail:         "stack@example.com",
 		},
 		Config: h.client, Events: h.events, Alerts: h.alerts, State: h.state,
-		Budgets: h.budgets, Org: h.org,
+		Budgets: h.budgets, Org: h.org, Subs: h.subs,
 		Now: func() time.Time { return h.now },
 	}
 }

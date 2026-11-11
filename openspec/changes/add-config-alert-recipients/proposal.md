@@ -29,7 +29,7 @@ None.
 
 ## Impact
 
-- **Code:** `config` (schema, document, resolve, diff, stricter, equal), `internal/guard` (recipient sync after applying a config, state for subscriptions the guard made), `internal/awsx` (SNS subscribe, unsubscribe, and list on the alert topic), `cmd/guardrail` (wiring the stack's `AlertEmail` into the guard's settings).
+- **Code:** `config` (schema, document, resolve, diff, stricter, equal), `internal/guard` (recipient sync after applying a config, state for subscriptions the guard made), `internal/awsx` (SNS subscribe, unsubscribe, and list on the alert topic), `guard/main.go` (wiring the stack's `AlertEmail` and the SNS client into the guard).
 - **Template:** `guard/template.yaml` (the guard role's SNS permissions on `AlertTopic`, and `AlertEmail` passed to the function).
 - **Schema:** new inbox event kinds for recipient changes; the layout version is unchanged because existing events keep their shape.
 - **Docs:** `docs/config.md`, `docs/operating.md`, `docs/install.md`, and `CHANGELOG.md` (Security-relevant: the new SNS permissions and that config can now direct alerts).

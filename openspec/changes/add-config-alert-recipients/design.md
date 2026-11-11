@@ -22,7 +22,7 @@
 It sits beside `excluded_accounts`, not under `defaults` or a scope, because alerts are per payer org. `Resolve` copies it, lowercased and sorted, into `Resolved.AlertEmails`, so diffing and equality don't depend on order or case. The JSON schema and `checkSemantics` both enforce the limits (shared validation, as today). 20 is enough for named people; a distribution list counts as one.
 
 ### D2. Recipient changes reuse the loosening path
-`Diff` emits one change per added or removed address, `Field: "alert_email"`, with `Direction: Loosening`. Using the existing direction means `HasLoosening`, the approval, the delay, supersession, and the rejected and expired outcomes all apply unchanged. `Stricter` keeps the applied `AlertEmails` (like `Period`), so the recipients in force never change before approval. `Equal` compares `AlertEmails`. `Change.String` renders `alert recipient added: x` and `alert recipient removed: x`.
+`Diff` emits one change per added or removed address, `Field: "alert_email"`, with `Direction: Loosening`. Using the existing direction means `HasLoosening`, the approval, the delay, supersession, and the rejected and expired outcomes all apply unchanged. `Stricter` keeps the applied `AlertEmails` (like `Period`), so the recipients in force never change before approval. `Equal` compares `AlertEmails`. A first config is diffed against an empty one, so recipients in it are additions too and wait for approval while its scopes apply at once. `Change.String` renders `alert recipient added: x` and `alert recipient removed: x`.
 
 The approval's title says "Loosen" today. When every awaiting change is a recipient change, the title becomes `Change alert recipients for spend guard config v<N> (payer <id>)`, so an approver isn't told protection is loosening when it isn't. The body lists the changes as now.
 
@@ -37,14 +37,14 @@ After `evaluate` and before `Reconcile`, `Pull` calls `syncRecipients(st.Effecti
 - unsubscribes each confirmed subscription whose address is in the guard's `alert_subscriptions` record, is not a recipient, and is not the stack's `AlertEmail`;
 - leaves every other subscription alone: the stack's, any added by hand, and any that existed before the guard first listed that address.
 
-The `alert_subscriptions` record (one item per address in `StateTable`: address, when the guard last asked to subscribe it, and its ARN once confirmed) is how the guard tells its own subscriptions from others. An address already subscribed when it first becomes a recipient is not recorded as the guard's, so the guard never removes a subscription someone else made.
+The guard's record of its own subscriptions (`State.OwnSubscriptions`: each address and when the guard last asked to subscribe it, at most 20 entries, in the existing state item) is how the guard tells its own subscriptions from others. The ARN to unsubscribe comes from the listing, not the record. An address already subscribed when it first becomes a recipient is not recorded as the guard's, so the guard never removes a subscription someone else made.
 
 The stack passes `AlertEmail` to the function as `ALERT_EMAIL`, so the guard can refuse to unsubscribe it even if the guard's record lists it.
 
 Sync runs on the effective recipients, so it also runs when Jennah is unreachable (it changes nothing then), and it doesn't depend on Jennah.
 
 ### D4. Pending subscriptions are re-asked at most daily
-A pending subscription can't be removed, and asking SNS again sends another email. So the guard asks again for a pending address only after 24 hours, which also covers SNS deleting an unconfirmed subscription. If a recipient is removed while still pending, the guard stops asking; if the old link is still confirmed later, the next run finds a confirmed subscription the guard made for a non-recipient and unsubscribes it.
+A pending subscription can't be removed, and asking SNS again sends another email. So the guard asks again for a pending address only after 24 hours, which also covers SNS deleting an unconfirmed subscription. Each re-ask is also the daily `alert_recipient_unconfirmed` report, since it only happens for an address the guard asked for a day or more ago that still isn't confirmed. If a recipient is removed while still pending, the guard stops asking; if the old link is still confirmed later, the next run finds a confirmed subscription the guard made for a non-recipient and unsubscribes it.
 
 ### D5. Events
 New inbox kinds: `alert_recipient_subscribed` and `alert_recipient_removed` (one per address and run), and `alert_recipient_unconfirmed` (once a day per pending address). They carry only the address and the config version. Existing kinds keep their shape, so the layout version stays the same.

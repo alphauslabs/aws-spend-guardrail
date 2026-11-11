@@ -25,6 +25,13 @@
       "type": "array",
       "uniqueItems": true,
       "items": { "$ref": "#/$defs/account_id" }
+    },
+    "alert_emails": {
+      "description": "Email addresses that receive the guard's local alerts, besides the stack's AlertEmail. Adding or removing one needs the same approval as loosening protection. Each address confirms its subscription once.",
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": { "type": "string", "format": "email" }
     }
   },
   "$defs": {

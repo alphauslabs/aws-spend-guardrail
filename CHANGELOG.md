@@ -4,6 +4,14 @@ Every release has an entry here. Each entry has a **Security-relevant** section 
 
 ## [Unreleased]
 
+### Added
+- Config field `alert_emails`: up to 20 addresses that receive local alerts besides the stack's `AlertEmail`. The guard subscribes and unsubscribes them on the alert topic, and records each change in the inbox (`alert_recipient_subscribed`, `alert_recipient_removed`, and a daily `alert_recipient_unconfirmed`). Any change to the list needs the loosening approval.
+
+### Security-relevant
+- Config in Jennah can now direct local alerts to email addresses. Adding or removing an address needs the same approval as a loosening, from the approvers set in the stack, including in a first config. Config can't remove the stack's `AlertEmail`, a subscription made outside the guard, or one that existed before config listed it.
+- The guard's role can subscribe, unsubscribe, and list subscriptions on the stack's alert topic (`sns:Subscribe` and `sns:ListSubscriptionsByTopic` on the topic, `sns:Unsubscribe` on its subscriptions), and no other topic.
+- The guard function receives the stack's `AlertEmail` as `ALERT_EMAIL`, so it can refuse to unsubscribe it.
+
 ### Fixed
 - The guard no longer replaces each budget's notification on every run. AWS Budgets omits a percentage threshold type from what it returns, so the guard saw every notification as changed, and replacing it reset the budget's calculated spend to zero, which kept spend from ever reaching the threshold.
 

@@ -23,6 +23,7 @@ The schema is [`config/schema.json`](../config/schema.json), also printed by `gu
 | `defaults` | no | Values every scope takes unless it sets its own. Same fields as a scope's settings below. |
 | `scopes` | yes | The accounts and OUs protected by a budget. May be empty. |
 | `excluded_accounts` | no | Accounts left out of protection on purpose, such as an SSO or shared-services account. The guard never reports them as unprotected. The payer account always counts as excluded. An account can't be both excluded and a scope. |
+| `alert_emails` | no | Up to 20 email addresses that receive the guard's local alerts, besides the stack's `AlertEmail`. Adding or removing one needs approval (see below). Each address gets a confirmation email from AWS and receives alerts only after confirming. See [alert recipients](operating.md#alert-recipients). |
 
 ### Scope
 
@@ -48,6 +49,7 @@ A document is invalid, and the guard keeps the last valid config, when it:
 - names a scope twice;
 - names the payer account or the organization root (`r-...`) as a scope;
 - lists an account both in `excluded_accounts` and as an account scope, or lists an exclusion twice;
+- lists an alert recipient that isn't a plain email address (`Ops <ops@example.com>` is refused), lists one twice (case doesn't matter), or lists more than 20;
 - contains an `approvers` field. Who approves a loosening is set in the stack, not in Jennah, so that someone who can write config can't choose who approves it.
 
 ## Tightening and loosening
@@ -66,10 +68,12 @@ The guard compares each new version with the config in force, field by field:
 | `enforce` to `dry-run`, `B` to `A`, `stay_frozen` to `auto_lift` | loosening |
 | Any change of `period` | loosening |
 | Account added to or removed from `excluded_accounts` | notice: applies at once, no approval, since it changes what's reported, not what's protected |
+| Address added to or removed from `alert_emails` | needs approval, like a loosening: removing one can silence freeze alerts, and adding one can send them to someone outside the MSP. This holds in a first version too. |
 
 - A version that only tightens applies on the guard's next pull, within about 5 minutes.
 - A version that loosens anything applies its tightening parts at once. For the rest, the guard raises one Jennah approval to the approvers set in the stack. The loosening applies only once the approval is approved **and** the stack's delay has passed since the guard first saw the version.
 - If the approval is rejected, expires or is cancelled, the stricter config stays in force.
+- When a version's only changes awaiting approval are to `alert_emails`, the approval is titled "Change alert recipients" instead of "Loosen", and lists each address added or removed. Until it's approved, the recipients in force stay as they are.
 - A newer version supersedes a pending one, and the pending approval is cancelled.
 
 Raising a frozen scope's ceiling is a loosening. Once applied, the freeze lifts if actual spend is below the new threshold.

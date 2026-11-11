@@ -156,3 +156,75 @@ func TestExclusionChangesAreNotices(t *testing.T) {
 		t.Fatal("configs differing only in exclusions are not equal")
 	}
 }
+
+func withRecipients(r *Resolved, emails ...string) *Resolved {
+	r.AlertEmails = emails
+	return r
+}
+
+func TestRecipientChangesNeedApproval(t *testing.T) {
+	a := withRecipients(cfg(base()), "oncall@example.com")
+
+	added := Diff(a, withRecipients(cfg(base()), "finops@example.com", "oncall@example.com"))
+	if len(added) != 1 || added[0].Field != FieldAlertEmail || added[0].To != "finops@example.com" || added[0].Direction != Loosening {
+		t.Fatalf("adding a recipient: %v", added)
+	}
+	if !OnlyRecipients(added) {
+		t.Fatal("a recipient-only version should be recognized as such")
+	}
+	if got := added[0].String(); got != "alert recipient added: finops@example.com (loosening)" {
+		t.Errorf("String() = %q", got)
+	}
+
+	removed := Diff(a, cfg(base()))
+	if len(removed) != 1 || removed[0].From != "oncall@example.com" || removed[0].Direction != Loosening {
+		t.Fatalf("removing a recipient: %v", removed)
+	}
+	if got := removed[0].String(); got != "alert recipient removed: oncall@example.com (loosening)" {
+		t.Errorf("String() = %q", got)
+	}
+}
+
+func TestSameRecipientsInAnotherOrderOrCaseAreNoChange(t *testing.T) {
+	doc := func(list string) *Resolved {
+		d, err := Parse([]byte(`{"payer_account_id":"123456789012","scopes":[],"alert_emails":`+list+`}`), Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d.Resolve()
+	}
+	a := doc(`["a@example.com","b@example.com"]`)
+	d := doc(`["B@example.com","a@example.com"]`)
+	if ch := Diff(a, d); len(ch) != 0 || !Equal(a, d) {
+		t.Fatalf("reordered or recased recipients: %v", ch)
+	}
+}
+
+func TestStricterKeepsRecipientsUntilApproved(t *testing.T) {
+	x := base()
+	a := withRecipients(cfg(x), "oncall@example.com")
+	nx := x
+	nx.CeilingUSD = 1000 // tightening
+	d := withRecipients(cfg(nx), "finops@example.com")
+
+	ch := Diff(a, d)
+	// The tightening applies at once, so only recipient changes await approval.
+	if !HasLoosening(ch) || !OnlyRecipients(ch) {
+		t.Fatalf("mixed version: %v", ch)
+	}
+	y := x
+	y.CeilingUSD = 90000 // loosening
+	if OnlyRecipients(Diff(a, withRecipients(cfg(y), "finops@example.com"))) {
+		t.Fatal("a version that also raises a ceiling is not recipient-only")
+	}
+	got := Stricter(a, d)
+	if len(got.AlertEmails) != 1 || got.AlertEmails[0] != "oncall@example.com" {
+		t.Fatalf("recipients changed before approval: %v", got.AlertEmails)
+	}
+	if got.Scopes[0].CeilingUSD != 1000 {
+		t.Fatal("the tightening should apply at once")
+	}
+	if Equal(a, withRecipients(cfg(x), "finops@example.com")) {
+		t.Fatal("configs differing only in recipients are not equal")
+	}
+}

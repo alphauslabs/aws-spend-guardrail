@@ -26,5 +26,9 @@
   ],
   "excluded_accounts": [
     "777788889999"
+  ],
+  "alert_emails": [
+    "oncall@example.com",
+    "finops-lead@example.com"
   ]
 }

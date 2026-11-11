@@ -57,6 +57,9 @@ type State struct {
 	// hours, and one recovery alert.
 	FailingSince     time.Time `json:"failing_since,omitempty"`
 	LastFailureAlert time.Time `json:"last_failure_alert,omitempty"`
+	// OwnSubscriptions are the alert topic subscriptions the guard asked
+	// for, by lowercased address. Only these are ever unsubscribed.
+	OwnSubscriptions map[string]OwnSubscription `json:"own_subscriptions,omitempty"`
 }
 
 // Pending is a loosening version and its approval.
@@ -158,6 +161,9 @@ type Settings struct {
 	LooseningRequired  int
 	LooseningWindow    time.Duration
 	LooseningDelay     time.Duration
+	// AlertEmail is the stack's own alert recipient. Config can never
+	// unsubscribe it.
+	AlertEmail string
 }
 
 // Guard ties the pieces together.
@@ -169,7 +175,10 @@ type Guard struct {
 	State   StateStore
 	Budgets Budgets
 	Org     Org
-	Now     func() time.Time
+	// Subs manages the alert topic's email subscriptions. Nil skips
+	// recipient sync.
+	Subs AlertSubscriptions
+	Now  func() time.Time
 }
 
 func (g *Guard) now() time.Time {

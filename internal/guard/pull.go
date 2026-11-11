@@ -21,13 +21,16 @@ func (g *Guard) Pull(ctx context.Context) error {
 		return fmt.Errorf("load state: %w", err)
 	}
 	g.trackRefresh(ctx, st, g.evaluate(ctx, st))
+	// Recipients follow the config in force, so this runs even when Jennah is
+	// unreachable (and then changes nothing).
+	syncErr := g.syncRecipients(ctx, st)
 	if err := g.State.Save(ctx, st); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
 	if st.Effective == nil {
-		return nil // nothing configured yet
+		return syncErr // nothing configured yet
 	}
-	return g.Reconcile(ctx, st.Effective)
+	return errors.Join(syncErr, g.Reconcile(ctx, st.Effective))
 }
 
 // OutageReminder is how often an ongoing config refresh failure is alerted
@@ -176,19 +179,25 @@ func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, d
 
 func (g *Guard) approvalRequest(version int64, changes []config.Change) jennah.ApprovalRequest {
 	loosen := changeStrings(only(changes, config.Loosening))
+	title := fmt.Sprintf("Loosen spend guard config v%d (payer %s)", version, g.S.PayerAccountID)
+	what, kept := "loosens protection", "the stricter config stays in force"
+	if config.OnlyRecipients(changes) {
+		title = fmt.Sprintf("Change alert recipients for spend guard config v%d (payer %s)", version, g.S.PayerAccountID)
+		what, kept = "changes who receives the guard's alerts", "the current recipients stay"
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Config version %d for payer account %s (MSP %s) loosens protection:\n\n", version, g.S.PayerAccountID, g.S.MSPID)
+	fmt.Fprintf(&b, "Config version %d for payer account %s (MSP %s) %s:\n\n", version, g.S.PayerAccountID, g.S.MSPID, what)
 	for _, c := range loosen {
 		fmt.Fprintf(&b, "- %s\n", c)
 	}
-	fmt.Fprintf(&b, "\nIf approved, it applies %s after it was first seen. If rejected or unanswered, the stricter config stays in force.", g.S.LooseningDelay)
+	fmt.Fprintf(&b, "\nIf approved, it applies %s after it was first seen. If rejected or unanswered, %s.", g.S.LooseningDelay, kept)
 	required := g.S.LooseningRequired
 	if required < 1 {
 		required = 1
 	}
 	return jennah.ApprovalRequest{
 		RequestKey: fmt.Sprintf("guardrail:%s:%s:v%d", g.S.PayerAccountID, g.S.MSPID, version),
-		Title:      fmt.Sprintf("Loosen spend guard config v%d (payer %s)", version, g.S.PayerAccountID),
+		Title:      title,
 		Summary:    b.String(),
 		Payload: map[string]any{
 			"payer_account_id": g.S.PayerAccountID,

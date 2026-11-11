@@ -84,6 +84,7 @@ func setup(ctx context.Context) *app {
 	payer := env("PAYER_ACCOUNT_ID")
 	mspID := env("MSP_ID")
 	orgs := organizations.NewFromConfig(cfg)
+	snsClient := sns.NewFromConfig(cfg)
 	s := guard.Settings{
 		PayerAccountID:     payer,
 		MSPID:              mspID,
@@ -94,13 +95,14 @@ func setup(ctx context.Context) *app {
 		LooseningRequired:  required,
 		LooseningWindow:    envDuration("LOOSENING_APPROVAL_WINDOW"),
 		LooseningDelay:     envDuration("LOOSENING_DELAY"),
+		AlertEmail:         os.Getenv("ALERT_EMAIL"), // optional
 	}
 	a := &app{
 		g: &guard.Guard{
 			S:      s,
 			Config: reader,
 			Events: &outbox.Producer{SQS: sqs.NewFromConfig(cfg), QueueURL: env("OUTBOX_QUEUE_URL")},
-			Alerts: &awsx.Alerts{API: sns.NewFromConfig(cfg), TopicARN: env("ALERT_TOPIC_ARN"), Prefix: "[" + payer + "]"},
+			Alerts: &awsx.Alerts{API: snsClient, TopicARN: env("ALERT_TOPIC_ARN"), Prefix: "[" + payer + "]"},
 			State:  &awsx.State{API: dynamodb.NewFromConfig(cfg), Table: env("STATE_TABLE")},
 			Budgets: &awsx.Budgets{
 				API:              budgets.NewFromConfig(cfg),
@@ -109,7 +111,8 @@ func setup(ctx context.Context) *app {
 				ExecutionRoleARN: env("BUDGETS_EXECUTION_ROLE_ARN"),
 				NotifyTopicARN:   env("NOTIFY_TOPIC_ARN"),
 			},
-			Org: &awsx.Org{API: orgs},
+			Org:  &awsx.Org{API: orgs},
+			Subs: &awsx.AlertSubscriptions{API: snsClient, TopicARN: env("ALERT_TOPIC_ARN")},
 		},
 		consumer: &outbox.Consumer{Jennah: writer, DatasetID: schema.InboxDatasetID(mspID, payer)},
 	}

@@ -56,6 +56,10 @@ const (
 	KindUnprotected      = "unprotected_account" // an active account no scope covers or excludes
 	KindStaleScope       = "stale_scope"         // an account scope naming an account not in the org
 	KindHeartbeat        = "heartbeat"
+
+	KindRecipientSubscribed  = "alert_recipient_subscribed"  // the guard asked SNS to subscribe a config recipient
+	KindRecipientRemoved     = "alert_recipient_removed"     // the guard unsubscribed a recipient no longer in the config
+	KindRecipientUnconfirmed = "alert_recipient_unconfirmed" // a recipient hasn't confirmed its subscription; once a day
 )
 
 // ValidateMSPID checks that an MSP id can form dataset ids under Jennah's id

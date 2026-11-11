@@ -20,6 +20,10 @@ Adding or removing an alert recipient SHALL be handled like loosening: the guard
 - **WHEN** a version adds `finops@example.com` and changes nothing else
 - **THEN** one approval is raised listing `alert recipient added: finops@example.com`, and the address is not subscribed until the approval is approved and the delay has passed
 
+#### Scenario: A first config with recipients
+- **WHEN** the first version a guard sees lists `finops@example.com`
+- **THEN** its scopes apply at once, and the recipient waits for approval like any addition
+
 #### Scenario: Removing a recipient alongside a tightening
 - **WHEN** a version removes `oncall@example.com` and lowers scope X's ceiling
 - **THEN** X's lower ceiling applies at once, `oncall@example.com` keeps receiving alerts, and one approval is raised listing the removal
