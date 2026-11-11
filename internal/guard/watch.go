@@ -119,7 +119,7 @@ func (g *Guard) watchSpend(ctx context.Context, eff *config.Resolved, want []Bud
 				continue
 			}
 		}
-		if err := g.recordFreeze(ctx, scope, version, actual, HowGuardAttach, SpendSourceCostExplorer); err != nil {
+		if err := g.recordFreeze(ctx, scope, version, actual, HowGuardAttach, SpendSourceCostExplorer, nil); err != nil {
 			errs = append(errs, err)
 		}
 	}

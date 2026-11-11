@@ -219,13 +219,19 @@ func (g *Guard) now() time.Time {
 // emit records an event. An emit failure is alerted, never fatal: the freeze
 // path doesn't depend on it.
 func (g *Guard) emit(ctx context.Context, kind, id, scope string, version int64, detail any) {
+	g.emitAt(ctx, g.now(), kind, id, scope, version, detail)
+}
+
+// emitAt is emit for an event that happened at a known earlier time, such as
+// a freeze written again after its first write was lost.
+func (g *Guard) emitAt(ctx context.Context, at time.Time, kind, id, scope string, version int64, detail any) {
 	var raw json.RawMessage
 	if detail != nil {
 		raw, _ = json.Marshal(detail)
 	}
 	e := jennah.Event{
 		ID:            id,
-		OccurredAt:    g.now(),
+		OccurredAt:    at,
 		Kind:          kind,
 		Scope:         scope,
 		ConfigVersion: version,

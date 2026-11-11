@@ -56,25 +56,36 @@ func (g *Guard) OnThreshold(ctx context.Context, budgetName string) error {
 			}
 		}
 	}
+	var existing *Frozen
 	if scope.Mode == config.ModeEnforce {
 		// The guard may have attached the policy already while Budgets had
-		// no spend for this budget; the action finding it attached is not a
-		// second freeze.
+		// no spend for this budget, or this is a repeated notification: the
+		// same freeze, written again under its own id and not alerted.
 		if frozen, err := g.State.ListFrozen(ctx); err == nil {
 			for _, f := range frozen {
 				if f.Target == scope.Target {
-					return nil
+					f := f
+					existing = &f
 				}
 			}
 		}
 	}
-	return g.recordFreeze(ctx, *scope, st.AppliedVersion, actual, HowBudgetAction, SpendSourceBudget)
+	return g.recordFreeze(ctx, *scope, st.AppliedVersion, actual, HowBudgetAction, SpendSourceBudget, existing)
+}
+
+// FreezeEventID names one freeze of a scope: its period and when it began, so
+// a scope frozen again after a lift in the same period gets its own event,
+// while a repeat of the same freeze reuses the id (fix-freeze-event-ids).
+func FreezeEventID(f Frozen) string {
+	return fmt.Sprintf("%s:%s:%s:%d", schema.KindFreeze, f.Target, f.PeriodStart.Format("2006-01-02"), f.Since.Unix())
 }
 
 // recordFreeze records a scope reaching its threshold: in enforce, the freeze
 // (state, event, and local alert); in dry-run, would_freeze. how says what
-// attached the policy, and source where actual came from.
-func (g *Guard) recordFreeze(ctx context.Context, scope config.ResolvedScope, version int64, actual float64, how, source string) error {
+// attached the policy, and source where actual came from. existing is the
+// freeze already in force for the scope, if any: its event is written again
+// under the same id, which Jennah keeps once, and nothing else happens.
+func (g *Guard) recordFreeze(ctx context.Context, scope config.ResolvedScope, version int64, actual float64, how, source string, existing *Frozen) error {
 	now := g.now()
 	period := PeriodStart(scope.Period, now)
 	detail := map[string]any{
@@ -85,24 +96,29 @@ func (g *Guard) recordFreeze(ctx context.Context, scope config.ResolvedScope, ve
 		"period_start":  period.Format("2006-01-02"),
 		"spend_source":  source,
 	}
-	idFor := func(kind string) string {
-		return kind + ":" + scope.Target.String() + ":" + period.Format("2006-01-02")
-	}
 	if scope.Mode != config.ModeEnforce {
-		g.emit(ctx, schema.KindWouldFreeze, idFor(schema.KindWouldFreeze), scope.Target.String(), version, detail)
+		// A dry-run scope is never lifted: one per period.
+		id := schema.KindWouldFreeze + ":" + scope.Target.String() + ":" + period.Format("2006-01-02")
+		g.emit(ctx, schema.KindWouldFreeze, id, scope.Target.String(), version, detail)
 		return nil
 	}
 	detail["how"] = how
-	if err := g.State.MarkFrozen(ctx, Frozen{
+	if existing != nil {
+		detail["period_start"] = existing.PeriodStart.Format("2006-01-02")
+		g.emitAt(ctx, existing.Since, schema.KindFreeze, FreezeEventID(*existing), scope.Target.String(), version, detail)
+		return nil
+	}
+	f := Frozen{
 		Target:       scope.Target,
 		Since:        now,
 		PeriodStart:  period,
 		PolicyID:     g.policyFor(scope.FreezeStyle),
 		ThresholdUSD: scope.CeilingUSD * float64(scope.ThresholdPct) / 100,
-	}); err != nil {
+	}
+	if err := g.State.MarkFrozen(ctx, f); err != nil {
 		return fmt.Errorf("record freeze: %w", err)
 	}
-	g.emit(ctx, schema.KindFreeze, idFor(schema.KindFreeze), scope.Target.String(), version, detail)
+	g.emitAt(ctx, f.Since, schema.KindFreeze, FreezeEventID(f), scope.Target.String(), version, detail)
 	g.alert(ctx, "guardrail: spend frozen", fmt.Sprintf(
 		"%s is frozen: actual cost %.2f USD reached %d%% of its %.2f USD ceiling (freeze style %s). New spend is blocked; nothing running was stopped.",
 		scope.Target, actual, scope.ThresholdPct, scope.CeilingUSD, scope.FreezeStyle))
