@@ -32,21 +32,46 @@ Each payer org's guard uses two keys of its own. Neither can write config or dec
 | reader | `guardrail.msp_a.123456789012.config` | `datastore.data:read`, `datastore.schema:read`, `approval.requests:create`, `approval.requests:read`, `approval.requests:cancel` |
 | writer | `guardrail.msp_a.123456789012.inbox` | `datastore.data:write` |
 
-Today these are API keys with their own scope and dataset selector, minted by a long-lived admin of the enterprise. Once Jennah supports service accounts, use one service account per key instead, each with a custom role carrying the same reach. The guard only needs the secret, so switching doesn't touch the stack.
+Today these are API keys with their own scope and dataset selector, minted by a long-lived admin of the enterprise with `jnh` (signed in with `jnh login`; an API key can't mint keys). Once Jennah supports service accounts, use one service account per key instead, each with a custom role carrying the same reach. The guard only needs the secret, so switching doesn't touch the stack.
 
-Store each key as a plain-text secret in Secrets Manager in the payer account (us-east-1), for example `guardrail/msp_a/reader` and `guardrail/msp_a/writer`. Pass their ARNs to the stack (see [install](install.md)).
+Mint both keys and store each as a plain-text secret in Secrets Manager in the payer account (us-east-1). Jennah shows a key's secret once, so it goes straight into a file that only you can read, then into Secrets Manager, and the file is deleted:
+
+```
+umask 077
+jnh keys create --label guardrail-msp_a-123456789012-reader \
+  --datasets guardrail.msp_a.123456789012.config \
+  --scopes datastore.data:read,datastore.schema:read,approval.requests:create,approval.requests:read,approval.requests:cancel \
+  --expires-in 1y -o json | jq -r .secret > reader.key
+jnh keys create --label guardrail-msp_a-123456789012-writer \
+  --datasets guardrail.msp_a.123456789012.inbox \
+  --scopes datastore.data:write \
+  --expires-in 1y -o json | jq -r .secret > writer.key
+
+aws secretsmanager create-secret --region us-east-1 --name guardrail/msp_a/reader --secret-string file://reader.key
+aws secretsmanager create-secret --region us-east-1 --name guardrail/msp_a/writer --secret-string file://writer.key
+rm reader.key writer.key
+```
+
+Pass the two secret ARNs to the stack (see [install](install.md)). `jnh keys list` shows each key's expiry and when it was last used.
+
+### Rotate a key before it expires
+
+When a key expires, the guard can't read config or record events: protection already in force keeps working, and the stack alerts that config refresh is failing. Rotate a few days before expiry:
+
+1. Mint a new key with the same label, datasets, and scopes, as above.
+2. Store it as the secret's new value: `aws secretsmanager put-secret-value --region us-east-1 --secret-id guardrail/msp_a/reader --secret-string file://reader.key`, then delete the file.
+3. The guard reads its secrets when it starts, so it picks up the new key the next time AWS Lambda starts a fresh copy of the function, usually within hours. Once `jnh keys list` shows the new key in use, revoke the old one with `jnh keys revoke <key id>`.
 
 The loosening approvers set in the stack must be members of the Jennah enterprise or on its approver allowlist.
 
 ## 3. Change config: pull, edit, publish
 
 ```
-export P="--msp msp_a --payer 123456789012"
-guardrail pull    $P -o config.json   # the newest version; status goes to stderr
+guardrail pull --msp msp_a --payer 123456789012 -o config.json   # the newest version; status goes to stderr
 # edit config.json
-guardrail validate config.json        # optional; publish validates too
-guardrail diff    $P config.json      # each change marked tightening or loosening
-guardrail publish $P --note "raise acme dev for the migration" config.json
+guardrail validate config.json                                    # optional; publish validates too
+guardrail diff --msp msp_a --payer 123456789012 config.json       # each change marked tightening or loosening
+guardrail publish --msp msp_a --payer 123456789012 --note "raise acme dev for the migration" config.json
 ```
 
 - `pull` writes the newest version, or `--version N`, and tells you on stderr which version the guard last applied and whether the newest one is still pending.

@@ -20,7 +20,7 @@
 
 ## 4. Verification guide
 
-- [ ] 4.1 Write `docs/verify.md`: install `cosign`, verify `SHA256SUMS`, check hashes, rebuild with `make release` and compare, read the deployed function's `CodeSha256`, and find the hash in the latest heartbeat in Jennah; link it from the README; verify every command as written against the test release from 3.3 on a machine with no GitHub login
+- [x] 4.1 Write `docs/verify.md`: install `cosign`, verify `SHA256SUMS`, check hashes, rebuild with `make release` and compare, read the deployed function's `CodeSha256`, and find the hash in the latest heartbeat in Jennah; link it from the README; verify every command as written against the test release from 3.3 on a machine with no GitHub login
 
 ## 5. Repository settings
 

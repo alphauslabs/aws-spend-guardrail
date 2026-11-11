@@ -19,7 +19,7 @@
 ## 4. Template and docs
 
 - [x] 4.1 Add `organizations:ListAccounts` to the guard's role, and the `ReactToAccountEvents` parameter with a conditional EventBridge rule and invoke permission; verify `cfn-lint` passes and that the rule exists only when the parameter is on
-- [ ] 4.2 Document the coverage check, `unprotected_account` and `stale_scope` events, and `ReactToAccountEvents` in `docs/install.md`, `docs/install-console.md` and `docs/operating.md`; verify the documented steps against the e2e stack
+- [x] 4.2 Document the coverage check, `unprotected_account` and `stale_scope` events, and `ReactToAccountEvents` in `docs/install.md`, `docs/install-console.md` and `docs/operating.md`; verify the documented steps against the e2e stack
 
 ## 5. Integration
 

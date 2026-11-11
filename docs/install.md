@@ -143,6 +143,14 @@ Attach it as an IAM policy to the groups and roles that administer the payer acc
 
 After a dry-run period whose `would_freeze` events match what you expect, publish a version that sets `mode` to `enforce` for chosen scopes. That's a tightening, so it applies on the next pull.
 
+## What AWS charges
+
+- **Each enforcing scope** has a budget with an action. AWS bills these action-enabled budgets at about $0.10 per budget per day, so about $3 a month each, after the first two in the payer account, whether or not the freeze ever fires.
+- **Each dry-run scope** has a plain budget with a notification and no action, which costs nothing in its basic form. Going back from `enforce` to `dry-run` removes the action.
+- **The function, queue, table, and topics** run a few minutes a day and cost cents a month.
+
+Prefer OU scopes where accounts can share a ceiling: one OU scope is one budget however many accounts it covers, while 300 account scopes enforcing would cost about $900 a month.
+
 ## Known gaps
 
 - **Budgets lags spend by hours**, so a scope can go past its ceiling before it freezes. Use a threshold below 100%, such as 90.
