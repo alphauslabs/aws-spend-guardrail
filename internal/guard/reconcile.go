@@ -57,6 +57,7 @@ func (g *Guard) Reconcile(ctx context.Context, eff *config.Resolved) error {
 	if err != nil {
 		return err
 	}
+	runStart := g.now() // budgets read from here on may be after a watch began
 	have, err := g.Budgets.ListOwned(ctx)
 	if err != nil {
 		return fmt.Errorf("list budgets: %w", err)
@@ -74,7 +75,9 @@ func (g *Guard) Reconcile(ctx context.Context, eff *config.Resolved) error {
 		}
 		if err := g.Budgets.Put(ctx, w); err != nil {
 			errs = append(errs, fmt.Errorf("put %s: %w", w.Name, err))
+			continue
 		}
+		g.startSpendWatch(ctx, w.Name)
 	}
 	frozen, err := g.State.ListFrozen(ctx)
 	if err != nil {
@@ -99,6 +102,9 @@ func (g *Guard) Reconcile(ctx context.Context, eff *config.Resolved) error {
 	if err := g.liftRaised(ctx, want, existing); err != nil {
 		errs = append(errs, err)
 	}
+	if err := g.watchSpend(ctx, eff, want, existing, runStart); err != nil {
+		errs = append(errs, err)
+	}
 	if len(errs) > 0 {
 		err := errors.Join(errs...)
 		g.alert(ctx, "guardrail: reconcile incomplete", err.Error())
@@ -114,8 +120,11 @@ func sameSpec(a, b BudgetSpec) bool {
 }
 
 // liftRaised lifts a frozen scope whose threshold was raised above both its
-// threshold at freeze time and current spend.
-func (g *Guard) liftRaised(ctx context.Context, want []BudgetSpec, existing map[string]BudgetStatus) error {
+// threshold at freeze time and current spend. Spend comes from Cost Explorer,
+// not the budget: updating a budget zeroes its spend until AWS recalculates,
+// so the budget's figure would lift a freeze that is still over the new
+// threshold on every run after the raise.
+func (g *Guard) liftRaised(ctx context.Context, want []BudgetSpec, _ map[string]BudgetStatus) error {
 	frozen, err := g.State.ListFrozen(ctx)
 	if err != nil {
 		return fmt.Errorf("list frozen: %w", err)
@@ -130,12 +139,17 @@ func (g *Guard) liftRaised(ctx context.Context, want []BudgetSpec, existing map[
 		if !ok {
 			continue // scope removed: lifted with its budget above
 		}
-		actual := existing[w.Name].ActualUSD
 		threshold := w.LimitUSD * float64(w.ThresholdPct) / 100
-		if threshold <= f.ThresholdUSD || actual >= threshold {
+		if threshold <= f.ThresholdUSD {
+			continue // not raised: no spend read needed
+		}
+		actual, ok := g.spendFor(ctx, w, "lift")
+		if !ok || actual >= threshold {
 			continue
 		}
-		if err := g.lift(ctx, f, w, "budget_raised", map[string]any{"actual_usd": actual, "threshold_usd": threshold}); err != nil {
+		if err := g.lift(ctx, f, w, "budget_raised", map[string]any{
+			"actual_usd": actual, "threshold_usd": threshold, "spend_source": SpendSourceCostExplorer,
+		}); err != nil {
 			errs = append(errs, err)
 		}
 	}

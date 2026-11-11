@@ -141,6 +141,7 @@ type fakeBudgets struct {
 	puts     int
 	deletes  []string
 	releases []string
+	freezes  []string
 }
 
 func newFakeBudgets() *fakeBudgets { return &fakeBudgets{all: map[string]BudgetStatus{}} }
@@ -175,6 +176,31 @@ func (f *fakeBudgets) Delete(_ context.Context, name string) error {
 func (f *fakeBudgets) Release(_ context.Context, b BudgetSpec) (string, error) {
 	f.releases = append(f.releases, b.Name)
 	return "reverse_budget_action", nil
+}
+
+func (f *fakeBudgets) Freeze(_ context.Context, b BudgetSpec) error {
+	f.freezes = append(f.freezes, b.Name)
+	return nil
+}
+
+// fakeSpend is Cost Explorer: cost per account, summed over a scope's
+// accounts. It ignores the period, as tests set the period's figure.
+type fakeSpend struct {
+	byAccount map[string]float64
+	err       error
+	calls     int
+}
+
+func (f *fakeSpend) Actual(_ context.Context, accounts []string, _, _ time.Time) (float64, error) {
+	f.calls++
+	if f.err != nil {
+		return 0, f.err
+	}
+	var total float64
+	for _, a := range accounts {
+		total += f.byAccount[a]
+	}
+	return total, nil
 }
 
 func (f *fakeBudgets) setActual(name string, usd float64) {
@@ -270,6 +296,7 @@ type harness struct {
 	budgets *fakeBudgets
 	org     *fakeOrg
 	subs    *fakeSubs
+	spend   *fakeSpend
 	now     time.Time
 	nextVer int64
 }
@@ -279,8 +306,9 @@ func newHarness(t *testing.T) *harness {
 	h := &harness{
 		t: t, jennah: srv, client: c,
 		events: &events{}, alerts: &alerts{}, state: newMemState(), budgets: newFakeBudgets(), subs: newFakeSubs(),
-		org: &fakeOrg{ous: map[string][]string{}, attached: map[string][]config.Target{}},
-		now: time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC),
+		spend: &fakeSpend{byAccount: map[string]float64{}},
+		org:   &fakeOrg{ous: map[string][]string{}, attached: map[string][]config.Target{}},
+		now:   time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC),
 	}
 	h.g = h.newGuard()
 	return h
@@ -301,7 +329,7 @@ func (h *harness) newGuard() *Guard {
 			AlertEmail:         "stack@example.com",
 		},
 		Config: h.client, Events: h.events, Alerts: h.alerts, State: h.state,
-		Budgets: h.budgets, Org: h.org, Subs: h.subs,
+		Budgets: h.budgets, Org: h.org, Subs: h.subs, Spend: h.spend,
 		Now: func() time.Time { return h.now },
 	}
 }

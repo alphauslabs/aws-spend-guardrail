@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/budgets"
 	btypes "github.com/aws/aws-sdk-go-v2/service/budgets/types"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	otypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 )
 
 type fakeAPI struct {
@@ -156,7 +157,19 @@ func (f *fakeAPI) ExecuteBudgetAction(_ context.Context, in *budgets.ExecuteBudg
 	return &budgets.ExecuteBudgetActionOutput{}, nil
 }
 
-type fakeDetach struct{ detached []string }
+type fakeDetach struct {
+	detached  []string
+	attached  []string
+	attachErr error
+}
+
+func (d *fakeDetach) AttachPolicy(_ context.Context, in *organizations.AttachPolicyInput, _ ...func(*organizations.Options)) (*organizations.AttachPolicyOutput, error) {
+	if d.attachErr != nil {
+		return nil, d.attachErr
+	}
+	d.attached = append(d.attached, aws.ToString(in.PolicyId)+"@"+aws.ToString(in.TargetId))
+	return &organizations.AttachPolicyOutput{}, nil
+}
 
 func (d *fakeDetach) DetachPolicy(_ context.Context, in *organizations.DetachPolicyInput, _ ...func(*organizations.Options)) (*organizations.DetachPolicyOutput, error) {
 	d.detached = append(d.detached, aws.ToString(in.PolicyId)+"@"+aws.ToString(in.TargetId))
@@ -407,4 +420,29 @@ func TestActionUpdatedOnlyWhenChanged(t *testing.T) {
 			t.Fatalf("a frozen action with unchanged config must be left alone: %d updates", api.actionUpdates)
 		}
 	})
+}
+
+func TestFreezeAttachesThePolicy(t *testing.T) {
+	d := &fakeDetach{}
+	b := newBudgets(newFakeAPI(), d)
+	if err := b.Freeze(context.Background(), spec(true)); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.attached) != 1 || d.attached[0] != "p-styleB@111122223333" {
+		t.Fatalf("attached %v", d.attached)
+	}
+}
+
+func TestFreezeAlreadyAttachedIsNotAnError(t *testing.T) {
+	d := &fakeDetach{attachErr: &otypes.DuplicatePolicyAttachmentException{Message: aws.String("already attached")}}
+	if err := newBudgets(newFakeAPI(), d).Freeze(context.Background(), spec(true)); err != nil {
+		t.Fatalf("duplicate attachment should succeed: %v", err)
+	}
+	d.attachErr = errors.New("access denied")
+	if err := newBudgets(newFakeAPI(), d).Freeze(context.Background(), spec(true)); err == nil {
+		t.Fatal("want an error")
+	}
+	if err := newBudgets(newFakeAPI(), &fakeDetach{}).Freeze(context.Background(), spec(false)); err == nil {
+		t.Fatal("a dry-run spec has no policy to attach")
+	}
 }

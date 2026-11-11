@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/budgets"
 	btypes "github.com/aws/aws-sdk-go-v2/service/budgets/types"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	otypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 )
 
 // OwnedTagKey marks a budget as created by the guard. Ownership needs both the
@@ -43,16 +44,18 @@ type BudgetsAPI interface {
 	ExecuteBudgetAction(context.Context, *budgets.ExecuteBudgetActionInput, ...func(*budgets.Options)) (*budgets.ExecuteBudgetActionOutput, error)
 }
 
-// DetachAPI is the Organizations call used when reversing a Budgets action is
-// not possible.
-type DetachAPI interface {
+// PolicyAPI is the Organizations calls the guard makes on freeze policies:
+// detaching one when reversing a Budgets action is not possible, and
+// attaching one when the Budgets action can't fire yet.
+type PolicyAPI interface {
+	AttachPolicy(context.Context, *organizations.AttachPolicyInput, ...func(*organizations.Options)) (*organizations.AttachPolicyOutput, error)
 	DetachPolicy(context.Context, *organizations.DetachPolicyInput, ...func(*organizations.Options)) (*organizations.DetachPolicyOutput, error)
 }
 
 // Budgets implements guard.Budgets.
 type Budgets struct {
 	API              BudgetsAPI
-	Org              DetachAPI
+	Org              PolicyAPI
 	AccountID        string // the payer account
 	ExecutionRoleARN string // role Budgets assumes to attach the policy
 	NotifyTopicARN   string // budget notifications go here, then to the guard
@@ -513,6 +516,23 @@ func (b *Budgets) Release(ctx context.Context, s guard.BudgetSpec) (string, erro
 		return "", fmt.Errorf("detach %s from %s: %w", policy, s.Target.ID, err)
 	}
 	return "detach_policy", nil
+}
+
+// Freeze attaches the budget's freeze policy to its target. Budgets can't fire
+// its action while it reports no spend, which it does for a while after the
+// budget is created or updated, so the guard attaches the policy itself when
+// Cost Explorer shows the scope over its threshold. A lift goes through
+// Release, which detaches the policy when the action didn't attach it.
+func (b *Budgets) Freeze(ctx context.Context, s guard.BudgetSpec) error {
+	if !s.Enforce || s.PolicyID == "" {
+		return fmt.Errorf("freeze %s: a dry-run scope is never frozen", s.Target)
+	}
+	_, err := b.Org.AttachPolicy(ctx, &organizations.AttachPolicyInput{PolicyId: aws.String(s.PolicyID), TargetId: aws.String(s.Target.ID)})
+	var dup *otypes.DuplicatePolicyAttachmentException
+	if err != nil && !errors.As(err, &dup) {
+		return fmt.Errorf("attach %s to %s: %w", s.PolicyID, s.Target.ID, err)
+	}
+	return nil
 }
 
 var _ guard.Budgets = (*Budgets)(nil)

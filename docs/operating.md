@@ -110,6 +110,15 @@ To act on a report, publish a new version that either adds the account as a scop
 
 New accounts are found at the daily run, 00:15 UTC. With the stack parameter `ReactToAccountEvents=true`, they're found within minutes of being created, invited, or moved, but only if a CloudTrail trail in the payer account records management events. Without a trail, those events never reach EventBridge.
 
+## When Budgets reports no spend
+
+AWS Budgets resets a budget's spend to zero whenever the budget is created or updated, and can take about a day to recalculate it. Until then the budget's freeze action can't fire. The guard covers that window with Cost Explorer:
+
+- **After it changes a budget** (a new scope, a new ceiling or threshold, or a mode change), the guard reads the scope's cost in Cost Explorer on the same run, then about once an hour. If the cost is already at or over the threshold, a scope in `enforce` is frozen by the guard attaching the freeze policy itself, and a scope in `dry-run` gets `would_freeze`. It stops once the budget reports spend again, after 48 hours, or at a new budget period. From then on the Budgets action freezes on its own, as before.
+- **When a raised ceiling could lift a freeze**, the guard compares the new threshold with Cost Explorer's figure for the period, not the budget's. A raise that is still below spend keeps the freeze on every run. If Cost Explorer can't be read, the freeze stays, and an alert says so once until a read succeeds.
+
+Freeze, `would_freeze`, and lift events record `spend_source` (`budget` or `cost_explorer`), and freeze events record `how` the policy was attached (`budget_action` or `guard_attach`). Cost Explorer data trails usage by a few hours, so a freeze from the watch can come a few hours after the spend that caused it.
+
 ## Alert recipients
 
 Local alerts (freezes, rejected configs, Jennah outages, and unprotected accounts) go to the stack's alert topic. Two kinds of recipient are subscribed to it:

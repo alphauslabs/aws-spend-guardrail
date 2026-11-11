@@ -684,9 +684,13 @@ Resources:
                   - organizations:ListParents
                   - organizations:ListTargetsForPolicy
                 Resource: "*"
-              - Sid: DetachFreezePolicies
+              - Sid: ReadCostExplorer
                 Effect: Allow
-                Action: organizations:DetachPolicy
+                Action: ce:GetCostAndUsage
+                Resource: "*"
+              - Sid: AttachDetachFreezePolicies
+                Effect: Allow
+                Action: [organizations:AttachPolicy, organizations:DetachPolicy]
                 Resource:
                   - !GetAtt FreezePolicyA.Arn
                   - !GetAtt FreezePolicyB.Arn

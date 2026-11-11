@@ -27,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/budgets"
+	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	lambdasvc "github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
@@ -118,6 +119,7 @@ func setup(ctx context.Context) *app {
 			Subs:   &awsx.AlertSubscriptions{API: snsClient, TopicARN: env("ALERT_TOPIC_ARN")},
 			Keys:   []guard.GuardKey{{Name: "reader", Key: reader}, {Name: "writer", Key: writer}},
 			Prices: reader,
+			Spend:  &awsx.CostExplorer{API: costexplorer.NewFromConfig(cfg)},
 		},
 		consumer: &outbox.Consumer{Jennah: writer, DatasetID: schema.InboxDatasetID(mspID, payer)},
 	}

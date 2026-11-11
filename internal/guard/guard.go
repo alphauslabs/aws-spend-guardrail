@@ -132,6 +132,20 @@ type Budgets interface {
 	// Release lifts a freeze for a budget's target and reports how: by
 	// reversing the Budgets action, or by detaching the policy directly.
 	Release(ctx context.Context, b BudgetSpec) (how string, err error)
+	// Freeze attaches a budget's freeze policy to its target directly, for
+	// when the Budgets action can't fire because Budgets reports no spend
+	// yet. A policy already attached is not an error.
+	Freeze(ctx context.Context, b BudgetSpec) error
+}
+
+// SpendSource reads actual cost independently of AWS Budgets, which reports
+// zero for a budget from when it's created or updated until AWS recalculates.
+// Calls are billed, so the guard reads it only for lift decisions and for
+// budgets it just changed.
+type SpendSource interface {
+	// Actual is the cost of the linked accounts from the start of from's day
+	// to the end of to's day, in USD.
+	Actual(ctx context.Context, accounts []string, from, to time.Time) (float64, error)
 }
 
 // Account is one member account of the organization.
@@ -189,7 +203,10 @@ type Guard struct {
 	Fast *FastPath
 	// Prices reads the enterprise's shared prices. Nil: release prices only.
 	Prices PriceSource
-	Now    func() time.Time
+	// Spend reads actual cost from Cost Explorer for lift decisions and the
+	// watch on changed budgets. Nil keeps every freeze and skips the watch.
+	Spend SpendSource
+	Now   func() time.Time
 }
 
 func (g *Guard) now() time.Time {

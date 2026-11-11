@@ -56,6 +56,25 @@ func (g *Guard) OnThreshold(ctx context.Context, budgetName string) error {
 			}
 		}
 	}
+	if scope.Mode == config.ModeEnforce {
+		// The guard may have attached the policy already while Budgets had
+		// no spend for this budget; the action finding it attached is not a
+		// second freeze.
+		if frozen, err := g.State.ListFrozen(ctx); err == nil {
+			for _, f := range frozen {
+				if f.Target == scope.Target {
+					return nil
+				}
+			}
+		}
+	}
+	return g.recordFreeze(ctx, *scope, st.AppliedVersion, actual, HowBudgetAction, SpendSourceBudget)
+}
+
+// recordFreeze records a scope reaching its threshold: in enforce, the freeze
+// (state, event, and local alert); in dry-run, would_freeze. how says what
+// attached the policy, and source where actual came from.
+func (g *Guard) recordFreeze(ctx context.Context, scope config.ResolvedScope, version int64, actual float64, how, source string) error {
 	now := g.now()
 	period := PeriodStart(scope.Period, now)
 	detail := map[string]any{
@@ -64,14 +83,16 @@ func (g *Guard) OnThreshold(ctx context.Context, budgetName string) error {
 		"actual_usd":    actual,
 		"freeze_style":  scope.FreezeStyle,
 		"period_start":  period.Format("2006-01-02"),
+		"spend_source":  source,
 	}
 	idFor := func(kind string) string {
 		return kind + ":" + scope.Target.String() + ":" + period.Format("2006-01-02")
 	}
 	if scope.Mode != config.ModeEnforce {
-		g.emit(ctx, schema.KindWouldFreeze, idFor(schema.KindWouldFreeze), scope.Target.String(), st.AppliedVersion, detail)
+		g.emit(ctx, schema.KindWouldFreeze, idFor(schema.KindWouldFreeze), scope.Target.String(), version, detail)
 		return nil
 	}
+	detail["how"] = how
 	if err := g.State.MarkFrozen(ctx, Frozen{
 		Target:       scope.Target,
 		Since:        now,
@@ -81,7 +102,7 @@ func (g *Guard) OnThreshold(ctx context.Context, budgetName string) error {
 	}); err != nil {
 		return fmt.Errorf("record freeze: %w", err)
 	}
-	g.emit(ctx, schema.KindFreeze, idFor(schema.KindFreeze), scope.Target.String(), st.AppliedVersion, detail)
+	g.emit(ctx, schema.KindFreeze, idFor(schema.KindFreeze), scope.Target.String(), version, detail)
 	g.alert(ctx, "guardrail: spend frozen", fmt.Sprintf(
 		"%s is frozen: actual cost %.2f USD reached %d%% of its %.2f USD ceiling (freeze style %s). New spend is blocked; nothing running was stopped.",
 		scope.Target, actual, scope.ThresholdPct, scope.CeilingUSD, scope.FreezeStyle))

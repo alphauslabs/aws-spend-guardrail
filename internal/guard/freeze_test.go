@@ -139,6 +139,7 @@ func freezeX(h *harness, actual float64) {
 	h.publish(enforceDoc("50000", "stay_frozen"))
 	h.pull()
 	h.budgets.setActual(bX, actual)
+	h.spend.byAccount[tX.ID] = actual // Cost Explorer agrees
 	if err := h.g.OnThreshold(context.Background(), bX); err != nil {
 		h.t.Fatal(err)
 	}

@@ -88,7 +88,7 @@ An approval alone doesn't guard against a fast mistake: a careless click, or an 
 
 - Two freeze SCPs, unattached: style A (deny cost-creating actions) and style B (deny all but reads and cost-reducing actions of common services, and support, billing and security tooling; unlisted services are blocked entirely).
 - The role AWS Budgets assumes to attach them.
-- The guard function, run every 5 minutes and daily, and on budget notifications.
+- The guard function, run every 5 minutes and daily, and on budget notifications. Its role can read Cost Explorer (`ce:GetCostAndUsage`) and attach or detach the two freeze policies, so it can freeze a scope whose budget AWS hasn't recalculated yet and lift a freeze.
 - A DynamoDB table for the guard's state, an SQS outbox for events (with a dead-letter queue and an alarm), and an SNS alert topic.
 - A delete-time step that lifts every freeze the guard recorded and removes the budgets it owns.
 - With `ReactToAccountEvents=true`, an EventBridge rule that runs the coverage check when accounts change.
@@ -159,6 +159,7 @@ After a dry-run period whose `would_freeze` events match what you expect, publis
 - **Each enforcing scope** has a budget with an action. AWS bills these action-enabled budgets at about $0.10 per budget per day, so about $3 a month each, after the first two in the payer account, whether or not the freeze ever fires.
 - **Each dry-run scope** has a plain budget with a notification and no action, which costs nothing in its basic form. Going back from `enforce` to `dry-run` removes the action.
 - **The function, queue, table, and topics** run a few minutes a day and cost cents a month.
+- **Cost Explorer reads** cost $0.01 each. The guard makes them only to decide whether a raised ceiling lifts a freeze, and about once an hour for up to 48 hours after it changes a budget (see [Operating](operating.md#when-budgets-reports-no-spend)). A typical org pays cents a month.
 
 Prefer OU scopes where accounts can share a ceiling: one OU scope is one budget however many accounts it covers, while 300 account scopes enforcing would cost about $900 a month.
 
