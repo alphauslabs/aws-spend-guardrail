@@ -59,7 +59,7 @@
 
 ## 8. Integration
 
-- [ ] 8.1 End to end in the test organization with a local or staging Jennah: setup an MSP, publish a dry-run config, deploy, push a test account over a low ceiling, and see a `would_freeze` event; switch it to enforce and see the policy attached and a `freeze` event; publish a raise, approve it by email, and see the lift after the delay; detach by hand and see `drift`
+- [x] 8.1 End to end in the test organization with a local or staging Jennah: setup an MSP, publish a dry-run config, deploy, push a test account over a low ceiling, and see a `would_freeze` event; switch it to enforce and see the policy attached and a `freeze` event; publish a raise, approve it by email, and see the lift after the delay; detach by hand and see `drift`
 - [ ] 8.2 Repeat the freeze with Jennah unreachable and confirm the policy attaches and the events arrive after Jennah returns
 - [x] 8.3 Run `goimports`, `make` and `go test ./...`; verify all pass
 
