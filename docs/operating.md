@@ -172,7 +172,7 @@ It prints the enterprise it acts on and the models added, raised, lowered, and r
 
 `guardrail prices build -o internal/packs/ai/prices.json` regenerates the release's table the same way.
 
-## Before installing: check SCP slots
+## Before installing: check SCP slots and budget actions
 
 AWS allows 10 SCPs attached directly to one account or OU. A target that already has 10, none of them a freeze policy, can't take one. With AWS credentials for the payer account:
 
@@ -181,3 +181,15 @@ guardrail preflight --msp msp_a config.json
 ```
 
 It lists each scope's target and fails if any has no free slot.
+
+It also checks room for budget actions. Each enforcing scope needs one in the payer account, and AWS allows 100 per account, including budget actions you made outside the guard. Preflight prints a line like:
+
+```
+budget actions: 3 outside the guard, 40 enforcing scopes in this config, limit 100
+```
+
+and fails when the two add up to more than 100. Reading them needs `budgets:DescribeBudgetActionsForAccount` in the payer account.
+
+## When AWS refuses a budget action
+
+If the payer account reaches AWS's limit of 100 budget actions anyway (for example, budget actions made outside the guard after install, or a loosening that swaps enforcing scopes while it waits for approval, when the guard keeps both sets), AWS refuses the next scope's action. The guard still writes that scope's budget, but the scope can't freeze until it has an action. You get one alert, "guardrail: scopes can't freeze, budget action limit reached", naming the scopes. The guard tries again on every run, and creates the action as soon as there is room. To make room, enforce fewer scopes (OU scopes, or `dry-run`), or remove budget actions outside the guard.

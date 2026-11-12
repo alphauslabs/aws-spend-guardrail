@@ -75,7 +75,9 @@ func (g *Guard) Reconcile(ctx context.Context, eff *config.Resolved) error {
 		isFrozen[f.Target] = true
 	}
 	var errs []error
-	var reset []BudgetSpec // updated with their freeze action executed
+	var reset []BudgetSpec      // updated with their freeze action executed
+	var limited []limitedAction // budget written, action refused at AWS's limit
+	failed := map[string]bool{}
 	wanted := map[string]bool{}
 	for _, w := range want {
 		wanted[w.Name] = true
@@ -84,6 +86,12 @@ func (g *Guard) Reconcile(ctx context.Context, eff *config.Resolved) error {
 			continue
 		}
 		if err := g.Budgets.Put(ctx, w); err != nil {
+			if errors.Is(err, ErrBudgetActionLimit) {
+				limited = append(limited, limitedAction{w, err})
+				g.startSpendWatch(ctx, w.Name)
+				continue
+			}
+			failed[w.Name] = true
 			errs = append(errs, fmt.Errorf("put %s: %w", w.Name, err))
 			continue
 		}
@@ -111,6 +119,9 @@ func (g *Guard) Reconcile(ctx context.Context, eff *config.Resolved) error {
 				errs = append(errs, fmt.Errorf("delete %s: %w", name, err))
 			}
 		}
+	}
+	if err := g.reportActionLimit(ctx, limited, failed); err != nil {
+		errs = append(errs, err)
 	}
 	if err := g.liftRaised(ctx, want, existing); err != nil {
 		errs = append(errs, err)

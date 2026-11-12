@@ -47,6 +47,7 @@ A document is invalid, and the guard keeps the last valid config, when it:
 - fails the schema (unknown fields, wrong types, values out of range);
 - is for another payer account;
 - names a scope twice;
+- has more than 100 scopes in `enforce` once defaults are applied. Each enforcing scope needs a budget action in the payer account, and AWS allows 100 per account. Group accounts into OU scopes, or set some scopes to `dry-run`;
 - names the payer account or the organization root (`r-...`) as a scope;
 - lists an account both in `excluded_accounts` and as an account scope, or lists an exclusion twice;
 - lists an alert recipient that isn't a plain email address (`Ops <ops@example.com>` is refused), lists one twice (case doesn't matter), or lists more than 20;

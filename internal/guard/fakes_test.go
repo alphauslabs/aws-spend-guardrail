@@ -159,6 +159,10 @@ type fakeBudgets struct {
 	resetting   map[string]int // reads left before a reset reads as done
 	resetReads  int            // status reads a reset takes
 	statusReads int
+	// actionCap, when set, is how many budgets can have an action, like
+	// AWS's per-account limit: a new action past it is refused, and the
+	// budget is written without one (add-enforcing-scope-limit).
+	actionCap int
 }
 
 func newFakeBudgets() *fakeBudgets {
@@ -178,6 +182,12 @@ func (f *fakeBudgets) ListOwned(context.Context) ([]BudgetStatus, error) {
 func (f *fakeBudgets) Put(_ context.Context, b BudgetSpec) error {
 	f.puts++
 	cur := f.all[b.Name]
+	if b.Enforce && !cur.Spec.Enforce && f.actionCap > 0 && f.actions() >= f.actionCap {
+		cur.Spec = b
+		cur.Spec.Enforce, cur.Spec.PolicyID = false, ""
+		f.all[b.Name] = cur
+		return fmt.Errorf("create budget action: %w: ServiceQuotaExceededException: limit reached", ErrBudgetActionLimit)
+	}
 	if cur.ActionExecuted {
 		// AWS resets an executed action when its budget is updated: the
 		// policy is detached at once, and the action reads as resetting for a
@@ -191,6 +201,17 @@ func (f *fakeBudgets) Put(_ context.Context, b BudgetSpec) error {
 	cur.Spec = b
 	f.all[b.Name] = cur
 	return nil
+}
+
+// actions counts budgets with an action.
+func (f *fakeBudgets) actions() int {
+	n := 0
+	for _, b := range f.all {
+		if b.Spec.Enforce {
+			n++
+		}
+	}
+	return n
 }
 
 func (f *fakeBudgets) ActionStatus(_ context.Context, name string) (string, error) {

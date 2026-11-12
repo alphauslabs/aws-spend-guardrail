@@ -17,11 +17,13 @@ import (
 	"github.com/alphauslabs/aws-spend-guardrail/internal/activity"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/awsx"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/cli"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/prices"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
+	"github.com/aws/aws-sdk-go-v2/service/budgets"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
@@ -204,8 +206,30 @@ func preflight(ctx context.Context, raw []byte, msp string, stdout io.Writer) er
 		}
 		fmt.Fprintf(stdout, "%-30s %d of %d SCPs  %s\n", r.Target, r.Attached, awsx.MaxSCPsPerTarget, state)
 	}
+	outside, err := awsx.BudgetActionsOutside(ctx, budgets.NewFromConfig(cfg), doc.PayerAccountID, guard.BudgetPrefix)
+	if err != nil {
+		return err
+	}
+	actionsErr := checkBudgetActions(outside, doc.Resolve().EnforcingScopes(), stdout)
 	if full > 0 {
-		return fmt.Errorf("%d target(s) have no free SCP slot; detach or merge an SCP on each before installing", full)
+		return errors.Join(fmt.Errorf("%d target(s) have no free SCP slot; detach or merge an SCP on each before installing", full), actionsErr)
+	}
+	return actionsErr
+}
+
+// checkBudgetActions reports the payer account's room for budget actions: each
+// enforcing scope needs one, and AWS allows config.MaxEnforcingScopes per account.
+func checkBudgetActions(outside, enforcing int, stdout io.Writer) error {
+	limit := config.MaxEnforcingScopes
+	scopes := "scopes"
+	if enforcing == 1 {
+		scopes = "scope"
+	}
+	fmt.Fprintf(stdout, "budget actions: %d outside the guard, %d enforcing %s in this config, limit %d\n", outside, enforcing, scopes, limit)
+	if outside+enforcing > limit {
+		return fmt.Errorf("the payer account needs %d budget actions (%d outside the guard and %d for enforcing scopes), and AWS allows %d; "+
+			"remove budget actions outside the guard, or enforce fewer scopes (group accounts into OU scopes, or set some to dry-run)",
+			outside+enforcing, outside, enforcing, limit)
 	}
 	return nil
 }

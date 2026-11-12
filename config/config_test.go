@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -215,5 +216,44 @@ func TestAlertEmails(t *testing.T) {
 	probs := problems(t, `{"payer_account_id":"123456789012","scopes":[],"alert_emails":["ops@example.com","OPS@example.com"]}`, Options{})
 	if !hasProblem(probs, "alert_emails[1]", "already listed at alert_emails[0]") {
 		t.Errorf("case-insensitive duplicate not refused: %v", probs)
+	}
+}
+
+// scopesDoc is a document with n account scopes, the first enforce of them in
+// enforce (set per scope) and the rest left to defaults.
+func scopesDoc(n, enforce int, defaults string) string {
+	var b strings.Builder
+	b.WriteString(`{"payer_account_id":"123456789012",`)
+	if defaults != "" {
+		b.WriteString(`"defaults":` + defaults + `,`)
+	}
+	b.WriteString(`"scopes":[`)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		mode := ""
+		if i < enforce {
+			mode = `,"mode":"enforce"`
+		}
+		fmt.Fprintf(&b, `{"account_id":"%012d","ceiling_usd":10%s}`, 200000000000+i, mode)
+	}
+	b.WriteString("]}")
+	return b.String()
+}
+
+func TestEnforcingScopeLimit(t *testing.T) {
+	probs := problems(t, scopesDoc(101, 0, `{"mode":"enforce"}`), Options{})
+	if !hasProblem(probs, "scopes", "101 scopes enforce") || !hasProblem(probs, "scopes", "at most 100 scopes can enforce") ||
+		!hasProblem(probs, "scopes", "OU scopes") {
+		t.Fatalf("defaults.mode enforce on 101 scopes: %v", probs)
+	}
+	probs = problems(t, scopesDoc(101, 101, ""), Options{})
+	if !hasProblem(probs, "scopes", "101 scopes enforce") {
+		t.Fatalf("101 explicit enforcing scopes: %v", probs)
+	}
+	d := mustParse(t, scopesDoc(150, 100, ""))
+	if n := d.Resolve().EnforcingScopes(); n != 100 {
+		t.Fatalf("enforcing = %d, want 100 (50 dry-run don't count)", n)
 	}
 }

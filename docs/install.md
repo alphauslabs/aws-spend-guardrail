@@ -7,7 +7,7 @@ One CloudFormation stack per payer (management) account, in us-east-1. An MSP wi
 1. Make sure service control policies are enabled in the organization (see below).
 2. [Set up the payer org in Jennah and mint the guard's two credentials](operating.md). Store them in Secrets Manager in the payer account.
 3. Publish a first config with every scope in `dry-run` (the default).
-4. Run `guardrail preflight` to confirm every target has a free SCP slot.
+4. Run `guardrail preflight` to confirm every target has a free SCP slot and the payer account has room for the budget actions (see [Operating](operating.md#before-installing-check-scp-slots-and-budget-actions)).
 5. Build the function package with `make guard` and upload `bin/guard.zip` to an S3 bucket in us-east-1 that you control.
 
 ### Service control policies must be enabled

@@ -370,6 +370,9 @@ func (b *Budgets) Put(ctx context.Context, s guard.BudgetSpec) error {
 			Subscribers:      b.subscribers(),
 		})
 		if err != nil {
+			if isActionLimit(err) {
+				return fmt.Errorf("create budget action: %w: %w", guard.ErrBudgetActionLimit, err)
+			}
 			return fmt.Errorf("create budget action: %w", err)
 		}
 		return nil
@@ -554,3 +557,12 @@ func (b *Budgets) ActionStatus(ctx context.Context, name string) (string, error)
 }
 
 var _ guard.Budgets = (*Budgets)(nil)
+
+// isActionLimit reports whether AWS refused an action because the account is at
+// its budget action limit. AWS doesn't document which of its two limit errors
+// CreateBudgetAction returns for this, so both count.
+func isActionLimit(err error) bool {
+	var quota *btypes.ServiceQuotaExceededException
+	var creation *btypes.CreationLimitExceededException
+	return errors.As(err, &quota) || errors.As(err, &creation)
+}

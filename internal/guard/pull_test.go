@@ -2,6 +2,7 @@ package guard
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -304,3 +305,30 @@ func TestExclusionOnlyVersionAppliesWithoutApproval(t *testing.T) {
 		t.Fatalf("state %+v approvals %d", st, h.jennah.CreatedApprovals)
 	}
 }
+
+// A version over the enforcing-scope limit is refused like any invalid
+// version, and the applied config stays (add-enforcing-scope-limit).
+func TestOverLimitVersionKeepsLastValid(t *testing.T) {
+	h := newHarness(t)
+	h.publish(doc("50000", "50000"))
+	h.pull()
+	var b strings.Builder
+	b.WriteString(`{"payer_account_id":"123456789012","defaults":{"mode":"enforce"},"scopes":[`)
+	for i := 0; i < 101; i++ {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(`{"account_id":"2000000` + strings.Repeat("0", 5-len(itoa(i))) + itoa(i) + `","ceiling_usd":10}`)
+	}
+	b.WriteString("]}")
+	h.publish(b.String())
+	h.pull()
+	if h.st().AppliedVersion != 1 || h.ceiling(bX) != 50000 || h.budgets.puts != 2 {
+		t.Fatalf("over-limit version changed config: %+v puts=%d", h.st(), h.budgets.puts)
+	}
+	if !h.alerts.has("101 scopes enforce") {
+		t.Fatalf("alert lacks the limit message: %v", h.alerts.list)
+	}
+}
+
+func itoa(i int) string { return strconv.Itoa(i) }

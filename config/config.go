@@ -307,6 +307,29 @@ func checkSemantics(d *Document, opts Options) []Problem {
 		}
 		firstAt[k] = i
 	}
+	if n := d.Resolve().EnforcingScopes(); n > MaxEnforcingScopes {
+		probs = append(probs, Problem{
+			Field: "scopes",
+			Message: fmt.Sprintf("%d scopes enforce, and AWS allows at most %d budget actions in the payer account, so at most %d scopes can enforce. "+
+				"Group accounts into OU scopes, or set some scopes to dry-run.", n, MaxEnforcingScopes, MaxEnforcingScopes),
+		})
+	}
 	probs = append(probs, aiSemantics(d.AI)...)
 	return probs
+}
+
+// MaxEnforcingScopes is how many scopes can enforce in one payer org. Each
+// enforcing scope has one budget action in the payer account, and AWS allows
+// at most 100 budget actions per account (docs/aws-facts.md).
+const MaxEnforcingScopes = 100
+
+// EnforcingScopes counts the scopes in enforce.
+func (r *Resolved) EnforcingScopes() int {
+	n := 0
+	for _, s := range r.Scopes {
+		if s.Mode == ModeEnforce {
+			n++
+		}
+	}
+	return n
 }

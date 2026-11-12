@@ -21,7 +21,9 @@ type fakeAPI struct {
 	notifs   map[string][]btypes.Notification
 	executed []string
 	failExec bool
-	updates  int
+	// createActionErr, when set, is returned by CreateBudgetAction.
+	createActionErr error
+	updates         int
 	// actionUpdates counts UpdateBudgetAction calls.
 	actionUpdates int
 	// notifWrites counts notification creates and deletes. AWS resets a
@@ -130,6 +132,9 @@ func (f *fakeAPI) DescribeBudgetActionsForBudget(_ context.Context, in *budgets.
 	return &budgets.DescribeBudgetActionsForBudgetOutput{Actions: []btypes.Action{a}}, nil
 }
 func (f *fakeAPI) CreateBudgetAction(_ context.Context, in *budgets.CreateBudgetActionInput, _ ...func(*budgets.Options)) (*budgets.CreateBudgetActionOutput, error) {
+	if f.createActionErr != nil {
+		return nil, f.createActionErr
+	}
 	n := aws.ToString(in.BudgetName)
 	f.actions[n] = btypes.Action{ActionId: aws.String("act-" + n), ActionType: in.ActionType, NotificationType: in.NotificationType,
 		ActionThreshold: storedThreshold(in.ActionThreshold), Definition: in.Definition, ExecutionRoleArn: in.ExecutionRoleArn,
@@ -484,5 +489,34 @@ func TestReleaseOfAPolicyAlreadyDetached(t *testing.T) {
 	how, err := b.Release(ctx, spec(true))
 	if err != nil || how != "already_detached" {
 		t.Fatalf("how %q err %v", how, err)
+	}
+}
+
+// AWS's limit errors on CreateBudgetAction are marked as the action limit, and
+// the budget itself is still written (add-enforcing-scope-limit).
+func TestCreateActionLimitErrorsAreMarked(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		err   error
+		limit bool
+	}{
+		{"service quota", &btypes.ServiceQuotaExceededException{Message: aws.String("limit reached")}, true},
+		{"creation limit", &btypes.CreationLimitExceededException{Message: aws.String("limit reached")}, true},
+		{"other", &btypes.InvalidParameterException{Message: aws.String("bad")}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := newFakeAPI()
+			api.createActionErr = tc.err
+			err := newBudgets(api, &fakeDetach{}).Put(context.Background(), spec(true))
+			if err == nil {
+				t.Fatal("want an error")
+			}
+			if errors.Is(err, guard.ErrBudgetActionLimit) != tc.limit {
+				t.Fatalf("limit = %v, want %v: %v", errors.Is(err, guard.ErrBudgetActionLimit), tc.limit, err)
+			}
+			if _, ok := api.budgets["guardrail-account-111122223333"]; !ok {
+				t.Fatal("the budget should exist even without its action")
+			}
+		})
 	}
 }

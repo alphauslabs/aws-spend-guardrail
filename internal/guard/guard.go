@@ -9,6 +9,7 @@ package guard
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -126,6 +127,11 @@ type BudgetStatus struct {
 }
 
 // Budgets manages guard-owned budgets, their freeze actions and lifts.
+// ErrBudgetActionLimit marks a budget action AWS refused because the payer
+// account is at its limit of budget actions (config.MaxEnforcingScopes). The
+// scope's budget exists, but it can't freeze until it has an action.
+var ErrBudgetActionLimit = errors.New("the payer account is at AWS's limit of budget actions")
+
 type Budgets interface {
 	// ListOwned returns every budget the guard owns. Budgets it doesn't own are
 	// never returned.
