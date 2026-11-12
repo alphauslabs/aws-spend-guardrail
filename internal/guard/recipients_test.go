@@ -129,10 +129,10 @@ func TestAddedRecipientWaitsForApproval(t *testing.T) {
 		t.Fatal("subscribed before approval")
 	}
 	a := h.jennah.Approval("guardrail:123456789012:msp_a:v3")
-	if a == nil || !strings.HasPrefix(a.GetTitle(), "Change alert recipients for spend guard config v3") {
+	if a == nil || a.GetTitle() != "Change alert recipients for payer 123456789012 (config version 3)" {
 		t.Fatalf("approval title: %q", a.GetTitle())
 	}
-	if !strings.Contains(a.GetSummary(), "alert recipient added: finops@example.com") {
+	if !strings.Contains(a.GetSummary(), "- Add finops@example.com as an alert recipient.") {
 		t.Fatalf("approval summary: %q", a.GetSummary())
 	}
 	approveAndWait(h, "3", 31*time.Minute)
@@ -147,7 +147,7 @@ func TestMixedVersionKeepsTheLoosenTitle(t *testing.T) {
 	h.publish(`{"payer_account_id":"123456789012","scopes":[{"account_id":"111122223333","ceiling_usd":60000}],"alert_emails":["finops@example.com"]}`)
 	h.pull()
 	a := h.jennah.Approval("guardrail:123456789012:msp_a:v3")
-	if a == nil || !strings.HasPrefix(a.GetTitle(), "Loosen spend guard config v3") {
+	if a == nil || a.GetTitle() != "Loosen spend protection for payer 123456789012 (config version 3)" {
 		t.Fatalf("approval title: %q", a.GetTitle())
 	}
 }

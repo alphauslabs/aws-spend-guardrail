@@ -141,7 +141,8 @@ func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, n
 
 	p := st.Pending
 	if p == nil || p.Version != version {
-		req, err := g.approvalRequest(version, note, changes)
+		seen := g.now()
+		req, err := g.approvalRequest(ctx, version, note, changes, st.Effective, desired, seen)
 		if err != nil {
 			return err
 		}
@@ -149,7 +150,7 @@ func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, n
 		if err != nil {
 			return err
 		}
-		p = &Pending{Version: version, ApprovalID: a.ID, FirstSeen: g.now(), Desired: desired, Note: note}
+		p = &Pending{Version: version, ApprovalID: a.ID, FirstSeen: seen, Desired: desired, Note: note}
 		st.Pending = p
 		g.emit(ctx, schema.KindLooseningRaised, fmt.Sprintf("%s:%d", schema.KindLooseningRaised, version), "", version,
 			map[string]any{"approval_id": a.ID, "loosening": changeStrings(only(changes, config.Loosening)), "reason": note})
@@ -199,36 +200,59 @@ func reasonText(version int64, note string) string {
 	return note
 }
 
-func (g *Guard) approvalRequest(version int64, note string, changes []config.Change) (jennah.ApprovalRequest, error) {
-	loosen := changeStrings(only(changes, config.Loosening))
-	title := fmt.Sprintf("Loosen spend guard config v%d (payer %s)", version, g.S.PayerAccountID)
-	what, kept := "loosens protection", "the stricter config stays in force"
-	if config.OnlyRecipients(changes) {
-		title = fmt.Sprintf("Change alert recipients for spend guard config v%d (payer %s)", version, g.S.PayerAccountID)
-		what, kept = "changes who receives the guard's alerts", "the current recipients stay"
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "Config version %d for payer account %s (MSP %s) %s:\n\n", version, g.S.PayerAccountID, g.S.MSPID, what)
-	for _, c := range loosen {
-		fmt.Fprintf(&b, "- %s\n", c)
-	}
-	fmt.Fprintf(&b, "\nReason given:\n%s\n", reasonText(version, note))
-	fmt.Fprintf(&b, "\nIf approved, it applies %s after it was first seen. If rejected or unanswered, %s.", g.S.LooseningDelay, kept)
+// approvalRequest builds the loosening approval an approver decides from
+// (improve-approval-wording): a title naming the kind of change, one sentence
+// per loosening, what it does to any freeze, the reason given, and exact times.
+// effective is the config in force (it still has a removed scope), desired the
+// new version, and seen when the guard first saw it.
+func (g *Guard) approvalRequest(ctx context.Context, version int64, note string, changes []config.Change,
+	effective, desired *config.Resolved, seen time.Time) (jennah.ApprovalRequest, error) {
 	approvers := cleanApprovers(g.S.LooseningApprovers)
 	quorum, err := approvalQuorum(g.S.LooseningRequired, len(approvers))
 	if err != nil {
 		return jennah.ApprovalRequest{}, err
 	}
+	loosening := only(changes, config.Loosening)
+	what, kept := "loosens protection", "the stricter config stays in force"
+	if config.OnlyRecipients(changes) {
+		what, kept = "changes who receives the guard's alerts", "the current recipients stay"
+	}
+	earliest, expires := seen.Add(g.S.LooseningDelay), seen.Add(g.S.LooseningWindow)
+
+	var b strings.Builder
+	intro, applies := "these changes", "the changes apply"
+	if len(loosening) == 1 {
+		intro, applies = "this change", "the change applies"
+	}
+	fmt.Fprintf(&b, "Config version %d for payer account %s (MSP %s) %s. If approved, it makes %s:\n\n",
+		version, g.S.PayerAccountID, g.S.MSPID, what, intro)
+	for _, c := range loosening {
+		fmt.Fprintf(&b, "- %s\n", c.Sentence())
+	}
+	if lines := g.freezeLines(ctx, loosening, effective, desired); len(lines) > 0 {
+		b.WriteString("\n" + strings.Join(lines, "\n") + "\n")
+	}
+	fmt.Fprintf(&b, "\nReason given:\n%s\n", reasonText(version, note))
+	if g.S.LooseningDelay > 0 {
+		fmt.Fprintf(&b, "\nIf you approve, %s %s after the guard first saw this version, at %s at the earliest.",
+			applies, durationWords(g.S.LooseningDelay), utcText(earliest))
+	} else {
+		fmt.Fprintf(&b, "\nIf you approve, %s on the guard's next run.", applies)
+	}
+	fmt.Fprintf(&b, " If you reject it, or nobody answers by %s, %s.", utcText(expires), kept)
+
 	return jennah.ApprovalRequest{
 		RequestKey: fmt.Sprintf("guardrail:%s:%s:v%d", g.S.PayerAccountID, g.S.MSPID, version),
-		Title:      title,
+		Title:      approvalTitle(g.S.PayerAccountID, version, loosening),
 		Summary:    b.String(),
 		Payload: map[string]any{
-			"payer_account_id": g.S.PayerAccountID,
-			"msp_id":           g.S.MSPID,
-			"config_version":   float64(version),
-			"loosening":        toAny(loosen),
-			"reason":           strings.TrimSpace(note),
+			"payer_account_id":  g.S.PayerAccountID,
+			"msp_id":            g.S.MSPID,
+			"config_version":    float64(version),
+			"loosening":         toAny(changeStrings(loosening)),
+			"reason":            strings.TrimSpace(note),
+			"earliest_apply_at": earliest.UTC().Format(time.RFC3339),
+			"expires_at":        expires.UTC().Format(time.RFC3339),
 		},
 		Approvers: approvers,
 		Quorum:    quorum,

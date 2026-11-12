@@ -82,6 +82,25 @@ guardrail publish --msp msp_a --payer 123456789012 --note "raise acme dev for th
 
 What happens next is in [config](config.md): tightening applies within about 5 minutes, loosening after approval and the stack's delay.
 
+A loosening reaches each approver as a Jennah approval. It names the kind of change, lists each change as a sentence, says what approving would do to any frozen scope it touches (with the scope's Cost Explorer spend), and gives the exact times. For example, raising a frozen account above its spend:
+
+```
+Raise a spend cap for payer 123456789012 (config version 2)
+
+Config version 2 for payer account 123456789012 (MSP msp_a) loosens protection. If approved, it makes this change:
+
+- Raise the ceiling of account 111122223333 from 5.30 USD to 7.00 USD.
+
+Account 111122223333 is frozen, and its spend this month is 6.16 USD, so this change would lift the freeze.
+
+Reason given:
+Month-end batch, on trend for 6 months.
+
+If you approve, the change applies 30 minutes after the guard first saw this version, at 09:30 UTC on 2026-11-10 at the earliest. If you reject it, or nobody answers by 11:00 UTC on 2026-11-10, the stricter config stays in force.
+```
+
+The approval's payload keeps the change lines `guardrail diff` prints, and adds `earliest_apply_at` and `expires_at`.
+
 The format of the document, and every field, is in [config](config.md).
 
 ## Make an install link
