@@ -45,3 +45,40 @@ An approval the guard raises for a loosening SHALL show the config version's not
 #### Scenario: A very long note
 - **WHEN** a version's note is 10,000 characters
 - **THEN** the summary shows the first part of it, says it was shortened, and names the version holding the full note, and the approval is created
+
+### Requirement: Loosening approvals carry a quorum rule Jennah accepts
+An approval the guard raises for a loosening SHALL state a quorum rule. When the stack requires one approval, the rule SHALL be "any one approver". When the stack requires as many approvals as it lists approvers, the rule SHALL be "all approvers", and the required count SHALL equal the number of approvers. Approvers SHALL be counted once each, ignoring blanks.
+
+#### Scenario: One approval required
+- **WHEN** the stack lists one or more approvers and requires 1 approval
+- **THEN** the approval is raised with the rule "any one approver", and Jennah accepts it
+
+#### Scenario: Every approver required
+- **WHEN** the stack lists two approvers and requires 2 approvals
+- **THEN** the approval is raised with the rule "all approvers" and a required count of 2, and Jennah accepts it
+
+### Requirement: An unsupported approval count is a setup error
+When the stack's required approvals is neither 1 nor the number of approvers, the guard SHALL NOT send an approval request. It SHALL report a setup error naming the required count, the number of approvers, and the two values that work, through the same alert and reminders as any other failure to apply a config version. The stricter config SHALL stay in force, and protection that needs no approval SHALL keep working.
+
+#### Scenario: Two of three approvers
+- **WHEN** the stack lists three approvers, requires 2 approvals, and a published version loosens a ceiling
+- **THEN** no approval is raised, the alert says 2 of 3 is not supported and that the value must be 1 or 3, the previous ceiling stays in force, and any tightening in that version applies
+
+#### Scenario: More approvals than approvers
+- **WHEN** the stack lists one approver and requires 2 approvals, and a version loosens anything
+- **THEN** no approval is raised, and the alert says the value must be 1
+
+### Requirement: Each freeze is its own inbox event
+Every time a scope is frozen, the guard SHALL write a `freeze` event whose id names the scope and when that freeze began, so a scope frozen again after a lift in the same budget period gets a second event. A repeat of a freeze already in force SHALL reuse that freeze's id, so the inbox holds it once, and SHALL NOT send a second local alert. A `would_freeze` event SHALL stay at one per scope per budget period.
+
+#### Scenario: Frozen, lifted, and frozen again in one month
+- **WHEN** a scope is frozen on November 11 at 20:17, lifted at 21:15, and frozen again at 21:40
+- **THEN** the inbox holds two `freeze` events and one `lift` event for it, and the latest is a `freeze`
+
+#### Scenario: Budgets fires on a scope the guard already froze
+- **WHEN** the guard froze a scope itself, and the Budgets action later fires and notifies the guard
+- **THEN** the inbox still holds one `freeze` event for that freeze, and one alert was sent
+
+#### Scenario: The first event write was lost
+- **WHEN** a freeze was recorded in the guard's state but its event never reached the outbox, and the budget notification is delivered again
+- **THEN** the `freeze` event is written with the original freeze's time, and no second alert is sent

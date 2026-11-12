@@ -18,4 +18,4 @@
 
 ## 4. Live check
 
-- [ ] 4.1 With the e2e guard on this build, confirm the pending version 3 (e2estandard03 ceiling 4 to 8 USD) raises an approval to the stack's approver, a `loosening_raised` event is recorded, and after approval and the 30-minute delay the freeze SCP is detached and a `lift` event is recorded
+- [x] 4.1 With the e2e guard on this build, confirm the pending version 3 (e2estandard03 ceiling 4 to 8 USD) raises an approval to the stack's approver, a `loosening_raised` event is recorded, and after approval and the 30-minute delay the freeze SCP is detached and a `lift` event is recorded

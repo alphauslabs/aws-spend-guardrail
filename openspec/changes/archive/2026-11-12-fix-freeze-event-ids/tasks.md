@@ -13,4 +13,4 @@
 
 ## 3. Live check
 
-- [ ] 3.1 With e2e on this build, after the next freeze of e2estandard03 in November, confirm the inbox shows a new `freeze` event with the new id format after the 21:15 lift
+- [x] 3.1 With e2e on this build, after the next freeze of e2estandard03 in November, confirm the inbox shows a new `freeze` event with the new id format after the 21:15 lift
