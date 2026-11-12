@@ -12,6 +12,7 @@ The loosening approval email is the one place an approver decides whether to wea
 - The closing paragraph gives the delay in words ("30 minutes"), the earliest time the change can apply (UTC), and when the request expires, and says the stricter config stays in force if it's rejected or unanswered.
 - The payload keeps its fields, so automation reading `loosening` is unaffected; it gains `earliest_apply_at` and `expires_at`.
 - `guardrail diff` and inbox events keep their current change lines.
+- The config-refresh reminder and recovery alerts give the outage length in words ("6 hours", not `6h0m0s`) and the start time in the same UTC form as approvals.
 
 ## Capabilities
 

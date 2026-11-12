@@ -30,6 +30,7 @@ Every release has an entry here. Each entry has a **Security-relevant** section 
 
 ### Changed
 - Local alert bodies read as full sentences: they start with a capital letter and end with a period, name targets as "Account <id>" or "OU <id>" instead of `account:<id>`, and give lift reasons in words instead of codes such as `budget_raised`. Error detail is no longer mixed into a sentence; it follows on a last line starting with `Error: `. Subjects are unchanged, so filters on subjects keep working; filters on body text need updating.
+- The config-refresh reminder and recovery alerts give the outage length in words ("6 hours" instead of `6h0m0s`) and the start time as "14:45 UTC on 2026-11-12" instead of RFC 3339.
 
 ### Fixed
 - A config change to a scope frozen by its AWS Budgets action unfroze it. Updating a budget whose action has executed makes AWS reset the action, which detaches the freeze policy within a second, while the guard, the inbox, and the freeze alert still said the scope was frozen, and nothing froze it again until the next budget period. The guard now waits for the reset to finish and attaches the policy again unless the change lifts the freeze, recording `freeze_carried`. A lift whose policy the reset already detached succeeds, recorded with `how: already_detached`.

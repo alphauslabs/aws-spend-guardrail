@@ -28,3 +28,10 @@ The summary SHALL give the loosening delay in words, the earliest time the chang
 #### Scenario: A 30-minute delay
 - **WHEN** the guard first sees version 8 at 12:55 UTC on 2026-11-12, with a 30-minute delay and a 24-hour window
 - **THEN** the summary says the change applies 30 minutes after the guard first saw it, at 13:25 UTC on 2026-11-12 at the earliest, and that the request expires at 12:55 UTC on 2026-11-13
+
+### Requirement: Config refresh alerts give times in words
+The reminder sent while the guard can't read its config from Jennah, and the alert sent when it recovers, SHALL give how long reads have failed in words, rounded to the minute, and the time the failures started in UTC in the form "14:45 UTC on 2026-11-12", not in Go duration or RFC 3339 form.
+
+#### Scenario: A six-hour outage reminder
+- **WHEN** config reads have failed since 14:45 UTC on 2026-11-12 and the six-hour reminder is sent
+- **THEN** the reminder says the guard has been failing since 14:45 UTC on 2026-11-12 (6 hours), and does not contain `6h0m0s`

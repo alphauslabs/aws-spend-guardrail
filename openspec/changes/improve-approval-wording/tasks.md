@@ -10,6 +10,8 @@
 - [x] 2.1 Rewrite `approvalRequest` to use the titles and sentences, add the freeze lines (design D3) and the times (design D4), and add `earliest_apply_at` and `expires_at` to the payload; keep the reason section and the existing payload fields
 - [x] 2.2 Tests in `internal/guard`: a raise of a frozen account above spend says it would lift; below spend says it would not; a Cost Explorer error says spend couldn't be read and still raises the approval; an unfrozen scope gets no freeze line; the times match `FirstSeen` plus the delay and window; the summary passes `alerttext.Check`; update `recipients_test.go` for the new title
 
+- [x] 2.3 Give the config-refresh reminder and recovery alerts the outage length with `durationWords` and the start time with `utcText`; update `pull_test.go` to check the words and that no Go duration form remains
+
 ## 3. Docs and build
 
 - [x] 3.1 Show an example approval in `docs/operating.md` (loosening section) and add a CHANGELOG entry; verify the example matches the test output

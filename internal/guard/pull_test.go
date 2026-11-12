@@ -264,8 +264,8 @@ func TestTwoHourOutageSendsTwoAlerts(t *testing.T) {
 	if n := countAlerts(h, "still not refreshed"); n != 0 {
 		t.Fatalf("no reminder within 6 hours, got %d", n)
 	}
-	if n := countAlerts(h, "recovered"); n != 1 || !strings.Contains(strings.Join(h.alerts.list, "\n"), "2h0m0s") {
-		t.Fatalf("want 1 recovery alert naming the duration: %v", h.alerts.list)
+	if n := countAlerts(h, "recovered"); n != 1 || !strings.Contains(strings.Join(h.alerts.list, "\n"), "after failing for 2 hours (since ") {
+		t.Fatalf("want 1 recovery alert naming the duration in words: %v", h.alerts.list)
 	}
 }
 
@@ -277,6 +277,10 @@ func TestLongOutageRemindsEverySixHours(t *testing.T) {
 	pullEvery5Minutes(h, 13*time.Hour)
 	if start, rem := countAlerts(h, "config not refreshed"), countAlerts(h, "still not refreshed"); start != 1 || rem != 2 {
 		t.Fatalf("want 1 start and 2 reminders, got %d and %d", start, rem)
+	}
+	all := strings.Join(h.alerts.list, "\n")
+	if !strings.Contains(all, " UTC on ") || !strings.Contains(all, "(6 hours)") || !strings.Contains(all, "(12 hours)") || strings.Contains(all, "0m0s") {
+		t.Fatalf("want reminders with the start in UTC and the duration in words: %v", h.alerts.list)
 	}
 }
 

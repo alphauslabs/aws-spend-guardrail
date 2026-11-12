@@ -46,7 +46,7 @@ func (g *Guard) trackRefresh(ctx context.Context, st *State, err error) {
 		if !st.FailingSince.IsZero() {
 			g.alert(ctx, "guardrail: config refresh recovered", fmt.Sprintf(
 				"The guard reads its config from Jennah again, after failing for %s (since %s).",
-				now.Sub(st.FailingSince).Round(time.Minute), st.FailingSince.Format(time.RFC3339)))
+				durationWords(now.Sub(st.FailingSince).Round(time.Minute)), utcText(st.FailingSince)))
 		}
 		st.FailingSince, st.LastFailureAlert = time.Time{}, time.Time{}
 		return
@@ -60,7 +60,7 @@ func (g *Guard) trackRefresh(ctx context.Context, st *State, err error) {
 		st.LastFailureAlert = now
 		g.alert(ctx, "guardrail: config still not refreshed", withError(fmt.Sprintf(
 			"The guard still can't apply its config from Jennah, and has been failing since %s (%s). The last valid config stays in force.",
-			st.FailingSince.Format(time.RFC3339), now.Sub(st.FailingSince).Round(time.Minute)), err))
+			utcText(st.FailingSince), durationWords(now.Sub(st.FailingSince).Round(time.Minute))), err))
 	}
 }
 
