@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alphauslabs/aws-spend-guardrail/internal/alerttext"
 	"github.com/alphauslabs/aws-spend-guardrail/schema"
 )
 
@@ -245,7 +246,7 @@ func (e *Engine) evaluate(ctx context.Context, run PackRun, now time.Time, activ
 		if enforce {
 			if err := e.Policies.Attach(ctx, run.PolicyID, acct); err != nil {
 				errs = append(errs, fmt.Errorf("cut off %s: %w", acct, err))
-				e.Alert(ctx, fmt.Sprintf("guardrail: could not cut off %s", acct), fmt.Sprintf("The %s pack tried to cut off account %s (%s) and failed: %v", run.Name, acct, c.Detail, err))
+				e.Alert(ctx, fmt.Sprintf("guardrail: could not cut off %s", acct), alerttext.WithError(fmt.Sprintf("The %s pack tried to cut off account %s (%s) and failed, so its AI access is not blocked. It tries again on the next run.", run.Name, acct, c.Detail), err))
 				continue
 			}
 		}

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/alphauslabs/aws-spend-guardrail/internal/activity"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/alerttext"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/awsx"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
@@ -128,7 +129,7 @@ func setup(ctx context.Context) *app {
 		if err != nil {
 			// The budget guard keeps working; the AI guard reports why it
 			// can't start.
-			a.g.Alerts.Alert(ctx, "guardrail: AI guard not started", err.Error())
+			a.g.Alerts.Alert(ctx, "guardrail: AI guard not started", aiNotStarted(err))
 		} else {
 			a.g.Fast = fast
 		}
@@ -282,4 +283,10 @@ func fastPath(ctx context.Context, cfg aws.Config, orgs *organizations.Client, p
 		Prices:     prices,
 		AIPolicyID: policyID,
 	}, nil
+}
+
+// aiNotStarted is the alert body when the AI guard can't start; the budget
+// guard keeps working.
+func aiNotStarted(err error) string {
+	return alerttext.WithError("The AI guard could not start, so AI spend is not being watched. The budget guard keeps working. It tries again the next time the function starts.", err)
 }

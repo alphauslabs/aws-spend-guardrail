@@ -45,7 +45,7 @@ func (g *Guard) trackRefresh(ctx context.Context, st *State, err error) {
 	if err == nil {
 		if !st.FailingSince.IsZero() {
 			g.alert(ctx, "guardrail: config refresh recovered", fmt.Sprintf(
-				"config refresh from Jennah works again after failing for %s (since %s)",
+				"The guard reads its config from Jennah again, after failing for %s (since %s).",
 				now.Sub(st.FailingSince).Round(time.Minute), st.FailingSince.Format(time.RFC3339)))
 		}
 		st.FailingSince, st.LastFailureAlert = time.Time{}, time.Time{}
@@ -54,13 +54,13 @@ func (g *Guard) trackRefresh(ctx context.Context, st *State, err error) {
 	switch {
 	case st.FailingSince.IsZero():
 		st.FailingSince, st.LastFailureAlert = now, now
-		g.alert(ctx, "guardrail: config not refreshed",
-			err.Error()+"; the last valid config stays in force. You'll get a reminder every 6 hours while this lasts, and an alert when it recovers.")
+		g.alert(ctx, "guardrail: config not refreshed", withError(
+			"The guard can't apply its config from Jennah, so the last valid config stays in force. You'll get a reminder every 6 hours while this lasts, and an alert when it recovers.", err))
 	case now.Sub(st.LastFailureAlert) >= OutageReminder:
 		st.LastFailureAlert = now
-		g.alert(ctx, "guardrail: config still not refreshed", fmt.Sprintf(
-			"config refresh from Jennah has been failing since %s (%s); the last valid config stays in force. Latest error: %v",
-			st.FailingSince.Format(time.RFC3339), now.Sub(st.FailingSince).Round(time.Minute), err))
+		g.alert(ctx, "guardrail: config still not refreshed", withError(fmt.Sprintf(
+			"The guard still can't apply its config from Jennah, and has been failing since %s (%s). The last valid config stays in force.",
+			st.FailingSince.Format(time.RFC3339), now.Sub(st.FailingSince).Round(time.Minute)), err))
 	}
 }
 
@@ -104,7 +104,8 @@ func (g *Guard) evaluate(ctx context.Context, st *State) error {
 		g.emit(ctx, schema.KindConfigRejected, fmt.Sprintf("%s:%d", schema.KindConfigRejected, latest.Number), "", latest.Number,
 			map[string]any{"problems": probs, "kept_version": st.AppliedVersion})
 		g.alert(ctx, "guardrail: config version rejected",
-			fmt.Sprintf("config version %d is invalid and was not applied; version %d stays in force:\n%s", latest.Number, st.AppliedVersion, strings.Join(probs, "\n")))
+			fmt.Sprintf("Config version %d is invalid and was not applied, so version %d stays in force. Fix these problems and publish a new version:\n%s",
+				latest.Number, st.AppliedVersion, "- "+strings.Join(probs, "\n- ")))
 		return nil
 	}
 	desired := doc.Resolve()

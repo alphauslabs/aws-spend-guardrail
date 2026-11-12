@@ -44,6 +44,7 @@ const (
 	KindFreeze           = "freeze"
 	KindWouldFreeze      = "would_freeze"
 	KindLift             = "lift"
+	KindFreezeCarried    = "freeze_carried"           // the guard re-attached a freeze AWS's action reset detached after a budget change
 	KindConfigApplied    = "config_applied"           // a version applied in full
 	KindConfigPartial    = "config_partially_applied" // only a loosening version's tightening parts
 	KindConfigRejected   = "config_rejected"

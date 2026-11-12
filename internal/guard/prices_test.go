@@ -141,7 +141,7 @@ func TestJennahDownAndKeyWithoutReachFallBackToRelease(t *testing.T) {
 			if len(h.alerts.list) != 1 || !h.alerts.has("the prices in its release") {
 				t.Fatalf("alerts %v", h.alerts.list)
 			}
-			if name == "no reach" && !h.alerts.has(schema.PricesDatasetID+" (mint it") {
+			if name == "no reach" && !h.alerts.has("Mint the key with that dataset in its reach") {
 				t.Fatalf("must say what to fix: %v", h.alerts.list)
 			}
 		})

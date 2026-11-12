@@ -2,6 +2,7 @@ package guard
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -62,5 +63,28 @@ func TestRepeatedNotificationWritesALostFreezeOnce(t *testing.T) {
 	e, _ := lastEvent(h, schema.KindFreeze)
 	if !e.OccurredAt.Equal(since) || e.ID != fmt.Sprintf("freeze:%s:2026-11-01:%d", tX, since.Unix()) {
 		t.Fatalf("event %s at %s, want the original freeze time %s", e.ID, e.OccurredAt, since)
+	}
+}
+
+func TestAlertHelpers(t *testing.T) {
+	ou := config.Target{Kind: "ou", ID: "ou-ab12-cdef3456"}
+	if targetName(tX) != "Account 111122223333" || targetRef(tX) != "account 111122223333" || targetRef(ou) != "OU ou-ab12-cdef3456" {
+		t.Fatalf("%q %q %q", targetName(tX), targetRef(tX), targetRef(ou))
+	}
+	for _, code := range []string{"budget_raised", "scope_removed", "period_start", "stack_deleted", "something_new"} {
+		if r := liftReason(code); r == "" || r[len(r)-1] != '.' {
+			t.Fatalf("%s: %q", code, r)
+		}
+	}
+}
+
+// Alerts the other tests don't reach: the harness's alert fake checks the
+// wording of each.
+func TestCodeHashUnknownAlertReadsWell(t *testing.T) {
+	h := newHarness(t)
+	h.g.SetCodeHash(context.Background(), "", errors.New("lambda: access denied"))
+	h.g.SetCodeHash(context.Background(), "", nil)
+	if alertCount(h, "code hash") != 2 {
+		t.Fatalf("alerts %v", h.alerts.list)
 	}
 }

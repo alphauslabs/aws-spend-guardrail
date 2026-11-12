@@ -2,7 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
+
+	"github.com/alphauslabs/aws-spend-guardrail/internal/alerttext"
 )
 
 func TestRoute(t *testing.T) {
@@ -25,5 +28,11 @@ func TestRoute(t *testing.T) {
 	}
 	if _, err := route(json.RawMessage(`{"hello":1}`)); err == nil {
 		t.Error("an unknown event must be refused")
+	}
+}
+
+func TestAINotStartedAlertReadsWell(t *testing.T) {
+	if err := alerttext.Check(aiNotStarted(errors.New("find the region of trail bucket b: access denied"))); err != nil {
+		t.Fatal(err)
 	}
 }

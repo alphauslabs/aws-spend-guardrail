@@ -52,27 +52,29 @@ func (g *Guard) pullPrices(ctx context.Context) {
 	var status priceStatus
 	_, _ = store.GetMeta(ctx, pricesStatus, &status)
 
-	fail := func(why string) {
+	// fail reports once per failing stretch. why is a sentence; err, if any,
+	// goes on the alert's Error: line.
+	fail := func(why string, err error) {
 		if status.Failing == "" {
-			g.alert(ctx, "guardrail: shared prices not read", why+". The AI guard keeps pricing with "+keptWhat(held)+"; shared prices can only raise prices or add models, so nothing is loosened.")
+			g.alert(ctx, "guardrail: shared prices not read", withError(why+" The AI guard keeps pricing with "+keptWhat(held)+". Shared prices can only raise prices or add models, so nothing is loosened.", err))
 		}
-		status.Failing = why
+		status.Failing = withError(why, err)
 		_ = store.PutMeta(ctx, pricesStatus, status)
 	}
 	latest, err := g.Prices.LatestPrices(ctx)
 	if err != nil {
-		why := "cannot read shared prices from Jennah: " + err.Error()
+		why := "The guard can't read shared prices from Jennah."
 		if strings.Contains(err.Error(), "PermissionDenied") || strings.Contains(err.Error(), "NotFound") {
-			why = "the guard's reader key can't read " + schema.PricesDatasetID + " (mint it with that dataset in its reach, or run setup): " + err.Error()
+			why = "The guard's reader key can't read " + schema.PricesDatasetID + ". Mint the key with that dataset in its reach, or run setup."
 		}
-		fail(why)
+		fail(why, err)
 		return
 	}
 	if latest == nil {
 		return // nothing published yet
 	}
 	if latest.Layout > schema.PricesLayoutVersion {
-		fail(fmt.Sprintf("price version %d uses layout %d, newer than this guard understands (%d); upgrade the guard", latest.Number, latest.Layout, schema.PricesLayoutVersion))
+		fail(fmt.Sprintf("Price version %d uses layout %d, newer than this guard understands (%d). Upgrade the guard.", latest.Number, latest.Layout, schema.PricesLayoutVersion), nil)
 		return
 	}
 	ref, ok := latest.Chunk(aiPricePack, aiPriceRegion)
@@ -82,21 +84,21 @@ func (g *Guard) pullPrices(ctx context.Context) {
 	if ref.SHA256 != held.SHA256 {
 		doc, err := g.Prices.PriceChunkDoc(ctx, latest.Number, aiPricePack, aiPriceRegion)
 		if err != nil {
-			fail("cannot read shared AI prices: " + err.Error())
+			fail("The guard can't read the shared AI prices.", err)
 			return
 		}
 		var t ai.Table
 		if doc == nil || jennah.HashChunk(doc) != ref.SHA256 {
-			fail(fmt.Sprintf("shared AI prices of version %d don't match their manifest hash", latest.Number))
+			fail(fmt.Sprintf("The shared AI prices of version %d don't match their manifest hash.", latest.Number), nil)
 			return
 		}
 		if err := json.Unmarshal(doc, &t); err != nil {
-			fail(fmt.Sprintf("shared AI prices of version %d don't parse: %v", latest.Number, err))
+			fail(fmt.Sprintf("The shared AI prices of version %d don't parse.", latest.Number), err)
 			return
 		}
 		held = heldChunk{Version: latest.Number, SHA256: ref.SHA256, Doc: doc}
 		if err := store.PutMeta(ctx, heldAIPrices, held); err != nil {
-			fail("cannot keep shared prices: " + err.Error())
+			fail("The guard can't store the shared prices it read.", err)
 			return
 		}
 		raised, added, ignored := 0, 0, 0

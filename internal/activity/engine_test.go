@@ -8,6 +8,7 @@ import (
 
 	"github.com/alphauslabs/aws-spend-guardrail/internal/activity"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/activity/activitytest"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/alerttext"
 )
 
 const base = "AWSLogs/o-test/"
@@ -54,8 +55,13 @@ func (w *world) restart() {
 		Emit: func(_ context.Context, kind, id, _ string, _ map[string]any) {
 			w.events = append(w.events, kind+" "+id)
 		},
-		Alert: func(_ context.Context, s, _ string) { w.alerts = append(w.alerts, s) },
-		Now:   func() time.Time { return w.now },
+		Alert: func(_ context.Context, s, body string) {
+			if err := alerttext.Check(body); err != nil {
+				w.t.Errorf("alert %q: %v\n%s", s, err, body)
+			}
+			w.alerts = append(w.alerts, s)
+		},
+		Now: func() time.Time { return w.now },
 	}
 }
 

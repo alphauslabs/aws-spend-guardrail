@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/alphauslabs/aws-spend-guardrail/config"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/alerttext"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah/jennahtest"
 	"github.com/alphauslabs/aws-spend-guardrail/schema"
@@ -53,9 +54,19 @@ func (e *events) count(kind string) int {
 	return n
 }
 
-type alerts struct{ list []string }
+type alerts struct {
+	t    *testing.T
+	list []string
+}
 
+// Alert records an alert and fails the test when its body breaks the alert
+// wording rules (fix-alert-wording).
 func (a *alerts) Alert(_ context.Context, subject, msg string) error {
+	if a.t != nil {
+		if err := alerttext.Check(msg); err != nil {
+			a.t.Errorf("alert %q: %v\n%s", subject, err, msg)
+		}
+	}
 	a.list = append(a.list, subject+": "+msg)
 	return nil
 }
@@ -142,9 +153,17 @@ type fakeBudgets struct {
 	deletes  []string
 	releases []string
 	freezes  []string
+	// org, when set, is where Freeze, Release, and AWS's reset attach and
+	// detach policies.
+	org         *fakeOrg
+	resetting   map[string]int // reads left before a reset reads as done
+	resetReads  int            // status reads a reset takes
+	statusReads int
 }
 
-func newFakeBudgets() *fakeBudgets { return &fakeBudgets{all: map[string]BudgetStatus{}} }
+func newFakeBudgets() *fakeBudgets {
+	return &fakeBudgets{all: map[string]BudgetStatus{}, resetting: map[string]int{}, resetReads: 1}
+}
 
 func (f *fakeBudgets) ListOwned(context.Context) ([]BudgetStatus, error) {
 	var out []BudgetStatus
@@ -159,9 +178,49 @@ func (f *fakeBudgets) ListOwned(context.Context) ([]BudgetStatus, error) {
 func (f *fakeBudgets) Put(_ context.Context, b BudgetSpec) error {
 	f.puts++
 	cur := f.all[b.Name]
+	if cur.ActionExecuted {
+		// AWS resets an executed action when its budget is updated: the
+		// policy is detached at once, and the action reads as resetting for a
+		// few status reads before standby (fix-action-reset-unfreeze).
+		cur.ActionExecuted = false
+		if f.org != nil {
+			f.org.detach(cur.Spec.PolicyID, b.Target)
+		}
+		f.resetting[b.Name] = f.resetReads
+	}
 	cur.Spec = b
 	f.all[b.Name] = cur
 	return nil
+}
+
+func (f *fakeBudgets) ActionStatus(_ context.Context, name string) (string, error) {
+	f.statusReads++
+	b, ok := f.all[name]
+	if !ok || !b.Spec.Enforce {
+		return "", nil
+	}
+	if n, ok := f.resetting[name]; ok {
+		if n > 0 {
+			f.resetting[name] = n - 1
+			return "RESET_IN_PROGRESS", nil
+		}
+		delete(f.resetting, name)
+	}
+	if b.ActionExecuted {
+		return "EXECUTION_SUCCESS", nil
+	}
+	return "STANDBY", nil
+}
+
+// fire is the Budgets action executing: the policy is attached and the
+// action reads as executed.
+func (f *fakeBudgets) fire(name string) {
+	b := f.all[name]
+	b.ActionExecuted = true
+	f.all[name] = b
+	if f.org != nil {
+		f.org.attach(b.Spec.PolicyID, b.Spec.Target)
+	}
 }
 
 func (f *fakeBudgets) Delete(_ context.Context, name string) error {
@@ -175,11 +234,23 @@ func (f *fakeBudgets) Delete(_ context.Context, name string) error {
 
 func (f *fakeBudgets) Release(_ context.Context, b BudgetSpec) (string, error) {
 	f.releases = append(f.releases, b.Name)
+	if f.org != nil {
+		if !f.org.isAttached(b.PolicyID, b.Target) {
+			return "already_detached", nil
+		}
+		f.org.detach(b.PolicyID, b.Target)
+	}
+	cur := f.all[b.Name]
+	cur.ActionExecuted = false
+	f.all[b.Name] = cur
 	return "reverse_budget_action", nil
 }
 
 func (f *fakeBudgets) Freeze(_ context.Context, b BudgetSpec) error {
 	f.freezes = append(f.freezes, b.Name)
+	if f.org != nil {
+		f.org.attach(b.PolicyID, b.Target)
+	}
 	return nil
 }
 
@@ -213,6 +284,31 @@ type fakeOrg struct {
 	ous      map[string][]string
 	attached map[string][]config.Target
 	accounts []Account
+}
+
+func (o *fakeOrg) attach(policy string, t config.Target) {
+	if !o.isAttached(policy, t) {
+		o.attached[policy] = append(o.attached[policy], t)
+	}
+}
+
+func (o *fakeOrg) detach(policy string, t config.Target) {
+	var keep []config.Target
+	for _, x := range o.attached[policy] {
+		if x != t {
+			keep = append(keep, x)
+		}
+	}
+	o.attached[policy] = keep
+}
+
+func (o *fakeOrg) isAttached(policy string, t config.Target) bool {
+	for _, x := range o.attached[policy] {
+		if x == t {
+			return true
+		}
+	}
+	return false
 }
 
 func (o *fakeOrg) ListAccounts(context.Context) ([]Account, error) {
@@ -305,7 +401,7 @@ func newHarness(t *testing.T) *harness {
 	srv, c := jennahtest.Start(t)
 	h := &harness{
 		t: t, jennah: srv, client: c,
-		events: &events{}, alerts: &alerts{}, state: newMemState(), budgets: newFakeBudgets(), subs: newFakeSubs(),
+		events: &events{}, alerts: &alerts{t: t}, state: newMemState(), budgets: newFakeBudgets(), subs: newFakeSubs(),
 		spend: &fakeSpend{byAccount: map[string]float64{}},
 		org:   &fakeOrg{ous: map[string][]string{}, attached: map[string][]config.Target{}},
 		now:   time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC),

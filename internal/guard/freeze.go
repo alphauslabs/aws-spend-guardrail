@@ -120,8 +120,8 @@ func (g *Guard) recordFreeze(ctx context.Context, scope config.ResolvedScope, ve
 	}
 	g.emitAt(ctx, f.Since, schema.KindFreeze, FreezeEventID(f), scope.Target.String(), version, detail)
 	g.alert(ctx, "guardrail: spend frozen", fmt.Sprintf(
-		"%s is frozen: actual cost %.2f USD reached %d%% of its %.2f USD ceiling (freeze style %s). New spend is blocked; nothing running was stopped.",
-		scope.Target, actual, scope.ThresholdPct, scope.CeilingUSD, scope.FreezeStyle))
+		"%s is frozen: its actual cost of %.2f USD reached %d%% of its %.2f USD ceiling (freeze style %s). New spend is blocked, and nothing running was stopped.",
+		targetName(scope.Target), actual, scope.ThresholdPct, scope.CeilingUSD, scope.FreezeStyle))
 	return nil
 }
 
@@ -221,7 +221,7 @@ func (g *Guard) Drift(ctx context.Context) error {
 		}
 		g.emit(ctx, schema.KindDrift, fmt.Sprintf("drift:%s:detached:%d", f.Target, f.Since.Unix()), f.Target.String(), 0,
 			map[string]any{"what": "freeze policy detached outside the guard", "frozen_since": f.Since})
-		g.alert(ctx, "guardrail: drift", fmt.Sprintf("%s was frozen by the guard but its freeze policy is no longer attached. The guard does not re-attach it.", f.Target))
+		g.alert(ctx, "guardrail: drift", fmt.Sprintf("%s was frozen by the guard, but its freeze policy is no longer attached, so new spend is no longer blocked. The guard does not re-attach it: publish a config change or attach the policy again if the freeze should stay.", targetName(f.Target)))
 		if err := g.State.ClearFrozen(ctx, f.Target); err != nil {
 			return err
 		}
@@ -232,7 +232,7 @@ func (g *Guard) Drift(ctx context.Context) error {
 		}
 		g.emit(ctx, schema.KindDrift, fmt.Sprintf("drift:%s:attached:%s", t, day), t.String(), 0,
 			map[string]any{"what": "freeze policy attached without a recorded freeze"})
-		g.alert(ctx, "guardrail: drift", fmt.Sprintf("a freeze policy is attached to %s, but the guard recorded no freeze for it.", t))
+		g.alert(ctx, "guardrail: drift", fmt.Sprintf("A freeze policy is attached to %s, but the guard recorded no freeze for it. Check who attached it, and detach it if the account shouldn't be frozen.", targetRef(t)))
 	}
 	return nil
 }

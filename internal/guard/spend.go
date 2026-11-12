@@ -31,13 +31,14 @@ func (g *Guard) spendFor(ctx context.Context, w BudgetSpec, purpose string) (flo
 	reported, _ := g.State.Reported(ctx, reportedSpendError)
 	if err != nil {
 		if _, done := reported[key]; !done {
-			msg := fmt.Sprintf("Cost Explorer could not be read for %s, so the guard can't check its spend: %v.", w.Target, err)
+			msg := fmt.Sprintf("The guard could not read Cost Explorer for %s, so it can't check its spend.",
+				targetRef(w.Target))
 			if purpose == "lift" {
 				msg += " Its freeze stays until a read succeeds."
 			} else {
 				msg += " The AWS Budgets action still freezes it once Budgets has spend for it."
 			}
-			g.alert(ctx, "guardrail: spend check failing", msg)
+			g.alert(ctx, "guardrail: spend check failing", withError(msg, err))
 			_ = g.State.MarkReported(ctx, reportedSpendError, key, now)
 		}
 		return 0, false

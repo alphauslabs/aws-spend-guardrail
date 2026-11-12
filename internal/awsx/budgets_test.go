@@ -158,6 +158,7 @@ func (f *fakeAPI) ExecuteBudgetAction(_ context.Context, in *budgets.ExecuteBudg
 }
 
 type fakeDetach struct {
+	detachErr error
 	detached  []string
 	attached  []string
 	attachErr error
@@ -172,6 +173,9 @@ func (d *fakeDetach) AttachPolicy(_ context.Context, in *organizations.AttachPol
 }
 
 func (d *fakeDetach) DetachPolicy(_ context.Context, in *organizations.DetachPolicyInput, _ ...func(*organizations.Options)) (*organizations.DetachPolicyOutput, error) {
+	if d.detachErr != nil {
+		return nil, d.detachErr
+	}
 	d.detached = append(d.detached, aws.ToString(in.PolicyId)+"@"+aws.ToString(in.TargetId))
 	return &organizations.DetachPolicyOutput{}, nil
 }
@@ -444,5 +448,41 @@ func TestFreezeAlreadyAttachedIsNotAnError(t *testing.T) {
 	}
 	if err := newBudgets(newFakeAPI(), &fakeDetach{}).Freeze(context.Background(), spec(false)); err == nil {
 		t.Fatal("a dry-run spec has no policy to attach")
+	}
+}
+
+func TestActionExecutedAndStatusAreRead(t *testing.T) {
+	ctx := context.Background()
+	api := newFakeAPI()
+	b := newBudgets(api, &fakeDetach{})
+	_ = b.Put(ctx, spec(true))
+	if st, err := b.ActionStatus(ctx, "guardrail-account-111122223333"); err != nil || st != "STANDBY" {
+		t.Fatalf("status %q %v", st, err)
+	}
+	a := api.actions["guardrail-account-111122223333"]
+	a.Status = btypes.ActionStatusExecutionSuccess
+	api.actions["guardrail-account-111122223333"] = a
+	got, err := b.ListOwned(ctx)
+	if err != nil || len(got) != 1 || !got[0].ActionExecuted {
+		t.Fatalf("executed not read: %+v %v", got, err)
+	}
+	if st, _ := b.ActionStatus(ctx, "guardrail-account-111122223333"); st != "EXECUTION_SUCCESS" {
+		t.Fatalf("status %q", st)
+	}
+	_ = b.Put(ctx, spec(false)) // dry-run: no action
+	if st, err := b.ActionStatus(ctx, "guardrail-account-111122223333"); err != nil || st != "" {
+		t.Fatalf("dry-run status %q %v", st, err)
+	}
+}
+
+func TestReleaseOfAPolicyAlreadyDetached(t *testing.T) {
+	ctx := context.Background()
+	api := newFakeAPI()
+	d := &fakeDetach{detachErr: &otypes.PolicyNotAttachedException{Message: aws.String("not attached")}}
+	b := newBudgets(api, d)
+	_ = b.Put(ctx, spec(true)) // action in standby, as after AWS's reset
+	how, err := b.Release(ctx, spec(true))
+	if err != nil || how != "already_detached" {
+		t.Fatalf("how %q err %v", how, err)
 	}
 }

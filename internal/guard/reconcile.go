@@ -66,11 +66,21 @@ func (g *Guard) Reconcile(ctx context.Context, eff *config.Resolved) error {
 	for _, b := range have {
 		existing[b.Spec.Name] = b
 	}
+	frozenBefore, err := g.State.ListFrozen(ctx)
+	if err != nil {
+		return fmt.Errorf("list frozen: %w", err)
+	}
+	isFrozen := map[config.Target]bool{}
+	for _, f := range frozenBefore {
+		isFrozen[f.Target] = true
+	}
 	var errs []error
+	var reset []BudgetSpec // updated with their freeze action executed
 	wanted := map[string]bool{}
 	for _, w := range want {
 		wanted[w.Name] = true
-		if e, ok := existing[w.Name]; ok && sameSpec(e.Spec, w) {
+		e, ok := existing[w.Name]
+		if ok && sameSpec(e.Spec, w) {
 			continue
 		}
 		if err := g.Budgets.Put(ctx, w); err != nil {
@@ -78,6 +88,9 @@ func (g *Guard) Reconcile(ctx context.Context, eff *config.Resolved) error {
 			continue
 		}
 		g.startSpendWatch(ctx, w.Name)
+		if ok && e.ActionExecuted && isFrozen[w.Target] {
+			reset = append(reset, w)
+		}
 	}
 	frozen, err := g.State.ListFrozen(ctx)
 	if err != nil {
@@ -102,12 +115,16 @@ func (g *Guard) Reconcile(ctx context.Context, eff *config.Resolved) error {
 	if err := g.liftRaised(ctx, want, existing); err != nil {
 		errs = append(errs, err)
 	}
+	if err := g.carryFreezes(ctx, reset, want); err != nil {
+		errs = append(errs, err)
+	}
 	if err := g.watchSpend(ctx, eff, want, existing, runStart); err != nil {
 		errs = append(errs, err)
 	}
 	if len(errs) > 0 {
 		err := errors.Join(errs...)
-		g.alert(ctx, "guardrail: reconcile incomplete", err.Error())
+		g.alert(ctx, "guardrail: reconcile incomplete", withError(
+			"The guard could not finish making AWS Budgets match the config in force. It tries again on its next run, within about 5 minutes.", err))
 		return err
 	}
 	return nil
@@ -171,7 +188,8 @@ func (g *Guard) lift(ctx context.Context, f Frozen, w BudgetSpec, reason string,
 	detail["how"] = how
 	detail["frozen_since"] = f.Since
 	g.emit(ctx, schema.KindLift, fmt.Sprintf("%s:%s:%d", schema.KindLift, f.Target, f.Since.Unix()), f.Target.String(), 0, detail)
-	g.alert(ctx, "guardrail: freeze lifted", fmt.Sprintf("%s was lifted (%s)", f.Target, reason))
+	g.alert(ctx, "guardrail: freeze lifted", fmt.Sprintf("The freeze on %s was lifted, so it can make new spend again. %s",
+		targetRef(f.Target), liftReason(reason)))
 	return nil
 }
 

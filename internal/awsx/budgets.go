@@ -184,6 +184,7 @@ func (b *Budgets) status(ctx context.Context, bd btypes.Budget) (guard.BudgetSta
 		spec.Accounts = append([]string(nil), fe.Dimensions.Values...)
 		sort.Strings(spec.Accounts)
 	}
+	executed := false
 	if act, err := b.action(ctx, name); err != nil {
 		return guard.BudgetStatus{}, err
 	} else if act != nil {
@@ -194,6 +195,7 @@ func (b *Budgets) status(ctx context.Context, bd btypes.Budget) (guard.BudgetSta
 			spec.PolicyID = aws.ToString(act.Definition.ScpActionDefinition.PolicyId)
 		}
 		spec.Enforce = act.ApprovalModel == btypes.ApprovalModelAuto
+		executed = act.Status == btypes.ActionStatusExecutionSuccess
 	} else {
 		// A dry-run budget has no action; its threshold is the notification's.
 		pct, err := b.notificationThreshold(ctx, name)
@@ -202,7 +204,7 @@ func (b *Budgets) status(ctx context.Context, bd btypes.Budget) (guard.BudgetSta
 		}
 		spec.ThresholdPct = pct
 	}
-	st := guard.BudgetStatus{Spec: spec}
+	st := guard.BudgetStatus{Spec: spec, ActionExecuted: executed}
 	if cs := bd.CalculatedSpend; cs != nil && cs.ActualSpend != nil {
 		st.ActualUSD, _ = strconv.ParseFloat(aws.ToString(cs.ActualSpend.Amount), 64)
 	}
@@ -512,6 +514,12 @@ func (b *Budgets) Release(ctx context.Context, s guard.BudgetSpec) (string, erro
 		policy = aws.ToString(act.Definition.ScpActionDefinition.PolicyId)
 	}
 	_, err = b.Org.DetachPolicy(ctx, &organizations.DetachPolicyInput{PolicyId: aws.String(policy), TargetId: aws.String(s.Target.ID)})
+	var gone *otypes.PolicyNotAttachedException
+	if errors.As(err, &gone) {
+		// AWS reset the action when the budget was updated and detached the
+		// policy already (fix-action-reset-unfreeze).
+		return "already_detached", nil
+	}
 	if err != nil {
 		return "", fmt.Errorf("detach %s from %s: %w", policy, s.Target.ID, err)
 	}
@@ -533,6 +541,16 @@ func (b *Budgets) Freeze(ctx context.Context, s guard.BudgetSpec) error {
 		return fmt.Errorf("attach %s to %s: %w", s.PolicyID, s.Target.ID, err)
 	}
 	return nil
+}
+
+// ActionStatus reads the budget's freeze action status, or "" when it has
+// none.
+func (b *Budgets) ActionStatus(ctx context.Context, name string) (string, error) {
+	act, err := b.action(ctx, name)
+	if err != nil || act == nil {
+		return "", err
+	}
+	return string(act.Status), nil
 }
 
 var _ guard.Budgets = (*Budgets)(nil)

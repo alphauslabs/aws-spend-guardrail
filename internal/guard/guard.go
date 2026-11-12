@@ -9,6 +9,7 @@ package guard
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/alphauslabs/aws-spend-guardrail/config"
@@ -118,6 +119,10 @@ type BudgetStatus struct {
 	Spec        BudgetSpec
 	ActualUSD   float64
 	PeriodStart time.Time
+	// ActionExecuted is true when the budget's freeze action has fired. AWS
+	// resets an executed action, detaching its policy, when the budget is
+	// updated (fix-action-reset-unfreeze).
+	ActionExecuted bool
 }
 
 // Budgets manages guard-owned budgets, their freeze actions and lifts.
@@ -136,6 +141,10 @@ type Budgets interface {
 	// when the Budgets action can't fire because Budgets reports no spend
 	// yet. A policy already attached is not an error.
 	Freeze(ctx context.Context, b BudgetSpec) error
+	// ActionStatus is the budget's freeze action status as AWS reports it
+	// (STANDBY, EXECUTION_SUCCESS, RESET_IN_PROGRESS, ...), or "" when the
+	// budget has no action.
+	ActionStatus(ctx context.Context, name string) (string, error)
 }
 
 // SpendSource reads actual cost independently of AWS Budgets, which reports
@@ -207,6 +216,9 @@ type Guard struct {
 	// watch on changed budgets. Nil keeps every freeze and skips the watch.
 	Spend SpendSource
 	Now   func() time.Time
+	// Sleep waits between reads while AWS resets a budget action. Nil uses
+	// time.Sleep; tests replace it.
+	Sleep func(time.Duration)
 }
 
 func (g *Guard) now() time.Time {
@@ -239,7 +251,8 @@ func (g *Guard) emitAt(ctx context.Context, at time.Time, kind, id, scope string
 		Detail:        raw,
 	}
 	if err := g.Events.Emit(ctx, e); err != nil {
-		g.alert(ctx, "guardrail: event not queued", "event "+id+" could not be queued: "+err.Error())
+		g.alert(ctx, "guardrail: event not queued", withError(fmt.Sprintf(
+			"The guard could not queue the event %s for Jennah, so it may be missing from the inbox. What it records already happened in AWS.", id), err))
 	}
 }
 
@@ -260,11 +273,8 @@ func (g *Guard) policyFor(style string) string {
 func (g *Guard) SetCodeHash(ctx context.Context, hash string, err error) {
 	if err != nil || hash == "" {
 		g.S.CodeSHA256 = "unknown"
-		msg := "the guard could not read its own code hash, so events report it as unknown"
-		if err != nil {
-			msg += ": " + err.Error()
-		}
-		g.alert(ctx, "guardrail: code hash unknown", msg)
+		g.alert(ctx, "guardrail: code hash unknown", withError(
+			"The guard could not read its own code hash, so its events report it as unknown. Read the hash from the Lambda function's configuration to check which code is deployed.", err))
 		return
 	}
 	g.S.CodeSHA256 = hash
