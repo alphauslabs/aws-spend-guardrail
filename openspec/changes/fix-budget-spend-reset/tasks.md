@@ -26,4 +26,4 @@
 
 ## 5. Live check
 
-- [ ] 5.1 With e2e on this build, lower e2estandard03's ceiling below its Cost Explorer spend and confirm the guard attaches the freeze policy within minutes with a `freeze` event recording `guard_attach`; then raise it to just under spend and confirm the freeze stays over at least two runs; then raise it above spend, approve, and confirm the `lift` event records `spend_source: cost_explorer`
+- [x] 5.1 With e2e on this build, lower e2estandard03's ceiling below its Cost Explorer spend and confirm the guard attaches the freeze policy within minutes with a `freeze` event recording `guard_attach`; then raise it to just under spend and confirm the freeze stays over at least two runs; then raise it above spend, approve, and confirm the `lift` event records `spend_source: cost_explorer`

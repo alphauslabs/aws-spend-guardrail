@@ -20,4 +20,4 @@
 
 ## 4. Live check
 
-- [ ] 4.1 With e2e on this build and e2estandard03 frozen by its Budgets action, publish a tightening, and confirm the policy is attached after the run, CloudTrail shows AWS's detach followed by the guard's attach, and the inbox has `freeze_carried` and no new `freeze`
+- [x] 4.1 With e2e on this build and e2estandard03 frozen by its Budgets action, publish a tightening, and confirm the policy is attached after the run, CloudTrail shows AWS's detach followed by the guard's attach, and the inbox has `freeze_carried` and no new `freeze`

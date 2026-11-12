@@ -19,4 +19,4 @@
 
 ## 4. Live check
 
-- [ ] 4.1 With e2e on this build, confirm the next freeze or lift email in the e2e tests reads as specified
+- [x] 4.1 With e2e on this build, confirm the next freeze or lift email in the e2e tests reads as specified
