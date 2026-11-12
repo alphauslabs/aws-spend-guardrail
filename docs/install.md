@@ -161,7 +161,7 @@ After a dry-run period whose `would_freeze` events match what you expect, publis
 - **The function, queue, table, and topics** run a few minutes a day and cost cents a month.
 - **Cost Explorer reads** cost $0.01 each. The guard makes them only to decide whether a raised ceiling lifts a freeze, and about once an hour for up to 48 hours after it changes a budget (see [Operating](operating.md#when-budgets-reports-no-spend)). A typical org pays cents a month.
 
-Prefer OU scopes where accounts can share a ceiling: one OU scope is one budget however many accounts it covers, while 300 account scopes enforcing would cost about $900 a month.
+Prefer OU scopes where accounts can share a ceiling: one OU scope is one budget however many accounts it covers, while 100 account scopes enforcing would cost about $300 a month. AWS also allows at most 100 budget actions per account, so a payer org can have at most 100 enforcing scopes; an org with more accounts to protect must group them into OU scopes.
 
 ## Known gaps
 
