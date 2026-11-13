@@ -19,7 +19,7 @@
 
 ## 4. Live check
 
-- [ ] 4.1 With e2e on this build, publish a raise for a frozen scope and confirm the approval email reads as specified: the title, a sentence per change, the freeze line with spend, and the times
+- [x] 4.1 With e2e on this build, publish a raise for a frozen scope and confirm the approval email reads as specified: the title, a sentence per change, the freeze line with spend, and the times
 
 ## Workflow follow-up
 
