@@ -12,4 +12,4 @@
 
 ## 3. Live check
 
-- [ ] 3.1 With the e2e guard on this build, change only one scope's limit in config, and after at least three runs confirm `aws cloudtrail lookup-events` in the payer account shows an `UpdateBudget` but no `UpdateBudgetAction` since the deploy, and that the e2estandard03 action still has its threshold, policy, and target
+- [x] 3.1 With the e2e guard on this build, change only one scope's limit in config, and after at least three runs confirm `aws cloudtrail lookup-events` in the payer account shows an `UpdateBudget` but no `UpdateBudgetAction` since the deploy, and that the e2estandard03 action still has its threshold, policy, and target
