@@ -23,7 +23,7 @@
 
 ## 5. Integration
 
-- [ ] 5.1 In the e2e organization, with the SSO account excluded, run the daily check and confirm the accounts left out of the test config are each reported once and the SSO account is not; then add one to the config and confirm the next run reports nothing for it
+- [x] 5.1 In the e2e organization, with the SSO account excluded, run the daily check and confirm the accounts left out of the test config are each reported once and the SSO account is not; then add one to the config and confirm the next run reports nothing for it
 
 ## Workflow follow-up
 
