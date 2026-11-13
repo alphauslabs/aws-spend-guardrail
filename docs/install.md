@@ -98,14 +98,15 @@ Budgets are not stack resources. The guard creates and updates them from config,
 
 ## Protect the payer account side
 
-SCPs don't apply to the management account, so IAM there is the only lock on the guard. Restrict, to your deployment pipeline's role:
+SCPs don't apply to the management account, so IAM there is the only lock on the guard. Anyone who can change the guard's function, schedules, roles, or stack can loosen protection without an approval: for example, by pointing the function at another config source (`lambda:UpdateFunctionConfiguration`), stopping it (`lambda:PutFunctionConcurrency` set to 0, or a changed schedule), or giving its role more power. Restrict all of these to your deployment pipeline's role:
 
-- updating or deleting this stack (it holds the approvers and the delay);
+- the stack (it holds the approvers, the delay, and the Jennah endpoint) and its roles, including creating a role whose name matches theirs;
+- the guard function, the outbox's event source mapping, and the schedules that run the function;
 - the two secrets;
-- the guard's state table and outbox queue;
+- the state table, the outbox queue, and the alert and notification topics;
 - the two freeze policies.
 
-For example, deny these to everyone except the pipeline role:
+For example, with the stack named `guardrail-msp-a` and `MSPId` `msp_a` (the function is `guardrail-<MSPId>`; the stack's other resources are named after the stack), deny these to everyone except the pipeline role and the stack's own roles:
 
 ```json
 {
@@ -119,27 +120,56 @@ For example, deny these to everyone except the pipeline role:
         "cloudformation:DeleteStack",
         "cloudformation:CreateChangeSet",
         "cloudformation:ExecuteChangeSet",
+        "cloudformation:SetStackPolicy",
         "secretsmanager:PutSecretValue",
         "secretsmanager:UpdateSecret",
         "secretsmanager:DeleteSecret",
+        "secretsmanager:PutResourcePolicy",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:DeleteFunction",
+        "lambda:PutFunctionConcurrency",
+        "lambda:DeleteEventSourceMapping",
+        "lambda:UpdateEventSourceMapping",
+        "scheduler:UpdateSchedule",
+        "scheduler:DeleteSchedule",
         "dynamodb:PutItem",
         "dynamodb:DeleteItem",
         "dynamodb:UpdateItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:DeleteTable",
+        "sqs:PurgeQueue",
+        "sqs:SetQueueAttributes",
+        "sqs:DeleteQueue",
+        "sns:SetTopicAttributes",
+        "sns:DeleteTopic",
+        "iam:CreateRole",
+        "iam:PutRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:UpdateAssumeRolePolicy",
         "organizations:UpdatePolicy",
         "organizations:DeletePolicy"
       ],
       "Resource": [
-        "arn:aws:cloudformation:*:<payer>:stack/guardrail-msp-a/*",
-        "arn:aws:secretsmanager:*:<payer>:secret:guardrail/msp_a/*",
-        "<state table arn>",
-        "<freeze policy A arn>",
-        "<freeze policy B arn>"
+        "arn:aws:cloudformation:us-east-1:<payer>:stack/guardrail-msp-a/*",
+        "arn:aws:secretsmanager:us-east-1:<payer>:secret:guardrail/msp_a/*",
+        "arn:aws:lambda:us-east-1:<payer>:function:guardrail-msp_a",
+        "arn:aws:lambda:us-east-1:<payer>:event-source-mapping:<outbox mapping id>",
+        "arn:aws:scheduler:us-east-1:<payer>:schedule/default/guardrail-msp-a-*",
+        "arn:aws:dynamodb:us-east-1:<payer>:table/guardrail-msp-a-*",
+        "arn:aws:sqs:us-east-1:<payer>:guardrail-msp-a-*",
+        "arn:aws:sns:us-east-1:<payer>:guardrail-msp-a-*",
+        "arn:aws:iam::<payer>:role/guardrail-msp-a-*",
+        "arn:aws:organizations::<payer>:policy/<org id>/service_control_policy/<freeze policy A id>",
+        "arn:aws:organizations::<payer>:policy/<org id>/service_control_policy/<freeze policy B id>"
       ],
       "Condition": {
         "ArnNotLike": {
           "aws:PrincipalArn": [
             "arn:aws:iam::<payer>:role/<pipeline role>",
-            "arn:aws:iam::<payer>:role/guardrail-*"
+            "arn:aws:iam::<payer>:role/guardrail-msp-a-*"
           ]
         }
       }
@@ -148,7 +178,7 @@ For example, deny these to everyone except the pipeline role:
 }
 ```
 
-Attach it as an IAM policy to the groups and roles that administer the payer account.
+Attach it as an IAM policy to the groups and roles that administer the payer account. The stack's outputs give the freeze policy ids, and `aws lambda list-event-source-mappings --function-name guardrail-msp_a` gives the outbox mapping id. The exception for `role/guardrail-msp-a-*` covers the stack's own roles, which need some of these actions (the guard writes its state table); the deny on `iam:CreateRole` keeps anyone else from creating a role with such a name. Before relying on the policy, check it with the IAM policy simulator (`aws iam simulate-custom-policy`) for an administrator, the pipeline role, and the guard's role.
 
 ## Going to enforce
 

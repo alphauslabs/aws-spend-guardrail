@@ -55,7 +55,7 @@
 
 - [x] 7.1 Write the template: both freeze policies, the Budgets execution role, the function and its role, schedules, the notification topic, the outbox queue and dead-letter queue, the local alert topic, the state parameter, secret references, the loosening approval parameters, and a delete-time custom resource that detaches freezes and removes owned budgets; verify `cfn-lint` passes and the template deploys and deletes cleanly in the test organization
 - [x] 7.2 Add an install check that reports targets with no free SCP slot; verify it reports a target that already has 5 SCPs
-- [ ] 7.3 Document the install, the stack parameters, the IAM policy that protects the config-source settings in the payer account, and the known gaps (service-linked role scale-out, usage of existing resources, Budgets lag), and what AWS Budgets costs per enforcing scope with the advice to prefer OU scopes; verify the doc's steps against a fresh install
+- [x] 7.3 Document the install, the stack parameters, the IAM policy that protects the config-source settings in the payer account, and the known gaps (service-linked role scale-out, usage of existing resources, Budgets lag), and what AWS Budgets costs per enforcing scope with the advice to prefer OU scopes; verify the doc's steps against a fresh install
 
 ## 8. Integration
 
