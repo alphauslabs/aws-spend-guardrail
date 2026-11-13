@@ -17,7 +17,7 @@
 
 ## 4. Live check
 
-- [ ] 4.1 On e2e, deploy this build and confirm the first run writes a change heartbeat with the frozen e2estandard03 scope, the 7.20 USD ceiling, the excluded SSO account, and no AI section; then publish a tightening and confirm one more change heartbeat names the new version, and that a run with nothing changed writes none
+- [x] 4.1 On e2e, deploy this build and confirm the first run writes a change heartbeat with the frozen e2estandard03 scope, the 7.20 USD ceiling, the excluded SSO account, and no AI section; then publish a tightening and confirm one more change heartbeat names the new version, and that a run with nothing changed writes none
 
 ## Workflow follow-up
 
