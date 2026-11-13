@@ -20,4 +20,4 @@
 ## 5. Build and verify
 
 - [x] 5.1 Run `goimports`, `make`, and `go test ./...`; verify all pass
-- [ ] 5.2 On the e2e stack, after the Jennah change is deployed, run the daily task and confirm the heartbeat shows both keys' labels and expiry; the e2e keys expire on 2026-12-10, so a run on or after 2026-11-10 sends the 30-day warning for both
+- [x] 5.2 On the e2e stack, after the Jennah change is deployed, run the daily task and confirm the heartbeat shows both keys' labels and expiry; the e2e keys expire on 2026-12-10, so a run on or after 2026-11-10 sends the 30-day warning for both
