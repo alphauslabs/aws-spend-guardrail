@@ -12,6 +12,7 @@
 - [x] 2.2 Implement the install check (design D1, D3, D5): read the last `config_applied`, read and apply that version, then let `evaluate` handle the latest; on a permission or read error, alert once and apply the latest; write `guard_installed` once with its outcome; retry on the next run if Jennah is unreachable
 - [x] 2.3 Scope version event IDs by install (design D4): `<kind>:<N>:i<InstallID>` when `InstallID` is set, `<kind>:<N>` otherwise
 - [x] 2.4 Tests in `internal/guard`: reinstall with a pending loosening puts the old version in force and asks for approval; the existing approval is reused (one request key, one approval); reinstall after a rejected loosening keeps the old version; reinstall with nothing pending applies at once; first install applies at once; no inbox reach alerts once and applies the latest; a restart with state writes no `guard_installed`; an upgraded state without `InstallID` keeps the old event IDs
+- [x] 2.5 Adopt the earlier install's approval (design D6): on `AlreadyExists` from raising a version's approval, read the newest `loosening_raised` from the inbox and adopt its `approval_id` when it is for the same version, writing an `adopted` `loosening_raised`; otherwise raise under an install-scoped request key. Make `jennahtest` refuse a same-key request with different content as `AlreadyExists`, as Jennah does, and test adoption, the lost-record fallback, and that an ordinary retry of an identical request still replays
 
 ## 3. Docs and build
 

@@ -23,11 +23,15 @@ When the inbox records no version applied in full for the payer org, the guard's
 - **THEN** the latest valid version applies at once, with no approval
 
 ### Requirement: A pending approval is reused across a reinstall
-When a reinstalled guard needs approval for a version whose approval was already raised before the reinstall, it SHALL use that existing approval and SHALL NOT ask approvers a second time. The loosening delay SHALL be counted from when the new guard first saw the version.
+When a reinstalled guard needs approval for a version whose approval an earlier install raised and recorded in the inbox, it SHALL use that existing approval and SHALL NOT ask approvers a second time. When no such record can be found, it SHALL raise a new approval for the version rather than leave the loosening unable to proceed. The loosening delay SHALL be counted from when the new guard first saw the version.
 
 #### Scenario: Approval raised before the reinstall
 - **WHEN** version 10's approval was raised at 01:45 UTC, the stack is recreated at 02:20 UTC, and the approval is approved at 02:30 UTC
 - **THEN** no second approval request reaches the approvers, and version 10 applies once the loosening delay has passed since 02:20 UTC
+
+#### Scenario: The earlier approval was not recorded
+- **WHEN** version 10's approval was raised, but its `loosening_raised` event never reached the inbox, and the stack is recreated
+- **THEN** the new guard raises a new approval for version 10, and the config refresh keeps working
 
 ### Requirement: A new install is recorded in the inbox
 On its first run with no stored state, the guard SHALL write a `guard_installed` event once, giving the version last applied in full before the install (or none), the latest version, and what the guard did: resumed from the earlier version, installed fresh, or could not check. Events the guard writes about config versions SHALL be recorded even when an earlier install wrote an event of the same kind for the same version.

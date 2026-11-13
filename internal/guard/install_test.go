@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/alphauslabs/aws-spend-guardrail/config"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 	"github.com/alphauslabs/aws-spend-guardrail/schema"
 	approvalv1 "github.com/alphauslabs/jennah-sdk-go/jennah/approval/v1"
@@ -240,5 +242,92 @@ func TestStateFromBeforeInstallIDsKeepsTheOldEventIDs(t *testing.T) {
 	}
 	if h.events.count(schema.KindGuardInstalled) != 0 {
 		t.Fatal("an upgrade is not an install")
+	}
+}
+
+func raisedDetail(h *harness) map[string]any {
+	h.t.Helper()
+	for _, e := range h.events.list {
+		if e.Kind == schema.KindLooseningRaised {
+			var d map[string]any
+			if err := json.Unmarshal(e.Detail, &d); err != nil {
+				h.t.Fatal(err)
+			}
+			return d
+		}
+	}
+	h.t.Fatalf("no loosening_raised event: %v", h.events.kinds())
+	return nil
+}
+
+func TestReinstallAdoptsTheEarlierApproval(t *testing.T) {
+	h := newHarness(t)
+	h.publish(doc("50000", "50000"))
+	h.pull()
+	h.publish(doc("50000", "60000"))
+	h.pull()
+	first := h.st().Pending.ApprovalID
+
+	h.reinstall()
+	h.pull()
+	if p := h.st().Pending; p == nil || p.ApprovalID != first || h.jennah.CreatedApprovals != 1 {
+		t.Fatalf("want the earlier approval %s adopted, got pending %+v and %d approvals", first, p, h.jennah.CreatedApprovals)
+	}
+	if d := raisedDetail(h); d["adopted"] != true || d["approval_id"] != first {
+		t.Fatalf("loosening_raised should record the adoption: %v", d)
+	}
+	if h.alerts.has("can't apply its config") {
+		t.Fatalf("adoption must not fail the config refresh: %v", h.alerts.list)
+	}
+}
+
+func TestReinstallWithoutTheEarlierRecordRaisesANewApproval(t *testing.T) {
+	h := newHarness(t)
+	h.publish(doc("50000", "50000"))
+	h.pull()
+	h.publish(doc("50000", "60000"))
+	h.pull()
+
+	// The old guard's loosening_raised never reached the inbox.
+	var kept []jennah.Event
+	for _, e := range h.events.list {
+		if e.Kind != schema.KindLooseningRaised {
+			kept = append(kept, e)
+		}
+	}
+	h.events.list = kept
+	h.reinstall()
+	h.pull()
+	p := h.st().Pending
+	if p == nil || h.jennah.CreatedApprovals != 2 {
+		t.Fatalf("want a new approval, got pending %+v and %d approvals", p, h.jennah.CreatedApprovals)
+	}
+	if a := h.jennah.Approval("guardrail:123456789012:msp_a:v2:i" + strconv.FormatInt(h.st().InstallID, 10)); a == nil || a.GetApprovalId() != p.ApprovalID {
+		t.Fatalf("the new approval should use an install-scoped key: %v", a)
+	}
+	if raisedDetail(h)["adopted"] != nil {
+		t.Fatal("a new approval is not an adoption")
+	}
+	if h.alerts.has("can't apply its config") {
+		t.Fatalf("the config refresh keeps working: %v", h.alerts.list)
+	}
+}
+
+func TestAnIdenticalRaiseStillReplays(t *testing.T) {
+	h := newHarness(t)
+	h.publish(doc("50000", "50000"))
+	h.pull()
+	h.publish(doc("50000", "60000"))
+	h.pull()
+	st := h.st()
+	changes := config.Diff(st.Effective, st.Pending.Desired)
+	req, err := h.g.approvalRequest(context.Background(), 2, st.Pending.Note, changes, st.Effective, st.Pending.Desired, st.Pending.FirstSeen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A retry after a lost response sends the same request: Jennah replays it.
+	a, err := h.client.RaiseApproval(context.Background(), req)
+	if err != nil || a.ID != st.Pending.ApprovalID || h.jennah.CreatedApprovals != 1 {
+		t.Fatalf("an identical request replays the first approval: %v, %v, %d approvals", a, err, h.jennah.CreatedApprovals)
 	}
 }

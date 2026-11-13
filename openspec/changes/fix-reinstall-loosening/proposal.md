@@ -9,7 +9,7 @@ Deleting the stack already lifts every freeze, so this is not a new way for the 
 ## What Changes
 
 - On its first run (no stored state), the guard reads the inbox for the last version a guard applied in full. If there is one, it applies that version at once, then treats the latest version as a change from it: tightening applies at once and loosening goes through approval, as for any other version. With no earlier applied version (a true first install), the latest version applies at once, as today.
-- Because approval request keys are per version, a loosening that was pending before the reinstall finds its existing approval in Jennah instead of raising a second one. The loosening delay restarts from the new guard's first sight of the version.
+- A loosening that was pending before the reinstall keeps its existing approval: the guard finds the approval ID in the earlier install's `loosening_raised` event in the inbox, instead of raising a second request. Only when that record is missing does it raise a new approval. The loosening delay restarts from the new guard's first sight of the version.
 - The first run emits a new `guard_installed` event saying which version was last in force, which version is latest, and what the guard did.
 - Events tied to a config version carry the install in their ID, so a reinstalled guard's events are recorded instead of being dropped as duplicates of the old guard's.
 - The reader key's reach adds read access to the payer org's inbox. A reader key minted before this change can't read the inbox: the guard then alerts once, applies the latest version as today, and records the check as not done in `guard_installed`.

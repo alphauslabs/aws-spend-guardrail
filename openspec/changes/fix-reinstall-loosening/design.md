@@ -6,7 +6,7 @@ See proposal.md for why. The relevant current behavior:
 
 - `Guard.Pull` loads `State` from DynamoDB, which the stack owns, so deleting the stack deletes it. A fresh `State` has `AppliedVersion` 0 and `Effective` nil.
 - `evaluate` diffs the latest version against `st.Effective`. Against nil, every scope is an added scope, which is tightening, so `HasLoosening` is false and `applyFull` runs.
-- Approval request keys are `guardrail:<payer>:<msp>:v<N>`, and Jennah returns the existing approval for a known request key. A reinstalled guard raising approval for the same version already gets the old approval back.
+- Approval request keys are `guardrail:<payer>:<msp>:v<N>`. Jennah returns the existing approval for a replay with the same key only when the request is identical, and refuses a same-key request with different content as `AlreadyExists`. A reinstalled guard's request for the same version differs (its times count from its own first sight), so it is refused; Jennah has no lookup of an approval by request key. (The e2e live check on 2026-11-13 found this; the test fake had returned the existing approval for any same-key request.)
 - Event IDs for config versions are `<kind>:<N>` (`config_applied:10`). The client treats an already-committed ID as success, so a second install's event with the same ID is dropped.
 - The reader key reaches the config dataset and `guardrail.prices` with read and approval permissions. The writer key can only write the inbox. Nothing the guard holds can read the inbox today; the CLI's `appliedVersion` reads it with the operator's login.
 
@@ -31,7 +31,7 @@ See proposal.md for why. The relevant current behavior:
 
 **D5. `guard_installed` is written once per install, when the check finishes.** Its ID is `guard_installed:i<InstallID>`. Its detail: `previous_applied_version` (0 for none), `latest_version`, and `outcome` (`resumed`, `fresh`, or `not_done`). If Jennah is unreachable on the first run, nothing is applied (as today, the config-refresh alert covers it) and the check runs on the next run that reaches Jennah; `State.InstallChecked` records that it has run.
 
-**D6. The reused approval keeps its request key; the delay restarts.** No change to the request key. `Pending.FirstSeen` is the new guard's first sight, so the delay is counted from the reinstall. This is stricter than the old guard's timing, never looser.
+**D6. The earlier approval is found through the inbox; the delay restarts.** When raising a version's approval is refused as `AlreadyExists`, the guard reads the newest `loosening_raised` event from the inbox; if it is for the same version, the guard adopts the `approval_id` it recorded, reads its status as for any pending loosening, and writes its own `loosening_raised` event marked `adopted`. If no such event is found (it was lost, or the inbox can't be read), the guard raises a new approval under an install-scoped request key (`...:v<N>:i<InstallID>`), so approvers are asked once more rather than the loosening being stuck. `Pending.FirstSeen` is the new guard's first sight in both cases, so the delay is counted from the reinstall: stricter than the old guard's timing, never looser. Alternatives: (a) always use install-scoped keys on a new install; rejected because approvers would be asked again for every pending loosening. (b) Make the approval text identical across installs by dropping the times; rejected because the times are what approvers read to decide.
 
 ## Risks / Trade-offs
 

@@ -253,7 +253,13 @@ func (s *Server) CreateApproval(_ context.Context, in *approvalv1.CreateApproval
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if id, ok := s.byKey[in.GetRequestKey()]; ok {
-		return &approvalv1.CreateApprovalResponse{Approval: s.approvals[id], AlreadyExisted: true}, nil
+		// As Jennah does: a replay returns the first approval only when the
+		// request is the same; a different request under the key is refused.
+		a := s.approvals[id]
+		if a.GetTitle() != in.GetTitle() || a.GetSummary() != in.GetSummary() || !proto.Equal(a.GetPayload(), in.GetPayload()) {
+			return nil, status.Error(codes.AlreadyExists, "That request_key was already used for a different request. Use a new key, or resend the original request unchanged.")
+		}
+		return &approvalv1.CreateApprovalResponse{Approval: a, AlreadyExisted: true}, nil
 	}
 	id := fmt.Sprintf("apr_%d", len(s.approvals)+1)
 	a := &approvalv1.Approval{

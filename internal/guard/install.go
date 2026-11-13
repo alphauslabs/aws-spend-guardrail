@@ -2,6 +2,7 @@ package guard
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -101,4 +102,53 @@ func (g *Guard) checkInstall(ctx context.Context, st *State, latest *jennah.Vers
 func isNoAccess(err error) bool {
 	s := err.Error()
 	return strings.Contains(s, "PermissionDenied") || strings.Contains(s, "NotFound")
+}
+
+// raiseOrAdopt raises a version's loosening approval. Jennah refuses a
+// request under a key already used for a different request, which is what a
+// reinstalled guard sends for a version an earlier install raised (its times
+// differ). Then the guard adopts the earlier approval, found through the
+// earlier install's loosening_raised event, or, without that record, raises a
+// new approval under an install-scoped key (design D6 of
+// fix-reinstall-loosening). adopted reports which.
+func (g *Guard) raiseOrAdopt(ctx context.Context, st *State, version int64, req jennah.ApprovalRequest) (id string, adopted bool, err error) {
+	a, err := g.Config.RaiseApproval(ctx, req)
+	if err == nil {
+		return a.ID, false, nil
+	}
+	if !strings.Contains(err.Error(), "AlreadyExists") {
+		return "", false, err
+	}
+	if id := g.earlierApproval(ctx, version); id != "" {
+		return id, true, nil
+	}
+	install := st.InstallID
+	if install == 0 {
+		install = g.now().Unix()
+	}
+	req.RequestKey = fmt.Sprintf("%s:i%d", req.RequestKey, install)
+	a, err = g.Config.RaiseApproval(ctx, req)
+	if err != nil {
+		return "", false, err
+	}
+	return a.ID, false, nil
+}
+
+// earlierApproval returns the approval ID an earlier install recorded for a
+// version in its newest loosening_raised event, or "" when there is none.
+func (g *Guard) earlierApproval(ctx context.Context, version int64) string {
+	if g.Inbox == nil {
+		return ""
+	}
+	e, err := g.Inbox.LatestEvent(ctx, schema.InboxDatasetID(g.S.MSPID, g.S.PayerAccountID), schema.KindLooseningRaised)
+	if err != nil || e == nil || e.ConfigVersion != version {
+		return ""
+	}
+	var d struct {
+		ApprovalID string `json:"approval_id"`
+	}
+	if json.Unmarshal(e.Detail, &d) != nil {
+		return ""
+	}
+	return d.ApprovalID
 }

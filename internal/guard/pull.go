@@ -150,14 +150,17 @@ func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, n
 		if err != nil {
 			return err
 		}
-		a, err := g.Config.RaiseApproval(ctx, req)
+		id, adopted, err := g.raiseOrAdopt(ctx, st, version, req)
 		if err != nil {
 			return err
 		}
-		p = &Pending{Version: version, ApprovalID: a.ID, FirstSeen: seen, Desired: desired, Note: note}
+		p = &Pending{Version: version, ApprovalID: id, FirstSeen: seen, Desired: desired, Note: note}
 		st.Pending = p
-		g.emit(ctx, schema.KindLooseningRaised, versionEventID(st, schema.KindLooseningRaised, version), "", version,
-			map[string]any{"approval_id": a.ID, "loosening": changeStrings(only(changes, config.Loosening)), "reason": note})
+		detail := map[string]any{"approval_id": id, "loosening": changeStrings(only(changes, config.Loosening)), "reason": note}
+		if adopted {
+			detail["adopted"] = true
+		}
+		g.emit(ctx, schema.KindLooseningRaised, versionEventID(st, schema.KindLooseningRaised, version), "", version, detail)
 	}
 	if p.Closed != "" {
 		return nil

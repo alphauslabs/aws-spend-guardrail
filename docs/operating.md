@@ -72,7 +72,7 @@ A reader key minted before the inbox was added to its reach keeps working, excep
 
 Deleting the stack deletes the guard's state, so a recreated guard starts with none. On its first run it reads the inbox for the last version a guard applied in full, puts that version back in force at once, and handles anything newer as a change from it:
 
-- A newer version's tightening applies at once, and its loosening waits for approval and the loosening delay, as for any version. If its approval was already raised, the guard uses that one, so approvers aren't asked again; the delay counts from the new guard's first run.
+- A newer version's tightening applies at once, and its loosening waits for approval and the loosening delay, as for any version. If its approval was already raised, the guard finds it through the earlier install's `loosening_raised` event and uses that one (its own `loosening_raised` says `adopted`), so approvers aren't asked again. If that event never reached the inbox, the guard raises a new approval, and approvers get a second request for the version. Either way the delay counts from the new guard's first run.
 - A loosening that was rejected stays rejected.
 - When the inbox records no applied version, the guard is a first install and applies the latest version at once.
 
