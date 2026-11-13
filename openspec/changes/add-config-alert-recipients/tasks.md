@@ -32,5 +32,5 @@
 - [x] 6.0 Fix what 6.2 found: grant `sns:Unsubscribe` on `AlertTopic` (AWS checks the topic's ARN, so `${AlertTopic}:*` is refused), and alert locally once per address when an unsubscribe fails, keeping the address tracked so the next run retries; test the failure alert and its single send, and update the CHANGELOG and docs
 
 - [x] 6.1 After the freeze tests are done, deploy this release to the e2e stack and publish a version adding a second address; confirm an approval is raised with the recipient title, nothing is subscribed before approval, and after approval and the delay the address gets one confirmation email and, once confirmed, a test alert
-- [ ] 6.2 Publish a version removing it; after approval confirm the guard unsubscribes it and the stack's `AlertEmail` stays subscribed; confirm `sns:Unsubscribe` on `${AlertTopic}:*` is enough for the call to succeed
-- [ ] 6.3 Restore the e2e config to its earlier recipients and remove any leftover test subscriptions
+- [x] 6.2 Publish a version removing it; after approval confirm the guard unsubscribes it and the stack's `AlertEmail` stays subscribed; confirm `sns:Unsubscribe` on `${AlertTopic}:*` is enough for the call to succeed
+- [x] 6.3 Restore the e2e config to its earlier recipients and remove any leftover test subscriptions
