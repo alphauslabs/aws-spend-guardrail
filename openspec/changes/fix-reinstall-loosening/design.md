@@ -39,6 +39,8 @@ See proposal.md for why. The relevant current behavior:
 - [The baseline document is read at reinstall time: a version deleted from the config dataset can't be resumed.] → Config versions are never deleted (no retention, no delete in the CLI). If the read fails, the guard treats it like D3: alert, apply the latest, and record `not_done`.
 - [An inbox event lost before delivery means the baseline is an older version.] → The outbox retries until Jennah accepts; an older baseline is stricter or the same in practice, and the loosening path then asks for approval for the difference.
 
+- [An adopted approval's text gives the earliest apply time the earlier install computed, which is earlier than when the reinstalled guard will apply it.] → The guard is only ever later than the text, never earlier, so approvers can't be misled into a faster loosening. Jennah can't edit a sent approval, and a new request would ask approvers again; the docs say so instead. Seen in the 4.1 live check: the approval said 03:23 UTC, and the version could apply from about 03:47 UTC.
+
 ## Migration Plan
 
 Ship in a guard release. Run `guardrail setup` (or the documented rotation) to remint each payer org's reader key with the inbox in its reach; until then, only a reinstall is affected, and it alerts. Rollback is the previous release: it ignores `InstallID` and `InstallChecked` in state, and reads event IDs of either form.

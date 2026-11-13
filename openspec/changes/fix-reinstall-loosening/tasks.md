@@ -21,7 +21,7 @@
 
 ## 4. Live check
 
-- [ ] 4.1 On e2e, remint the reader key with the inbox, publish a loosening, and before approving it delete and recreate the stack; confirm the old version is in force, no second approval email arrives, `guard_installed` says `resumed`, and approving the existing request applies the version after the delay
+- [x] 4.1 On e2e, remint the reader key with the inbox, publish a loosening, and before approving it delete and recreate the stack; confirm the old version is in force, no second approval email arrives, `guard_installed` says `resumed`, and approving the existing request applies the version after the delay
 
 ## Workflow follow-up
 
