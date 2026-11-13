@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/alphauslabs/aws-spend-guardrail/config"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 	"github.com/alphauslabs/aws-spend-guardrail/schema"
 )
 
@@ -29,7 +30,13 @@ func TestFrozenLiftedAndFrozenAgainInOnePeriod(t *testing.T) {
 	if n := h.events.count(schema.KindFreeze); n != 2 {
 		t.Fatalf("want two freeze events, got %d: %v", n, h.events.kinds())
 	}
-	last := h.events.list[len(h.events.list)-1]
+	// The freeze is followed by the heartbeat it changed (add-heartbeat-state).
+	var last jennah.Event
+	for _, e := range h.events.list {
+		if e.Kind == schema.KindFreeze {
+			last = e
+		}
+	}
 	if last.Kind != schema.KindFreeze || alertCount(h, "is frozen") != 2 {
 		t.Fatalf("last %s, alerts %v", last.Kind, h.alerts.list)
 	}

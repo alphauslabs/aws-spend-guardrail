@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/alphauslabs/aws-spend-guardrail/config"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 	"github.com/alphauslabs/aws-spend-guardrail/schema"
 )
 
@@ -128,7 +129,12 @@ func TestThresholdInEnforceRecordsFreezeAndAlerts(t *testing.T) {
 	if !h.alerts.has("111122223333 is frozen") || !h.alerts.has("nothing running was stopped") {
 		t.Fatalf("alert: %v", h.alerts.list)
 	}
-	e := h.events.list[len(h.events.list)-1]
+	var e jennah.Event // the freeze, followed by the heartbeat it changed
+	for _, x := range h.events.list {
+		if x.Kind == schema.KindFreeze {
+			e = x
+		}
+	}
 	if e.Scope != tX.String() || e.ConfigVersion != 1 {
 		t.Fatalf("freeze event %+v", e)
 	}

@@ -24,6 +24,8 @@ func (g *Guard) Trail(ctx context.Context) error {
 	if g.Fast == nil {
 		return nil
 	}
+	// Write a heartbeat if this run changed the guard's state (add-heartbeat-state).
+	defer g.heartbeatIfChanged(ctx)
 	st, err := g.State.Load(ctx)
 	if err != nil {
 		return fmt.Errorf("load state: %w", err)
@@ -50,7 +52,7 @@ func (g *Guard) Trail(ctx context.Context) error {
 	}
 	shared, priceVersion := g.sharedAIPrices(ctx)
 	run := activity.PackRun{
-		Name:           "ai",
+		Name:           aiPack,
 		Pack:           ai.NewShared(g.Fast.Prices, shared, cfg),
 		Detail:         map[string]any{"price_version": priceVersion},
 		PolicyID:       g.Fast.AIPolicyID,

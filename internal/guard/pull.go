@@ -16,6 +16,8 @@ import (
 // and reconciles budgets with the effective config. When Jennah is unreachable
 // or the newest version is invalid, the last valid config stays in force.
 func (g *Guard) Pull(ctx context.Context) error {
+	// Write a heartbeat if this run changed the guard's state (add-heartbeat-state).
+	defer g.heartbeatIfChanged(ctx)
 	st, err := g.State.Load(ctx)
 	if err != nil {
 		return fmt.Errorf("load state: %w", err)

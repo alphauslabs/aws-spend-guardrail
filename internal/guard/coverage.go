@@ -13,6 +13,8 @@ import (
 
 // CheckCoverage runs the coverage check on its own, as on an account event.
 func (g *Guard) CheckCoverage(ctx context.Context) error {
+	// Write a heartbeat if this run changed the guard's state (add-heartbeat-state).
+	defer g.heartbeatIfChanged(ctx)
 	st, err := g.State.Load(ctx)
 	if err != nil {
 		return fmt.Errorf("load state: %w", err)

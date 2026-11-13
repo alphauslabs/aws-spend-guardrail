@@ -29,6 +29,8 @@ func PeriodStart(period string, t time.Time) time.Time {
 // own; the guard records it and alerts. In dry-run nothing was attached and
 // the guard records would_freeze.
 func (g *Guard) OnThreshold(ctx context.Context, budgetName string) error {
+	// Write a heartbeat if this run changed the guard's state (add-heartbeat-state).
+	defer g.heartbeatIfChanged(ctx)
 	st, err := g.State.Load(ctx)
 	if err != nil {
 		return fmt.Errorf("load state: %w", err)
@@ -114,6 +116,7 @@ func (g *Guard) recordFreeze(ctx context.Context, scope config.ResolvedScope, ve
 		PeriodStart:  period,
 		PolicyID:     g.policyFor(scope.FreezeStyle),
 		ThresholdUSD: scope.CeilingUSD * float64(scope.ThresholdPct) / 100,
+		How:          how,
 	}
 	if err := g.State.MarkFrozen(ctx, f); err != nil {
 		return fmt.Errorf("record freeze: %w", err)
@@ -148,15 +151,33 @@ func (g *Guard) Daily(ctx context.Context) error {
 			errs = append(errs, err)
 		}
 	}
-	hb := map[string]any{"applied_version": st.AppliedVersion, "effective_version": st.EffectiveVersion, "pending": st.Pending != nil}
-	if keys := g.checkKeys(ctx, st); keys != nil {
-		hb["keys"] = keys
+	keys := g.checkKeys(ctx, st)
+	if keys != nil {
 		if err := g.State.Save(ctx, st); err != nil {
 			errs = append(errs, fmt.Errorf("save state: %w", err))
 		}
 	}
+	// The daily heartbeat always carries the state (add-heartbeat-state); a
+	// snapshot that can't be read still leaves the heartbeat as liveness.
+	snap, err := g.snapshot(ctx, st)
+	if err != nil {
+		errs = append(errs, err)
+		snap = map[string]any{}
+	}
 	day := g.now().Format("2006-01-02")
-	g.emit(ctx, schema.KindHeartbeat, schema.KindHeartbeat+":"+day, "", st.AppliedVersion, g.selfReport(hb))
+	// Taken before heartbeatDetail adds spend to the snapshot.
+	dailyDigest := ""
+	if len(snap) > 0 {
+		dailyDigest = digest(snap)
+	}
+	var hbKeys any
+	if keys != nil {
+		hbKeys = keys
+	}
+	g.emit(ctx, schema.KindHeartbeat, schema.KindHeartbeat+":"+day, "", st.AppliedVersion, g.heartbeatDetail(ctx, st, snap, HeartbeatDaily, hbKeys))
+	if dailyDigest != "" {
+		_ = g.State.SetHeartbeatDigest(ctx, dailyDigest)
+	}
 	if st.Effective != nil {
 		if err := g.Reconcile(ctx, st.Effective); err != nil {
 			errs = append(errs, err)

@@ -85,6 +85,14 @@ type memState struct {
 	raw      []byte
 	frozen   map[config.Target]Frozen
 	reported map[string]map[string]time.Time
+	digest   string
+}
+
+func (m *memState) HeartbeatDigest(context.Context) (string, error) { return m.digest, nil }
+
+func (m *memState) SetHeartbeatDigest(_ context.Context, d string) error {
+	m.digest = d
+	return nil
 }
 
 func newMemState() *memState {

@@ -171,6 +171,25 @@ On each run, the guard compares the topic's email subscriptions with `alert_emai
 
 The guard never unsubscribes the stack's `AlertEmail`, a subscription someone added in the SNS console, or an address that was already subscribed before the config listed it. Someone who wants to stop receiving alerts should be removed from the config; unsubscribing from the email only lasts until the next run, which subscribes them again.
 
+## The guard's state
+
+The newest `heartbeat` event in the inbox is the guard's state as it last recorded it, so you never need to piece it together from other events:
+
+- `scopes`: every scope in force, with its `target`, `mode`, `ceiling_usd`, `threshold_pct`, `period`, `freeze_style`, and `actual_usd` as Budgets last reported it. A frozen scope has `frozen` with `since`, `how`, and `policy_id`. A freeze still in place for a scope no longer in the config is listed with `in_config: false`.
+- `pending`: the loosening waiting for approval, with its `version`, `approval_id`, and `earliest_apply_at`.
+- `excluded` and `unprotected`: the accounts left out on purpose, and those reported as covered by no scope.
+- `ai`, with the AI guard on: its `mode`, the accounts in `cutoffs`, and whether the `trail` is stalled.
+- `applied_version`, `effective_version`, `keys`, `guard_version`, and `code_sha256`, as before, and `state_layout`, which changes when this shape does.
+
+The guard writes a heartbeat once a day (`reason: "daily"`, id `heartbeat:<date>`), and also at the end of any run that changed its state: a freeze or lift, a cutoff or its lift, a version applied, a loosening raised or closed, the trail stalling or resuming, or a change in the unprotected accounts (`reason: "change"`). Spend moving alone writes nothing. To read the current state:
+
+```
+jnh datasets query guardrail.msp_a.123456789012.inbox --table events \
+  --where kind=heartbeat --order-by occurred_at:desc --limit 1 -o json
+```
+
+Older heartbeats stay for 400 days, so they also answer what the state was at a given time.
+
 ## How long events are kept
 
 Jennah removes inbox events some time after they are **400 days** old, judged by `occurred_at`, typically within three more days. 400 days is a lower bound: an event is never removed sooner, and an expired one can still show up in a query for a few days. That keeps a full year of history plus a month for annual reviews. Config versions are kept forever, since they're the record of what was enforced.

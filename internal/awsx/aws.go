@@ -287,6 +287,19 @@ func (s *State) MarkReported(ctx context.Context, kind, account string, at time.
 	return s.put(ctx, pkReported, kind+"#"+account, at)
 }
 
+// HeartbeatDigest reads the digest of the state the last heartbeat carried, or
+// "" when none was written yet.
+func (s *State) HeartbeatDigest(ctx context.Context) (string, error) {
+	var d string
+	_, err := s.get(ctx, pkState, "heartbeat_digest", &d)
+	return d, err
+}
+
+// SetHeartbeatDigest records the digest of the state a heartbeat carried.
+func (s *State) SetHeartbeatDigest(ctx context.Context, digest string) error {
+	return s.put(ctx, pkState, "heartbeat_digest", digest)
+}
+
 // ClearReported forgets a report, so a later lapse is reported again.
 func (s *State) ClearReported(ctx context.Context, kind, account string) error {
 	_, err := s.API.DeleteItem(ctx, &dynamodb.DeleteItemInput{TableName: aws.String(s.Table), Key: key(pkReported, kind+"#"+account)})

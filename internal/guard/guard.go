@@ -104,6 +104,9 @@ type Frozen struct {
 	// higher threshold can lift the freeze as a raise; a new period resets
 	// actual spend, which must not count as a raise.
 	ThresholdUSD float64 `json:"threshold_usd"`
+	// How is how the freeze was attached, as its freeze event says. Empty for
+	// a record written before add-heartbeat-state.
+	How string `json:"how,omitempty"`
 }
 
 // StateStore persists State and frozen records in the payer account.
@@ -118,6 +121,12 @@ type StateStore interface {
 	Reported(ctx context.Context, kind string) (map[string]time.Time, error)
 	MarkReported(ctx context.Context, kind, account string, at time.Time) error
 	ClearReported(ctx context.Context, kind, account string) error
+	// HeartbeatDigest and SetHeartbeatDigest keep the digest of the state the
+	// last heartbeat carried (add-heartbeat-state). It is its own item, not part
+	// of State, because runs that never save State (Trail, OnThreshold) write
+	// it, and saving State there could overwrite a concurrent Pull's.
+	HeartbeatDigest(ctx context.Context) (string, error)
+	SetHeartbeatDigest(ctx context.Context, digest string) error
 }
 
 // BudgetSpec is one budget the guard owns, as it should exist in AWS.
