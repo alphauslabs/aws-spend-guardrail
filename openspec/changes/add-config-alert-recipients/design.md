@@ -50,7 +50,7 @@ A pending subscription can't be removed, and asking SNS again sends another emai
 New inbox kinds: `alert_recipient_subscribed` and `alert_recipient_removed` (one per address and run), and `alert_recipient_unconfirmed` (once a day per pending address). They carry only the address and the config version. Existing kinds keep their shape, so the layout version stays the same.
 
 ### D6. Permissions
-The guard role gains `sns:Subscribe` and `sns:ListSubscriptionsByTopic` on `AlertTopic`, and `sns:Unsubscribe` on the topic's subscriptions (`${AlertTopic}:*`). Nothing on `NotifyTopic` or any other topic.
+The guard role gains `sns:Subscribe` and `sns:ListSubscriptionsByTopic` on `AlertTopic`, and `sns:Unsubscribe` on `AlertTopic`. Nothing on `NotifyTopic` or any other topic. AWS authorizes `Unsubscribe` against the topic's ARN, not the subscription's: the first design granted it on `${AlertTopic}:*`, and the e2e live check (2026-11-13) was refused with `not authorized to perform: SNS:Unsubscribe on resource: <topic ARN>`. Both grants reach the same subscriptions (every subscription on this topic, the stack's `AlertEmail` included), so the change widens nothing; the guard's code is what refuses to unsubscribe the stack's address.
 
 ## Risks / Trade-offs
 

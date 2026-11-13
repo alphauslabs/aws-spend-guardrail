@@ -35,6 +35,9 @@ type AlertSubscriptions interface {
 type OwnSubscription struct {
 	// AskedAt is when the guard last asked SNS to subscribe the address.
 	AskedAt time.Time `json:"asked_at"`
+	// RemoveFailing is set once an unsubscribe of this address has failed
+	// and been alerted, so a failure that repeats every run alerts once.
+	RemoveFailing bool `json:"remove_failing,omitempty"`
 }
 
 // ReaskAfter is how long the guard waits before asking SNS again for an
@@ -135,6 +138,12 @@ func (g *Guard) syncRecipients(ctx context.Context, st *State) error {
 		default:
 			if err := g.Subs.Unsubscribe(ctx, cur.ARN); err != nil {
 				errs = append(errs, fmt.Errorf("unsubscribe %s: %w", addr, err))
+				if own := st.OwnSubscriptions[addr]; !own.RemoveFailing {
+					g.alert(ctx, "guardrail: alert recipient not removed", withError(fmt.Sprintf(
+						"The config no longer lists %s as an alert recipient, but the guard couldn't unsubscribe it, so it still receives the guard's alerts. The guard tries again on every run without alerting again. Check that the guard's role allows sns:Unsubscribe on the alert topic, or unsubscribe the address by hand.", addr), err))
+					own.RemoveFailing = true
+					st.OwnSubscriptions[addr] = own
+				}
 				continue
 			}
 			g.emit(ctx, schema.KindRecipientRemoved, fmt.Sprintf("%s:%s:%d", schema.KindRecipientRemoved, addr, now.Unix()), "", version,

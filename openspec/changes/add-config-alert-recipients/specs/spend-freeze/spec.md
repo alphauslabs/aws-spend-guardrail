@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: Local alerts reach the config's recipients
-The guard SHALL subscribe each recipient in force that has no subscription on the local alert topic, and SHALL unsubscribe each confirmed subscription it made whose address is no longer a recipient. It SHALL record each address it subscribes or unsubscribes in the inbox.
+The guard SHALL subscribe each recipient in force that has no subscription on the local alert topic, and SHALL unsubscribe each confirmed subscription it made whose address is no longer a recipient. It SHALL record each address it subscribes or unsubscribes in the inbox. When an unsubscribe fails, it SHALL alert locally once for that address and keep trying on each run.
 
 #### Scenario: A recipient is added
 - **WHEN** an approved version adds `finops@example.com`
@@ -12,6 +12,10 @@ The guard SHALL subscribe each recipient in force that has no subscription on th
 #### Scenario: A recipient is removed
 - **WHEN** an approved version removes `finops@example.com`, whose subscription the guard made
 - **THEN** the guard unsubscribes it, it receives no later alert, and an event records the removal
+
+#### Scenario: A removal fails
+- **WHEN** an approved version removes `finops@example.com`, and AWS refuses the guard's unsubscribe
+- **THEN** one local alert says `finops@example.com` still receives alerts and why, the guard tries again on each run without alerting again, and the removal event is written once the unsubscribe succeeds
 
 #### Scenario: Jennah is unreachable
 - **WHEN** config refresh from Jennah fails

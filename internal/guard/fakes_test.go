@@ -362,6 +362,8 @@ type fakeSubs struct {
 	subscribes   []string
 	unsubscribes []string
 	nextARN      int
+	// failUnsubscribe makes every unsubscribe fail with this error.
+	failUnsubscribe error
 }
 
 func newFakeSubs() *fakeSubs { return &fakeSubs{byAddr: map[string]Subscription{}} }
@@ -383,6 +385,9 @@ func (f *fakeSubs) Subscribe(_ context.Context, addr string) error {
 }
 
 func (f *fakeSubs) Unsubscribe(_ context.Context, arn string) error {
+	if f.failUnsubscribe != nil {
+		return f.failUnsubscribe
+	}
 	for addr, s := range f.byAddr {
 		if s.ARN == arn && !s.Pending {
 			f.unsubscribes = append(f.unsubscribes, addr)

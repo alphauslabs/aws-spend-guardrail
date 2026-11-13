@@ -716,8 +716,11 @@ Resources:
                 Resource: !Ref AlertTopic
               - Sid: AlertRecipientsRemove
                 Effect: Allow
+                # AWS authorizes Unsubscribe against the topic's ARN, not the
+                # subscription's, so ${AlertTopic}:* is refused. This reaches
+                # the same subscriptions; the guard never removes AlertEmail.
                 Action: sns:Unsubscribe
-                Resource: !Sub ${AlertTopic}:*
+                Resource: !Ref AlertTopic
               - Sid: Credentials
                 Effect: Allow
                 Action: secretsmanager:GetSecretValue

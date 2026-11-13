@@ -1,6 +1,8 @@
 package guard
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -212,5 +214,37 @@ func TestRecipientsUnchangedWhileJennahIsDown(t *testing.T) {
 	}
 	if _, ok := h.subs.byAddr["finops@example.com"]; !ok {
 		t.Fatal("recipient lost its subscription during the outage")
+	}
+}
+
+func TestFailedRemovalAlertsOnceAndRetries(t *testing.T) {
+	h := withRecipients(t, "finops@example.com")
+	h.subs.confirm("finops@example.com")
+	h.publish(recipientsDoc())
+	h.pull()
+	approveAndWait(h, "3", 31*time.Minute)
+	h.subs.failUnsubscribe = errors.New("AuthorizationError: not authorized to perform: SNS:Unsubscribe")
+	_ = h.g.Pull(context.Background())
+	_ = h.g.Pull(context.Background())
+	n := 0
+	for _, a := range h.alerts.list {
+		if strings.Contains(a, "alert recipient not removed") {
+			n++
+			if !strings.Contains(a, "finops@example.com") || !strings.Contains(a, "still receives the guard's alerts") {
+				t.Errorf("alert should name the address and say it still gets alerts: %s", a)
+			}
+		}
+	}
+	if n != 1 {
+		t.Fatalf("want one alert over two failing runs, got %d: %v", n, h.alerts.list)
+	}
+	if h.events.count(schema.KindRecipientRemoved) != 0 || !h.st().OwnSubscriptions["finops@example.com"].RemoveFailing {
+		t.Fatalf("no removal event while it fails, and the address stays tracked: %v %v", h.events.kinds(), h.st().OwnSubscriptions)
+	}
+
+	h.subs.failUnsubscribe = nil
+	h.pull()
+	if len(h.subs.unsubscribes) != 1 || h.events.count(schema.KindRecipientRemoved) != 1 || len(h.st().OwnSubscriptions) != 0 {
+		t.Fatalf("the retry should remove it: unsubscribes %v, events %v, own %v", h.subs.unsubscribes, h.events.kinds(), h.st().OwnSubscriptions)
 	}
 }
