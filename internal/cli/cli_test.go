@@ -33,6 +33,10 @@ func TestSetupIsIdempotent(t *testing.T) {
 	if !strings.Contains(out.String(), "datastore.data:write") {
 		t.Fatalf("permissions not printed: %s", out)
 	}
+	// The reader reaches the inbox, read only (fix-reinstall-loosening).
+	if !strings.Contains(out.String(), "reader dataset selectors guardrail.msp_a.123456789012.config,guardrail.prices,guardrail.msp_a.123456789012.inbox, permissions datastore.data:read,") {
+		t.Fatalf("reader reach not printed with the inbox: %s", out)
+	}
 	declares := f.Declares
 	out.Reset()
 	if err := c.Setup(ctx); err != nil {

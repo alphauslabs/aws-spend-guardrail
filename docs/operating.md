@@ -25,11 +25,11 @@ People who manage config need a role with `datastore.data:read` and `datastore.d
 
 ## 2. Mint the guard's credentials
 
-Each payer org's guard uses two keys of its own. Neither can write config or decide an approval, so a leaked key can't loosen protection, and it reaches only that payer org (the reader also reads the enterprise's shared prices, which can only tighten).
+Each payer org's guard uses two keys of its own. Neither can write config or decide an approval, so a leaked key can't loosen protection, and it reaches only that payer org (the reader also reads the enterprise's shared prices, which can only tighten). The reader reads the payer org's inbox too, so a reinstalled guard can find which config version was in force (see [Reinstall a guard](#reinstall-a-guard)).
 
 | Key | Dataset selector | Permissions |
 |---|---|---|
-| reader | `guardrail.msp_a.123456789012.config`, `guardrail.prices` | `datastore.data:read`, `datastore.schema:read`, `approval.requests:create`, `approval.requests:read`, `approval.requests:cancel` |
+| reader | `guardrail.msp_a.123456789012.config`, `guardrail.prices`, `guardrail.msp_a.123456789012.inbox` | `datastore.data:read`, `datastore.schema:read`, `approval.requests:create`, `approval.requests:read`, `approval.requests:cancel` |
 | writer | `guardrail.msp_a.123456789012.inbox` | `datastore.data:write` |
 
 Today these are API keys with their own scope and dataset selector, minted by a long-lived admin of the enterprise with `jnh` (signed in with `jnh login`; an API key can't mint keys). Once Jennah supports service accounts, use one service account per key instead, each with a custom role carrying the same reach. The guard only needs the secret, so switching doesn't touch the stack.
@@ -39,7 +39,7 @@ Mint both keys and store each as a plain-text secret in Secrets Manager in the p
 ```
 umask 077
 jnh keys create --label guardrail-msp_a-123456789012-reader \
-  --datasets guardrail.msp_a.123456789012.config,guardrail.prices \
+  --datasets guardrail.msp_a.123456789012.config,guardrail.prices,guardrail.msp_a.123456789012.inbox \
   --scopes datastore.data:read,datastore.schema:read,approval.requests:create,approval.requests:read,approval.requests:cancel \
   --expires-in 1y -o json | jq -r .secret > reader.key
 jnh keys create --label guardrail-msp_a-123456789012-writer \
@@ -65,6 +65,22 @@ Rotate a few days before expiry:
 3. The guard reads its secrets when it starts, so it picks up the new key the next time AWS Lambda starts a fresh copy of the function, usually within hours. Once `jnh keys list` shows the new key in use, revoke the old one with `jnh keys revoke <key id>`.
 
 The loosening approvers set in the stack must be members of the Jennah enterprise or on its approver allowlist.
+
+A reader key minted before the inbox was added to its reach keeps working, except when the guard is reinstalled: then the guard can't check which version was in force, alerts once (`guardrail: reinstall check not done`), and applies the latest version as it is. Rotate the reader with the inbox added, as above, before you reinstall.
+
+### Reinstall a guard
+
+Deleting the stack deletes the guard's state, so a recreated guard starts with none. On its first run it reads the inbox for the last version a guard applied in full, puts that version back in force at once, and handles anything newer as a change from it:
+
+- A newer version's tightening applies at once, and its loosening waits for approval and the loosening delay, as for any version. If its approval was already raised, the guard uses that one, so approvers aren't asked again; the delay counts from the new guard's first run.
+- A loosening that was rejected stays rejected.
+- When the inbox records no applied version, the guard is a first install and applies the latest version at once.
+
+The first run writes a `guard_installed` event giving the version that was in force before (`previous_applied_version`), the latest version, and its `outcome`: `resumed`, `fresh`, or `not_done` when the check couldn't run. Events about config versions from the new install carry the install in their ID (for example `config_applied:10:i1794536600`), so they're recorded beside the earlier install's events instead of being dropped as duplicates.
+
+The check trusts the inbox: whoever can write it (the guard's writer key, and enterprise admins) could record a looser version as applied, and a later reinstall would put that version in force. That version must still be a published config version.
+
+Deleting the stack still lifts every freeze, by design (see [install](install.md#remove)); only the approval of a pending loosening is kept across a reinstall.
 
 ## 3. Change config: pull, edit, publish
 

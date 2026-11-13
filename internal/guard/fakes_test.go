@@ -445,7 +445,7 @@ func (h *harness) newGuard() *Guard {
 			LooseningDelay:     30 * time.Minute,
 			AlertEmail:         "stack@example.com",
 		},
-		Config: h.client, Events: h.events, Alerts: h.alerts, State: h.state,
+		Config: h.client, Inbox: h.client, Events: h.events, Alerts: h.alerts, State: h.state,
 		Budgets: h.budgets, Org: h.org, Subs: h.subs, Spend: h.spend,
 		Now: func() time.Time { return h.now },
 	}

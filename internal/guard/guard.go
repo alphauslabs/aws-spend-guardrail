@@ -21,9 +21,17 @@ import (
 // the guard's reader credential.
 type ConfigSource interface {
 	LatestVersion(ctx context.Context, datasetID string) (*jennah.Version, error)
+	GetVersion(ctx context.Context, datasetID string, number int64) (*jennah.Version, error)
 	RaiseApproval(ctx context.Context, r jennah.ApprovalRequest) (*jennah.Approval, error)
 	GetApproval(ctx context.Context, id string) (*jennah.Approval, error)
 	CancelApproval(ctx context.Context, id string) error
+}
+
+// InboxReader reads the guard's own inbox with the reader credential. A
+// reinstalled guard uses it to find the version that was in force
+// (fix-reinstall-loosening).
+type InboxReader interface {
+	LatestEvent(ctx context.Context, datasetID, kind string) (*jennah.Event, error)
 }
 
 // EventSink accepts events for delivery to Jennah. The production sink is the
@@ -64,6 +72,15 @@ type State struct {
 	OwnSubscriptions map[string]OwnSubscription `json:"own_subscriptions,omitempty"`
 	// KeyWarnings are the expiry warnings sent per guard key, by key name.
 	KeyWarnings map[string]KeyWarning `json:"key_warnings,omitempty"`
+	// InstallID identifies this install: the Unix seconds of the first run
+	// of a guard that started with no stored state. Version events carry it
+	// in their IDs, so a reinstall's events aren't dropped as duplicates of
+	// the earlier install's. 0 for state from before fix-reinstall-loosening,
+	// which keeps the older IDs.
+	InstallID int64 `json:"install_id,omitempty"`
+	// InstallChecked is set once the first run has found the version in
+	// force before this install and written the guard_installed event.
+	InstallChecked bool `json:"install_checked,omitempty"`
 }
 
 // Pending is a loosening version and its approval.
@@ -201,9 +218,12 @@ type Settings struct {
 
 // Guard ties the pieces together.
 type Guard struct {
-	S       Settings
-	Config  ConfigSource
-	Events  EventSink
+	S      Settings
+	Config ConfigSource
+	Events EventSink
+	// Inbox reads the payer org's inbox. Nil: a new install can't check
+	// which version was in force, and says so.
+	Inbox   InboxReader
 	Alerts  Alerter
 	State   StateStore
 	Budgets Budgets

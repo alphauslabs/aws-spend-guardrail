@@ -172,4 +172,4 @@ Prefer OU scopes where accounts can share a ceiling: one OU scope is one budget 
 
 ## Remove
 
-Delete the stack. Before the function and policies go, it lifts every freeze the guard recorded and deletes the budgets it owns. The data in Jennah stays for the record.
+Delete the stack. Before the function and policies go, it lifts every freeze the guard recorded and deletes the budgets it owns. The data in Jennah stays for the record. If you create the stack again, the new guard resumes from the config version that was in force, and a loosening still waiting for approval keeps waiting (see [Reinstall a guard](operating.md#reinstall-a-guard)).

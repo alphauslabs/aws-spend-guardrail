@@ -20,6 +20,7 @@ func (g *Guard) Pull(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load state: %w", err)
 	}
+	g.startInstall(st)
 	g.trackRefresh(ctx, st, g.evaluate(ctx, st))
 	g.pullPrices(ctx)
 	// Recipients follow the config in force, so this runs even when Jennah is
@@ -72,6 +73,9 @@ func (g *Guard) evaluate(ctx context.Context, st *State) error {
 	if latest == nil {
 		return nil
 	}
+	if err := g.checkInstall(ctx, st, latest); err != nil {
+		return err
+	}
 
 	// A newer version supersedes a pending one.
 	if p := st.Pending; p != nil && p.Version != latest.Number && latest.Number > p.Version {
@@ -79,7 +83,7 @@ func (g *Guard) evaluate(ctx context.Context, st *State) error {
 			if err := g.Config.CancelApproval(ctx, p.ApprovalID); err != nil {
 				return err
 			}
-			g.emit(ctx, schema.KindLooseningVoid, fmt.Sprintf("%s:%d", schema.KindLooseningVoid, p.Version), "", p.Version,
+			g.emit(ctx, schema.KindLooseningVoid, versionEventID(st, schema.KindLooseningVoid, p.Version), "", p.Version,
 				map[string]any{"approval_id": p.ApprovalID, "superseded_by": latest.Number})
 		}
 		st.Pending = nil
@@ -101,7 +105,7 @@ func (g *Guard) evaluate(ctx context.Context, st *State) error {
 		} else {
 			probs = []string{err.Error()}
 		}
-		g.emit(ctx, schema.KindConfigRejected, fmt.Sprintf("%s:%d", schema.KindConfigRejected, latest.Number), "", latest.Number,
+		g.emit(ctx, schema.KindConfigRejected, versionEventID(st, schema.KindConfigRejected, latest.Number), "", latest.Number,
 			map[string]any{"problems": probs, "kept_version": st.AppliedVersion})
 		g.alert(ctx, "guardrail: config version rejected",
 			fmt.Sprintf("Config version %d is invalid and was not applied, so version %d stays in force. Fix these problems and publish a new version:\n%s",
@@ -123,7 +127,7 @@ func (g *Guard) applyFull(ctx context.Context, st *State, version int64, desired
 	st.AppliedVersion = version
 	st.EffectiveVersion = version
 	st.Pending = nil
-	g.emit(ctx, schema.KindConfigApplied, fmt.Sprintf("%s:%d", schema.KindConfigApplied, version), "", version,
+	g.emit(ctx, schema.KindConfigApplied, versionEventID(st, schema.KindConfigApplied, version), "", version,
 		g.selfReport(map[string]any{"changes": changeStrings(changes)}))
 }
 
@@ -133,7 +137,7 @@ func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, n
 		merged := config.Stricter(st.Effective, desired)
 		if !config.Equal(merged, st.Effective) {
 			st.Effective = merged
-			g.emit(ctx, schema.KindConfigPartial, fmt.Sprintf("%s:%d", schema.KindConfigPartial, version), "", version,
+			g.emit(ctx, schema.KindConfigPartial, versionEventID(st, schema.KindConfigPartial, version), "", version,
 				map[string]any{"applied": changeStrings(only(changes, config.Tightening)), "awaiting_approval": changeStrings(only(changes, config.Loosening))})
 		}
 		st.EffectiveVersion = version
@@ -152,7 +156,7 @@ func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, n
 		}
 		p = &Pending{Version: version, ApprovalID: a.ID, FirstSeen: seen, Desired: desired, Note: note}
 		st.Pending = p
-		g.emit(ctx, schema.KindLooseningRaised, fmt.Sprintf("%s:%d", schema.KindLooseningRaised, version), "", version,
+		g.emit(ctx, schema.KindLooseningRaised, versionEventID(st, schema.KindLooseningRaised, version), "", version,
 			map[string]any{"approval_id": a.ID, "loosening": changeStrings(only(changes, config.Loosening)), "reason": note})
 	}
 	if p.Closed != "" {
@@ -168,7 +172,7 @@ func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, n
 		if g.now().Sub(p.FirstSeen) < g.S.LooseningDelay {
 			return nil // approved, waiting out the delay
 		}
-		g.emit(ctx, schema.KindLooseningOK, fmt.Sprintf("%s:%d", schema.KindLooseningOK, version), "", version,
+		g.emit(ctx, schema.KindLooseningOK, versionEventID(st, schema.KindLooseningOK, version), "", version,
 			map[string]any{"approval_id": p.ApprovalID})
 		g.applyFull(ctx, st, version, p.Desired, config.Diff(st.Effective, p.Desired))
 	case jennah.ApprovalRejected, jennah.ApprovalExpired, jennah.ApprovalCancelled:
@@ -178,7 +182,7 @@ func (g *Guard) handleLoosening(ctx context.Context, st *State, version int64, n
 			jennah.ApprovalExpired:   schema.KindLooseningExpired,
 			jennah.ApprovalCancelled: schema.KindLooseningVoid,
 		}[a.Status]
-		g.emit(ctx, kind, fmt.Sprintf("%s:%d", kind, version), "", version,
+		g.emit(ctx, kind, versionEventID(st, kind, version), "", version,
 			map[string]any{"approval_id": p.ApprovalID, "kept": "stricter config"})
 	}
 	return nil

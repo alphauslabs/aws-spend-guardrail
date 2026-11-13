@@ -107,12 +107,12 @@ func TestInboxKeepsEventsFor400Days(t *testing.T) {
 	}
 }
 
-func TestReaderReachesSharedPricesReadOnly(t *testing.T) {
+func TestReaderReachesPricesAndInboxReadOnly(t *testing.T) {
 	for _, c := range GuardCredentials("msp_a", "123456789012") {
 		if c.Name != "reader" {
 			continue
 		}
-		if len(c.DatasetIDs) != 2 || c.DatasetIDs[1] != PricesDatasetID {
+		if len(c.DatasetIDs) != 3 || c.DatasetIDs[1] != PricesDatasetID || c.DatasetIDs[2] != InboxDatasetID("msp_a", "123456789012") {
 			t.Fatalf("reader reach: %v", c.DatasetIDs)
 		}
 	}

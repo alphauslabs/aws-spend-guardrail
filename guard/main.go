@@ -106,6 +106,7 @@ func setup(ctx context.Context) *app {
 		g: &guard.Guard{
 			S:      s,
 			Config: reader,
+			Inbox:  reader,
 			Events: &outbox.Producer{SQS: sqs.NewFromConfig(cfg), QueueURL: env("OUTBOX_QUEUE_URL")},
 			Alerts: &awsx.Alerts{API: snsClient, TopicARN: env("ALERT_TOPIC_ARN"), Prefix: "[" + payer + "]"},
 			State:  &awsx.State{API: dynamodb.NewFromConfig(cfg), Table: env("STATE_TABLE")},

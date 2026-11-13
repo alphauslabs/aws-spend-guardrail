@@ -57,6 +57,7 @@ const (
 	KindUnprotected      = "unprotected_account" // an active account no scope covers or excludes
 	KindStaleScope       = "stale_scope"         // an account scope naming an account not in the org
 	KindHeartbeat        = "heartbeat"
+	KindGuardInstalled   = "guard_installed" // a guard's first run with no stored state (fix-reinstall-loosening)
 
 	KindRecipientSubscribed  = "alert_recipient_subscribed"  // the guard asked SNS to subscribe a config recipient
 	KindRecipientRemoved     = "alert_recipient_removed"     // the guard unsubscribed a recipient no longer in the config
@@ -178,8 +179,10 @@ type CredentialNeeds struct {
 func GuardCredentials(msp, payer string) []CredentialNeeds {
 	return []CredentialNeeds{
 		{
-			Name:        "reader",
-			DatasetIDs:  []string{ConfigDatasetID(msp, payer), PricesDatasetID},
+			Name: "reader",
+			// The inbox is read only: a reinstalled guard finds the version
+			// that was in force there (fix-reinstall-loosening).
+			DatasetIDs:  []string{ConfigDatasetID(msp, payer), PricesDatasetID, InboxDatasetID(msp, payer)},
 			Permissions: []string{"datastore.data:read", "datastore.schema:read", "approval.requests:create", "approval.requests:read", "approval.requests:cancel"},
 		},
 		{
