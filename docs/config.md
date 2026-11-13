@@ -36,7 +36,7 @@ The schema is [`config/schema.json`](../config/schema.json), also printed by `gu
 | `threshold_pct` | no | `100` | Percentage of the ceiling at which the freeze fires, 1 to 100. Budgets lags spend by hours, so 90 is a sensible value for `enforce`. |
 | `freeze_style` | no | `B` | `A` denies a list of actions that create cost. `B` denies everything except reads and actions that reduce cost (stop, terminate, delete) of about 35 common services, and support, billing and security tooling. A service not on its list is blocked entirely while frozen, reads included. |
 | `mode` | no | `dry-run` | `dry-run` records `would_freeze` and attaches nothing. `enforce` attaches the freeze policy. |
-| `month_end` | no | `stay_frozen` | What happens to a frozen scope when a new period starts: `auto_lift` lifts it, `stay_frozen` keeps it frozen until its ceiling is raised. |
+| `month_end` | no | `stay_frozen` | What happens to a frozen scope when a new period starts: `auto_lift` lifts it, `stay_frozen` keeps it frozen until its ceiling is raised. If AWS Budgets resets the executed freeze action when the period starts, which detaches the policy, the guard attaches it again within one pull and records `freeze_carried` with `reason: period_reset`. To end a `stay_frozen` freeze on purpose, approve a raise or switch to `auto_lift`: a policy detached by hand while the action still reads as executed is reported as drift, and not attached again. |
 
 A value set on the scope beats `defaults`, which beat the built-in defaults above.
 

@@ -129,6 +129,9 @@ func (g *Guard) Reconcile(ctx context.Context, eff *config.Resolved) error {
 	if err := g.carryFreezes(ctx, reset, want); err != nil {
 		errs = append(errs, err)
 	}
+	if err := g.carryPeriodResets(ctx, eff); err != nil {
+		errs = append(errs, err)
+	}
 	if err := g.watchSpend(ctx, eff, want, existing, runStart); err != nil {
 		errs = append(errs, err)
 	}

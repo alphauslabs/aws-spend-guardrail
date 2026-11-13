@@ -65,7 +65,7 @@ func (g *Guard) carryFreezes(ctx context.Context, now []BudgetSpec, want []Budge
 	}
 
 	var errs []error
-	carry := func(w BudgetSpec, wait bool) {
+	carry := func(w BudgetSpec, wait bool, what string) {
 		f, ok := byTarget[w.Target]
 		if !ok || !w.Enforce {
 			_ = g.State.ClearReported(ctx, reportedCarry, w.Name) // lifted, or no longer enforcing
@@ -93,13 +93,13 @@ func (g *Guard) carryFreezes(ctx context.Context, now []BudgetSpec, want []Budge
 			map[string]any{
 				"frozen_since": f.Since,
 				"budget":       w.Name,
-				"what":         "AWS reset the budget's executed freeze action when the guard updated the budget, which detached the freeze policy; the guard attached it again",
+				"what":         what,
 			})
 	}
 	seen := map[string]bool{}
 	for _, w := range now {
 		seen[w.Name] = true
-		carry(w, true)
+		carry(w, true, "AWS reset the budget's executed freeze action when the guard updated the budget, which detached the freeze policy; the guard attached it again")
 	}
 	for name := range pending {
 		if seen[name] {
@@ -110,7 +110,7 @@ func (g *Guard) carryFreezes(ctx context.Context, now []BudgetSpec, want []Budge
 			_ = g.State.ClearReported(ctx, reportedCarry, name) // budget gone
 			continue
 		}
-		carry(w, false)
+		carry(w, false, "AWS reset the budget's executed freeze action, which detached the freeze policy; the guard attached it again once the reset finished")
 	}
 	return errors.Join(errs...)
 }
@@ -137,4 +137,106 @@ func (g *Guard) resetDone(ctx context.Context, name string, wait bool) (bool, er
 		}
 	}
 	return false, nil
+}
+
+// actionResetting is AWS's reset still running.
+const actionResetting = "RESET_IN_PROGRESS"
+
+// attachedTargets lists every target a freeze policy is attached to now.
+func (g *Guard) attachedTargets(ctx context.Context) (map[config.Target]bool, error) {
+	attached := map[config.Target]bool{}
+	for _, p := range []string{g.S.PolicyA, g.S.PolicyB} {
+		ts, err := g.Org.PolicyTargets(ctx, p)
+		if err != nil {
+			return nil, fmt.Errorf("list targets of %s: %w", p, err)
+		}
+		for _, t := range ts {
+			attached[t] = true
+		}
+	}
+	return attached, nil
+}
+
+// inNewPeriod is a recorded freeze of a scope that keeps its freezes across
+// periods (not auto_lift) whose budget period has started since it froze.
+func inNewPeriod(f Frozen, sc config.ResolvedScope, now time.Time) bool {
+	return sc.MonthEnd != config.MonthEndAutoLift && PeriodStart(sc.Period, now).After(f.PeriodStart)
+}
+
+// carryPeriodResets keeps stay_frozen freezes in force across a new budget
+// period (fix-period-reset-unfreeze, design D1). If AWS resets an executed
+// action when a period starts, as it does when a budget is updated, the reset
+// detaches the freeze policy; the guard attaches it again. A reset still running
+// is marked for the carry's pending path. A policy detached while the action
+// still reads as executed was detached by a person, and is left to Drift.
+func (g *Guard) carryPeriodResets(ctx context.Context, eff *config.Resolved) error {
+	if eff == nil {
+		return nil
+	}
+	frozen, err := g.State.ListFrozen(ctx)
+	if err != nil || len(frozen) == 0 {
+		return err
+	}
+	scopes := map[config.Target]config.ResolvedScope{}
+	for _, s := range eff.Scopes {
+		scopes[s.Target] = s
+	}
+	now := g.now()
+	var due []Frozen
+	for _, f := range frozen {
+		if sc, ok := scopes[f.Target]; ok && sc.Mode == config.ModeEnforce && inNewPeriod(f, sc, now) {
+			due = append(due, f)
+		}
+	}
+	if len(due) == 0 {
+		return nil
+	}
+	attached, err := g.attachedTargets(ctx)
+	if err != nil {
+		return err
+	}
+	specs, err := g.Specs(ctx, eff)
+	if err != nil {
+		return err
+	}
+	byTarget := map[config.Target]BudgetSpec{}
+	for _, w := range specs {
+		byTarget[w.Target] = w
+	}
+	var version int64
+	if st, err := g.State.Load(ctx); err == nil {
+		version = st.AppliedVersion
+	}
+	var errs []error
+	for _, f := range due {
+		w, ok := byTarget[f.Target]
+		if attached[f.Target] || !ok || !w.Enforce {
+			continue
+		}
+		status, err := g.Budgets.ActionStatus(ctx, w.Name)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("period reset of %s: %w", f.Target, err))
+			continue
+		}
+		switch status {
+		case actionResetting:
+			_ = g.State.MarkReported(ctx, reportedCarry, w.Name, now)
+		case actionStandby:
+			if err := g.Budgets.Freeze(ctx, w); err != nil {
+				errs = append(errs, fmt.Errorf("period reset of %s: %w", f.Target, err))
+				_ = g.State.MarkReported(ctx, reportedCarry, w.Name, now)
+				continue
+			}
+			g.emit(ctx, schema.KindFreezeCarried,
+				fmt.Sprintf("%s:%s:%d:%d", schema.KindFreezeCarried, w.Target, f.Since.Unix(), now.Unix()), w.Target.String(), version,
+				map[string]any{
+					"frozen_since": f.Since,
+					"budget":       w.Name,
+					"reason":       "period_reset",
+					"period_start": PeriodStart(scopes[f.Target].Period, now).Format("2006-01-02"),
+					"what":         "AWS reset the budget's executed freeze action at the start of a new budget period, which detached the freeze policy; the scope keeps its freeze (stay_frozen), so the guard attached it again",
+				})
+		}
+	}
+	return errors.Join(errs...)
 }

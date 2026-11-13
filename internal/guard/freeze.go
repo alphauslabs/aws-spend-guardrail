@@ -143,6 +143,11 @@ func (g *Guard) Daily(ctx context.Context) error {
 			errs = append(errs, err)
 		}
 	}
+	// Before Drift, so the run on the first of a period carries a freeze AWS
+	// reset instead of reporting it as detached (fix-period-reset-unfreeze).
+	if err := g.carryPeriodResets(ctx, st.Effective); err != nil {
+		errs = append(errs, err)
+	}
 	if err := g.Drift(ctx); err != nil {
 		errs = append(errs, err)
 	}
@@ -217,20 +222,25 @@ func (g *Guard) periodLifts(ctx context.Context, eff *config.Resolved) error {
 
 // Drift compares recorded freezes with the freeze policies' actual
 // attachments. Differences are recorded and alerted; a freeze someone
-// detached is never re-attached.
+// detached is never re-attached. A freeze AWS detached by resetting its action
+// is not drift: the carry owns it (fix-period-reset-unfreeze, design D3).
 func (g *Guard) Drift(ctx context.Context) error {
 	frozen, err := g.State.ListFrozen(ctx)
 	if err != nil {
 		return err
 	}
-	attached := map[config.Target]bool{}
-	for _, p := range []string{g.S.PolicyA, g.S.PolicyB} {
-		ts, err := g.Org.PolicyTargets(ctx, p)
-		if err != nil {
-			return fmt.Errorf("list targets of %s: %w", p, err)
-		}
-		for _, t := range ts {
-			attached[t] = true
+	attached, err := g.attachedTargets(ctx)
+	if err != nil {
+		return err
+	}
+	pending, err := g.State.Reported(ctx, reportedCarry)
+	if err != nil {
+		return err
+	}
+	scopes := map[config.Target]config.ResolvedScope{}
+	if st, err := g.State.Load(ctx); err == nil && st.Effective != nil {
+		for _, s := range st.Effective.Scopes {
+			scopes[s.Target] = s
 		}
 	}
 	recorded := map[config.Target]bool{}
@@ -239,6 +249,15 @@ func (g *Guard) Drift(ctx context.Context) error {
 		recorded[f.Target] = true
 		if attached[f.Target] {
 			continue
+		}
+		name := BudgetName(f.Target)
+		if _, ok := pending[name]; ok {
+			continue // a carry is waiting for AWS's reset to finish
+		}
+		if sc, ok := scopes[f.Target]; ok && inNewPeriod(f, sc, g.now()) {
+			if st, err := g.Budgets.ActionStatus(ctx, name); err == nil && (st == actionStandby || st == actionResetting) {
+				continue // AWS reset it at the new period; the carry attaches it again
+			}
 		}
 		g.emit(ctx, schema.KindDrift, fmt.Sprintf("drift:%s:detached:%d", f.Target, f.Since.Unix()), f.Target.String(), 0,
 			map[string]any{"what": "freeze policy detached outside the guard", "frozen_since": f.Since})
