@@ -1,7 +1,7 @@
 # guard-config Specification
 
 ## Purpose
-TBD - created by archiving change add-enforcing-scope-limit. Update Purpose after archive.
+Defines the guard's configuration: a versioned document per payer org, kept in Jennah, that declares the scopes the guard protects and their limits, the accounts left out on purpose, the alert recipients, and the AI guard's settings. It covers how a document is validated, how the guard pulls and applies it (tightening at once, loosening only after a delay and a person's approval), why an invalid or unreachable config never weakens protection, and how operators read, check, and publish versions with the CLI.
 
 ## Requirements
 ### Requirement: A document can't enforce more scopes than AWS allows budget actions
