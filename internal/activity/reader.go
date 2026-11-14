@@ -46,6 +46,7 @@ type Reader struct {
 	Base     string
 	lastFile time.Time
 	bad      []string
+	pending  *readerState
 }
 
 // Bad lists the files the last ReadNew skipped because they couldn't be
@@ -67,7 +68,8 @@ type readerState struct {
 // LastFile is the time the newest file read in the last ReadNew landed.
 func (r *Reader) LastFile() time.Time { return r.lastFile }
 
-// ReadNew returns the records in trail files that landed since the last call.
+// ReadNew returns the records in trail files that landed since the last
+// committed position (see Commit).
 func (r *Reader) ReadNew(ctx context.Context, now time.Time) ([]Record, error) {
 	var st readerState
 	if _, err := r.Store.GetMeta(ctx, "reader", &st); err != nil {
@@ -104,10 +106,22 @@ func (r *Reader) ReadNew(ctx context.Context, now time.Time) ([]Record, error) {
 			errs = append(errs, err)
 		}
 	}
-	if err := r.Store.PutMeta(ctx, "reader", st); err != nil {
-		errs = append(errs, err)
-	}
+	r.pending = &st
 	return out, errors.Join(errs...)
+}
+
+// Commit saves the position reached by the last ReadNew. The engine calls it
+// only once the records' usage is stored, so a failed write leaves the files
+// to be read again on the next tick instead of losing their calls.
+func (r *Reader) Commit(ctx context.Context) error {
+	if r.pending == nil {
+		return nil
+	}
+	if err := r.Store.PutMeta(ctx, "reader", r.pending); err != nil {
+		return err
+	}
+	r.pending = nil
+	return nil
 }
 
 func (r *Reader) discover(ctx context.Context, st *readerState, now time.Time) error {

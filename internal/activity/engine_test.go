@@ -65,11 +65,14 @@ func (w *world) restart() {
 	}
 }
 
+func (w *world) runs() []activity.PackRun {
+	return []activity.PackRun{{Name: "ai", Pack: pricePack{}, PolicyID: "p-ai", Lifts: w.lifts,
+		CapsFor: func(a string) (activity.Caps, bool) { c, ok := w.caps[a]; return c, ok }}}
+}
+
 func (w *world) run() {
 	w.t.Helper()
-	runs := []activity.PackRun{{Name: "ai", Pack: pricePack{}, PolicyID: "p-ai", Lifts: w.lifts,
-		CapsFor: func(a string) (activity.Caps, bool) { c, ok := w.caps[a]; return c, ok }}}
-	if err := w.e.Tick(context.Background(), runs); err != nil {
+	if err := w.e.Tick(context.Background(), w.runs()); err != nil {
 		w.t.Fatalf("tick: %v", err)
 	}
 }
@@ -301,5 +304,39 @@ func TestSummaryCarriesAggregatesOnly(t *testing.T) {
 		if !want[k] {
 			t.Fatalf("summary carries %q; only aggregates may leave AWS", k)
 		}
+	}
+}
+
+func TestFailedUsageWriteRereadsAndAlertsOnce(t *testing.T) {
+	w := newWorld(t)
+	w.caps[acct1] = activity.Caps{Hourly: 1, Enforce: true}
+	w.call(acct1, "us-east-1", "m", w.now.Add(-time.Minute), 2000) // $2
+	w.store.FailUsage = true
+	for i := 0; i < 2; i++ {
+		if err := w.e.Tick(context.Background(), w.runs()); err == nil {
+			t.Fatal("a failed usage write must fail the tick")
+		}
+		w.restart()
+		w.now = w.now.Add(time.Minute)
+	}
+	if w.bucket.Gets != 2 {
+		t.Fatalf("the file must be read again while writes fail: %d gets", w.bucket.Gets)
+	}
+	if got := strings.Join(w.alerts, "|"); got != "guardrail: AI spend not counted" {
+		t.Fatalf("want one not-counted alert, got %q", got)
+	}
+	w.store.FailUsage = false
+	w.run()
+	tot, _ := w.store.Totals(context.Background(), "ai", acct1, w.now)
+	if tot.Hour != 2 || !w.policies.Attached["p-ai/"+acct1] {
+		t.Fatalf("once writes work the call must count and cut off: total %v, events %v", tot.Hour, w.events)
+	}
+	if !strings.Contains(strings.Join(w.alerts, "|"), "guardrail: AI spend counted again") {
+		t.Fatalf("no recovery alert: %v", w.alerts)
+	}
+	w.now = w.now.Add(time.Minute)
+	w.run()
+	if w.bucket.Gets != 3 {
+		t.Fatalf("once committed the file must not be read again: %d gets", w.bucket.Gets)
 	}
 }

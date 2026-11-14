@@ -27,6 +27,8 @@ type Store struct {
 	hours   map[string]*activity.Summary
 	cuts    map[string]activity.Cutoff
 	meta    map[string][]byte
+	// FailUsage makes AddUsage fail, as when the role can't write the table.
+	FailUsage bool
 }
 
 func NewStore() *Store {
@@ -37,6 +39,9 @@ func NewStore() *Store {
 func (s *Store) AddUsage(_ context.Context, pack string, u activity.Usage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.FailUsage {
+		return errors.New("add usage: AccessDeniedException: not authorized to perform: dynamodb:UpdateItem")
+	}
 	t := u.Time.UTC()
 	s.minutes[pack+"/"+u.Account+"/"+t.Format("200601021504")] += u.USD
 	s.days[pack+"/"+u.Account+"/"+t.Format("20060102")] += u.USD

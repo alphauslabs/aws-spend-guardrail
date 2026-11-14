@@ -157,6 +157,7 @@ func (e *Engine) Tick(ctx context.Context, runs []PackRun) error {
 		errs = append(errs, readErr)
 	}
 
+	var usageErr error
 	for _, run := range runs {
 		hits := map[string]Hit{}
 		active := map[string]bool{}
@@ -168,6 +169,7 @@ func (e *Engine) Tick(ctx context.Context, runs []PackRun) error {
 			if u != nil {
 				if err := e.Store.AddUsage(ctx, run.Name, *u); err != nil {
 					errs = append(errs, err)
+					usageErr = err
 				}
 				active[u.Account] = true
 			}
@@ -187,6 +189,15 @@ func (e *Engine) Tick(ctx context.Context, runs []PackRun) error {
 			errs = append(errs, err)
 		}
 	}
+	// Move the reader on only once every priced call is stored; otherwise the
+	// same files are read again next tick. After a partial failure some calls
+	// are counted twice, which can only cut off sooner, never later.
+	if usageErr == nil {
+		if err := e.Reader.Commit(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	e.trackCounting(ctx, now, usageErr)
 	return errors.Join(errs...)
 }
 
@@ -367,6 +378,31 @@ func (e *Engine) trackStall(ctx context.Context, now time.Time, readErr error) {
 		e.Alert(ctx, "guardrail: trail stalled", "The organization trail is not being read ("+cause+"). AI spend is not being watched until it resumes; caps and totals are kept.")
 	}
 	_ = e.Store.PutMeta(ctx, "stall", st)
+}
+
+type countingState struct {
+	Failing bool      `json:"failing"`
+	Since   time.Time `json:"since,omitempty"`
+}
+
+// trackCounting alerts once when the engine can't store priced calls, and
+// again when it can.
+func (e *Engine) trackCounting(ctx context.Context, now time.Time, usageErr error) {
+	var st countingState
+	if _, err := e.Store.GetMeta(ctx, "counting", &st); err != nil {
+		return
+	}
+	switch {
+	case usageErr != nil && !st.Failing:
+		st = countingState{Failing: true, Since: now}
+		e.Alert(ctx, "guardrail: AI spend not counted", alerttext.WithError("The guard reads the trail but can't store the spend of the calls in it, so caps are not being checked against new calls. It reads the same files again on every run until storing works, so no call is lost; a call may be counted twice, which can only cut off sooner.", usageErr))
+	case usageErr == nil && st.Failing:
+		e.Alert(ctx, "guardrail: AI spend counted again", fmt.Sprintf("The guard stores the spend of new calls again, after failing since %s. The calls from that time are counted now.", st.Since.Format(time.RFC3339)))
+		st = countingState{}
+	default:
+		return
+	}
+	_ = e.Store.PutMeta(ctx, "counting", st)
 }
 
 // isAccessError reports whether a read failed for lack of permission, as when

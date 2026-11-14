@@ -57,6 +57,13 @@ When no new trail file has arrived for 30 minutes, the guard SHALL alert locally
 - **WHEN** the trail is stopped or its bucket stops receiving files
 - **THEN** within 30 minutes an alert says the trail is stalled, since when, and that AI spend is not being watched
 
+### Requirement: A trail file counts once its spend is stored
+The guard SHALL treat a trail file as read only once the spend of every priced call in it is stored. When storing fails, the guard SHALL read the same files again on the next run, SHALL alert locally once that AI spend is not being counted, and SHALL alert again when storing works. A call MAY be counted twice after a partial failure, but SHALL never be dropped.
+
+#### Scenario: The state table refuses writes
+- **WHEN** the guard reads a file of priced calls and can't store their spend
+- **THEN** it alerts once that AI spend is not counted, keeps reading that file on every run, and once storing works counts the calls, checks caps against them, and alerts that spend is counted again
+
 ### Requirement: The fast path never waits on Jennah
 Reading the trail, keeping totals, and cutting off SHALL work while Jennah is unreachable, on the last valid config. Events SHALL reach the inbox when Jennah returns.
 

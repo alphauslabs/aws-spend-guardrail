@@ -42,13 +42,13 @@ func TestAINotStartedAlertReadsWell(t *testing.T) {
 	}
 }
 
-// TestGuardRoleGrantsOrganizationsCalls checks that every AWS Organizations
+// TestGuardRoleGrantsCalls checks that every AWS Organizations and DynamoDB
 // call the guard's code makes is granted to the guard role, in its own policy
 // or the AI guard's. The guard role is the only identity that runs this code,
 // so a missing grant shows up only in a live run otherwise. CLI-only code
 // (cmd/ and the preflight checks) runs with the installer's credentials and is
 // left out.
-func TestGuardRoleGrantsOrganizationsCalls(t *testing.T) {
+func TestGuardRoleGrantsCalls(t *testing.T) {
 	raw, err := os.ReadFile("template.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -61,7 +61,7 @@ func TestGuardRoleGrantsOrganizationsCalls(t *testing.T) {
 	}
 	grants := tpl[start:end]
 
-	call := regexp.MustCompile(`organizations\.([A-Z][A-Za-z]+)Input\b`)
+	call := regexp.MustCompile(`\b(organizations|dynamodb)\.([A-Z][A-Za-z]+)Input\b`)
 	cliOnly := map[string]bool{filepath.Join("..", "internal", "awsx", "preflight.go"): true}
 	calls := map[string]string{}
 	for _, root := range []string{".", filepath.Join("..", "internal")} {
@@ -74,7 +74,7 @@ func TestGuardRoleGrantsOrganizationsCalls(t *testing.T) {
 				return err
 			}
 			for _, m := range call.FindAllStringSubmatch(string(src), -1) {
-				calls[m[1]] = path
+				calls[m[1]+":"+m[2]] = path
 			}
 			return nil
 		})
@@ -82,12 +82,14 @@ func TestGuardRoleGrantsOrganizationsCalls(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if calls["DescribeOrganization"] == "" || calls["AttachPolicy"] == "" {
-		t.Fatalf("expected to find the guard's Organizations calls, found %v", calls)
+	for _, want := range []string{"organizations:DescribeOrganization", "organizations:AttachPolicy", "dynamodb:UpdateItem", "dynamodb:GetItem"} {
+		if calls[want] == "" {
+			t.Fatalf("expected to find the guard's call %s, found %v", want, calls)
+		}
 	}
-	for name, path := range calls {
-		if !strings.Contains(grants, "organizations:"+name) {
-			t.Errorf("%s calls organizations:%s, which the guard role isn't granted in template.yaml", path, name)
+	for action, path := range calls {
+		if !strings.Contains(grants, action) {
+			t.Errorf("%s calls %s, which the guard role isn't granted in template.yaml", path, action)
 		}
 	}
 }

@@ -12,6 +12,8 @@ It runs in the same stack as the budget guard, in the payer (management) account
 
 From a call to a cutoff is typically 2 to 6 minutes. Nothing on this path waits for Jennah: if Jennah is unreachable, the guard keeps going on the last config, and its events reach the inbox when Jennah returns.
 
+The guard moves past a trail file only once the spend of its calls is stored. If it can't store it (for example, its role lost write access to its state table), it alerts once (`guardrail: AI spend not counted`), reads the same files again on every run, and alerts again when storing works (`guardrail: AI spend counted again`). No call is lost; a call may be counted twice after a partial failure, which can only cut off sooner.
+
 ## What a cutoff blocks
 
 The cutoff is a service control policy, `guardrail-ai-cutoff-<msp id>`, attached to one account at a time, never an OU. It denies:
