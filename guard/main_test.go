@@ -3,6 +3,11 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/alphauslabs/aws-spend-guardrail/internal/alerttext"
@@ -34,5 +39,55 @@ func TestRoute(t *testing.T) {
 func TestAINotStartedAlertReadsWell(t *testing.T) {
 	if err := alerttext.Check(aiNotStarted(errors.New("find the region of trail bucket b: access denied"))); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestGuardRoleGrantsOrganizationsCalls checks that every AWS Organizations
+// call the guard's code makes is granted to the guard role, in its own policy
+// or the AI guard's. The guard role is the only identity that runs this code,
+// so a missing grant shows up only in a live run otherwise. CLI-only code
+// (cmd/ and the preflight checks) runs with the installer's credentials and is
+// left out.
+func TestGuardRoleGrantsOrganizationsCalls(t *testing.T) {
+	raw, err := os.ReadFile("template.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := string(raw)
+	start := strings.Index(tpl, "\n  GuardRole:\n")
+	end := strings.Index(tpl, "\n  TrailSchedule:\n")
+	if start < 0 || end < start {
+		t.Fatal("can't find the GuardRole and AIGuardPolicy resources in template.yaml")
+	}
+	grants := tpl[start:end]
+
+	call := regexp.MustCompile(`organizations\.([A-Z][A-Za-z]+)Input\b`)
+	cliOnly := map[string]bool{filepath.Join("..", "internal", "awsx", "preflight.go"): true}
+	calls := map[string]string{}
+	for _, root := range []string{".", filepath.Join("..", "internal")} {
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") || cliOnly[path] {
+				return err
+			}
+			src, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			for _, m := range call.FindAllStringSubmatch(string(src), -1) {
+				calls[m[1]] = path
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls["DescribeOrganization"] == "" || calls["AttachPolicy"] == "" {
+		t.Fatalf("expected to find the guard's Organizations calls, found %v", calls)
+	}
+	for name, path := range calls {
+		if !strings.Contains(grants, "organizations:"+name) {
+			t.Errorf("%s calls organizations:%s, which the guard role isn't granted in template.yaml", path, name)
+		}
 	}
 }

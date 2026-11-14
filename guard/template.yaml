@@ -761,6 +761,10 @@ Resources:
               - HasTrailPrefix
               - !Sub arn:${AWS::Partition}:s3:::${TrailBucket}/${TrailPrefix}/AWSLogs/*
               - !Sub arn:${AWS::Partition}:s3:::${TrailBucket}/AWSLogs/*
+          - Sid: ReadOrganizationId
+            Effect: Allow
+            Action: organizations:DescribeOrganization
+            Resource: "*"
           - Sid: AICutoff
             Effect: Allow
             Action: [organizations:AttachPolicy, organizations:DetachPolicy]

@@ -36,4 +36,5 @@
 ## 7. Build and verify
 
 - [x] 7.1 Run `goimports`, `make`, and `go test ./...`; verify all pass
+- [x] 7.1a Grant the guard role `organizations:DescribeOrganization` in the AI guard's policy (the live test found the AI guard couldn't start without it: preflight runs with the installer's credentials, so it didn't catch this); add a test that every Organizations call in the guard's code is granted to the guard role; verify the test fails without the grant
 - [ ] 7.2 In the test organization, with a temporary organization trail: enable the AI guard in dry-run with a $0.01 hourly cap on one member account, make Bedrock calls, and confirm the would-cut-off arrives within about 6 minutes with correct tokens and price; switch to enforce and confirm the account's Bedrock calls are refused and its other calls are not; publish a lift, approve it, and confirm Bedrock works again after the delay; trip the API-key and unknown-region tripwires; measure the listing cost per minute; then restore the stack and remove the temporary trail
