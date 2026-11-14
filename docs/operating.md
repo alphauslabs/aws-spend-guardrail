@@ -163,6 +163,8 @@ Local alerts (freezes, rejected configs, Jennah outages, and unprotected account
 - the stack's `AlertEmail`, set at install. Config can never remove it, so someone still hears about a freeze if Jennah is unreachable or the config is changed by mistake. A distribution list works well here.
 - the config's `alert_emails`. Every addition or removal needs the same approval as a loosening.
 
+Alerts name the accounts they mention, for example `Account 730335604511 (e2enormal) is cut off`, with names from the organization's account list (read at most once an hour, with the permission the guard already has). Account ids inside ARNs, cutoff ids, and the `Error:` line are left as they are. When names can't be read, the alert goes out at once with bare ids; when a name would make the subject longer than the 100 characters SNS allows, the subject keeps the bare id and the body still names it. Events in the inbox keep identifying accounts by id only.
+
 On each run, the guard compares the topic's email subscriptions with `alert_emails` in the config in force:
 
 - An address with no subscription is subscribed, and AWS sends it a confirmation email. The guard records `alert_recipient_subscribed` in the inbox.

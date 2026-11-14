@@ -108,8 +108,11 @@ func setup(ctx context.Context) *app {
 			Config: reader,
 			Inbox:  reader,
 			Events: &outbox.Producer{SQS: sqs.NewFromConfig(cfg), QueueURL: env("OUTBOX_QUEUE_URL")},
-			Alerts: &awsx.Alerts{API: snsClient, TopicARN: env("ALERT_TOPIC_ARN"), Prefix: "[" + payer + "]"},
-			State:  &awsx.State{API: dynamodb.NewFromConfig(cfg), Table: env("STATE_TABLE")},
+			Alerts: &awsx.Alerts{API: snsClient, TopicARN: env("ALERT_TOPIC_ARN"), Prefix: "[" + payer + "]",
+				// Account names in alerts (add-account-names-in-alerts), cached for
+				// the life of this function instance.
+				Names: (&awsx.AccountNames{List: (&awsx.Org{API: orgs}).ListAccounts}).Names},
+			State: &awsx.State{API: dynamodb.NewFromConfig(cfg), Table: env("STATE_TABLE")},
 			Budgets: &awsx.Budgets{
 				API:              budgets.NewFromConfig(cfg),
 				Org:              orgs,

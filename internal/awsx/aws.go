@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alphauslabs/aws-spend-guardrail/config"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/alerttext"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -316,18 +318,86 @@ type Alerts struct {
 	API      SNSAPI
 	TopicARN string
 	Prefix   string // added to every subject, e.g. the payer account
+	// Names, when set, gives the organization's account names, shown next to
+	// account ids in the subject and body (add-account-names-in-alerts). It
+	// returns nil when it has none, and the alert goes out with bare ids.
+	Names func(context.Context) map[string]string
 }
 
-// Alert publishes one message. SNS subjects are limited to 100 characters.
+// maxSubject is SNS's limit on a message subject.
+const maxSubject = 100
+
+// Alert publishes one message. Account ids are named first; when that would
+// push the subject past SNS's 100 characters, the subject keeps bare ids and
+// the body is still named. The prefix stays bare.
 func (a *Alerts) Alert(ctx context.Context, subject, msg string) error {
-	if a.Prefix != "" {
-		subject = a.Prefix + " " + subject
+	if a.Names != nil {
+		if names := a.Names(ctx); len(names) > 0 {
+			if named := alerttext.NameAccounts(subject, names); len(a.withPrefix(named)) <= maxSubject {
+				subject = named
+			}
+			msg = alerttext.NameAccounts(msg, names)
+		}
 	}
-	if len(subject) > 100 {
-		subject = subject[:100]
+	subject = a.withPrefix(subject)
+	if len(subject) > maxSubject {
+		subject = subject[:maxSubject]
 	}
 	_, err := a.API.Publish(ctx, &sns.PublishInput{TopicArn: aws.String(a.TopicARN), Subject: aws.String(subject), Message: aws.String(msg)})
 	return err
+}
+
+func (a *Alerts) withPrefix(subject string) string {
+	if a.Prefix == "" {
+		return subject
+	}
+	return a.Prefix + " " + subject
+}
+
+// AccountNames caches the organization's account names for alerts (design
+// D4): listed on first use and again once the list is an hour old, with a
+// 3-second limit so an alert never waits long. A failed listing keeps the last
+// good list; with none yet, Names returns nil and the next call tries again.
+type AccountNames struct {
+	List func(context.Context) ([]guard.Account, error)
+	Now  func() time.Time // for tests; time.Now when nil
+
+	mu     sync.Mutex
+	names  map[string]string
+	listed time.Time
+}
+
+// AccountNamesTTL is how long a listing is used before it is refreshed.
+const AccountNamesTTL = time.Hour
+
+// AccountNamesTimeout bounds one listing.
+const AccountNamesTimeout = 3 * time.Second
+
+// Names returns account id to name, or nil when no listing has worked yet.
+func (n *AccountNames) Names(ctx context.Context) map[string]string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	now := time.Now()
+	if n.Now != nil {
+		now = n.Now()
+	}
+	if n.names != nil && now.Sub(n.listed) < AccountNamesTTL {
+		return n.names
+	}
+	lctx, cancel := context.WithTimeout(ctx, AccountNamesTimeout)
+	defer cancel()
+	accts, err := n.List(lctx)
+	if err != nil {
+		return n.names // the last good list, or nil
+	}
+	names := make(map[string]string, len(accts))
+	for _, a := range accts {
+		if a.Name != "" {
+			names[a.ID] = a.Name
+		}
+	}
+	n.names, n.listed = names, now
+	return names
 }
 
 // BudgetNameFromNotification finds the budget name in a Budgets SNS message.
