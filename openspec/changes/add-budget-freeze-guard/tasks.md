@@ -2,7 +2,7 @@
 
 ## 1. Repo setup and AWS facts
 
-- [ ] 1.1 In a test AWS organization, confirm each fact the design relies on, and record results in `docs/aws-facts.md`:
+- [x] 1.1 In a test AWS organization, confirm each fact the design relies on, and record results in `docs/aws-facts.md` (all confirmed on e2e 2026-11-11 to 13, except what happens to an executed action at a new period, which the guard no longer depends on after fix-period-reset-unfreeze and is observed after 2026-12-01):
   - a Budgets action of type `APPLY_SCP_POLICY` can target a member account and an OU;
   - an action added to a budget that is already above its threshold runs (a dry-run scope over budget that moves to enforce must still freeze);
   - `ExecuteBudgetAction` with `REVERSE_BUDGET_ACTION` detaches the policy;
