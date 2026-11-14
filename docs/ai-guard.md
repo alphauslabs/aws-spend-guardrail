@@ -76,7 +76,9 @@ A call through an **application inference profile** names the profile, not the m
 
 ## Costs
 
-The AI guard reads the organization trail's S3 files, which costs next to nothing: the first copy of management events is free, and the guard makes one S3 list request per active account and region a minute, plus one read per new file. It doesn't create a trail. A second trail would bill every management event again, at $2 per 100,000.
+The AI guard reads the organization trail's S3 files: the first copy of management events is free, and the guard makes one S3 list request per active account and region a minute (one that had a file in the last 24 hours), one list per account every 10 minutes to find new regions, and one read per new file. It doesn't create a trail. A second trail would bill every management event again, at $2 per 100,000.
+
+The list requests are most of the cost, and they grow with the number of active account and region pairs, not with Bedrock use: about $0.22 a month for each pair at S3's list price ($0.005 per 1,000). Measured on a test organization of 10 accounts with 39 pairs: about 40 lists and one file read a minute, about $8.60 a month for S3, plus about $0.15 for the function. An organization of 1,000 accounts with 5 active regions each would list about $1,000 a month.
 
 ## Enabling it
 
@@ -120,7 +122,7 @@ You need an **organization trail** that records management events (both read and
 
 ## Limits
 
-- **Minutes, not seconds.** CloudTrail delivers in batches; a cutoff typically lands 2 to 6 minutes after spend starts. Leaked spend is bounded by the burn rate in that window. Bedrock's token quotas can't be lowered below AWS's defaults, so the bound depends on how fast the guard sees the calls.
+- **Minutes, not seconds.** CloudTrail delivers in batches; a cutoff typically lands 2 to 6 minutes after spend starts. A call in a region the account hasn't used in the last 24 hours is found at the guard's next 10-minute scan for new regions, so its cutoff can take up to about 16 minutes (13.5 minutes measured). Leaked spend is bounded by the burn rate in that window. Bedrock's token quotas can't be lowered below AWS's defaults, so the bound depends on how fast the guard sees the calls.
 - **Estimates, not the bill.** Prices are list prices; the bill and the budget guard remain the authority.
 - **Not covered:** Bedrock Agents, knowledge bases, flows, and async invokes (CloudTrail records them only as paid data events), and AgentCore runtime and session calls themselves, which aren't in the trail. Models AgentCore calls through Bedrock are counted, and the cutoff blocks AgentCore.
 - **An account with 10 SCPs attached directly can't take the cutoff.** The guard alerts when an attach fails.
