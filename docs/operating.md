@@ -98,16 +98,16 @@ guardrail publish --msp msp_a --payer 123456789012 --note "raise acme dev for th
 
 What happens next is in [config](config.md): tightening applies within about 5 minutes, loosening after approval and the stack's delay.
 
-A loosening reaches each approver as a Jennah approval. It names the kind of change, lists each change as a sentence, says what approving would do to any frozen scope it touches (with the scope's Cost Explorer spend), and gives the exact times. For example, raising a frozen account above its spend:
+A loosening reaches each approver as a Jennah approval. It names the kind of change, lists each change as a sentence, says what approving would do to any frozen scope it touches (with the scope's Cost Explorer spend), and gives the exact times. Accounts in the changes and freeze lines are named the way alerts name them (see [Alert recipients](#alert-recipients)); the payer id, the reason given, and the approval's JSON payload keep bare ids. For example, raising a frozen account named `client-a` above its spend:
 
 ```
 Raise a spend cap for payer 123456789012 (config version 2)
 
 Config version 2 for payer account 123456789012 (MSP msp_a) loosens protection. If approved, it makes this change:
 
-- Raise the ceiling of account 111122223333 from 5.30 USD to 7.00 USD.
+- Raise the ceiling of account 111122223333 (client-a) from 5.30 USD to 7.00 USD.
 
-Account 111122223333 is frozen, and its spend this month is 6.16 USD, so this change would lift the freeze.
+Account 111122223333 (client-a) is frozen, and its spend this month is 6.16 USD, so this change would lift the freeze.
 
 Reason given:
 Month-end batch, on trend for 6 months.
@@ -163,7 +163,7 @@ Local alerts (freezes, rejected configs, Jennah outages, and unprotected account
 - the stack's `AlertEmail`, set at install. Config can never remove it, so someone still hears about a freeze if Jennah is unreachable or the config is changed by mistake. A distribution list works well here.
 - the config's `alert_emails`. Every addition or removal needs the same approval as a loosening.
 
-Alerts name the accounts they mention, for example `Account 730335604511 (e2enormal) is cut off`, with names from the organization's account list (read at most once an hour, with the permission the guard already has). Account ids inside ARNs, cutoff ids, and the `Error:` line are left as they are. When names can't be read, the alert goes out at once with bare ids; when a name would make the subject longer than the 100 characters SNS allows, the subject keeps the bare id and the body still names it. Events in the inbox keep identifying accounts by id only.
+Alerts name the accounts they mention, for example `Account 730335604511 (e2enormal) is cut off`, with names from the organization's account list (read at most once an hour, with the permission the guard already has). Account ids inside ARNs, cutoff ids, and the `Error:` line are left as they are. When names can't be read, the alert goes out at once with bare ids; when a name would make the subject longer than the 100 characters SNS allows, the subject keeps the bare id and the body still names it. Loosening approvals name accounts the same way. Events in the inbox keep identifying accounts by id only.
 
 On each run, the guard compares the topic's email subscriptions with `alert_emails` in the config in force:
 

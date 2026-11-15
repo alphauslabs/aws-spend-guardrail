@@ -250,6 +250,10 @@ type Guard struct {
 	// Spend reads actual cost from Cost Explorer for lift decisions and the
 	// watch on changed budgets. Nil keeps every freeze and skips the watch.
 	Spend SpendSource
+	// Names returns the organization's account names by id, for naming
+	// accounts in loosening approvals (add-account-names-in-alerts D5). Nil,
+	// or an empty result, leaves ids bare.
+	Names func(ctx context.Context) map[string]string
 	Now   func() time.Time
 	// Sleep waits between reads while AWS resets a budget action. Nil uses
 	// time.Sleep; tests replace it.

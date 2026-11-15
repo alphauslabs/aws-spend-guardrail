@@ -3,6 +3,7 @@ package guard
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -125,5 +126,62 @@ func TestDurationWords(t *testing.T) {
 		if got := durationWords(d); got != want {
 			t.Errorf("%v: got %q, want %q", d, got, want)
 		}
+	}
+}
+
+func testNames(context.Context) map[string]string {
+	return map[string]string{"111122223333": "client-a", "123456789012": "payer-mgmt", "730335604511": "e2enormal"}
+}
+
+// Loosening approvals name the accounts they change; the payer id, the reason,
+// and the payload stay bare (add-account-names-in-alerts D5).
+func TestApprovalNamesTheFrozenAccount(t *testing.T) {
+	h := newHarness(t)
+	h.g.Names = testNames
+	h.spend.byAccount["111122223333"] = 6.16
+	a := raiseApproval(t, h, true, "7")
+	s := a.GetSummary()
+	for _, want := range []string{
+		"Config version 2 for payer account 123456789012 (MSP msp_a) loosens protection.",
+		"- Raise the ceiling of account 111122223333 (client-a) from 5.30 USD to 7.00 USD.",
+		"Account 111122223333 (client-a) is frozen, and its spend this month is 6.16 USD",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("summary lacks %q:\n%s", want, s)
+		}
+	}
+	if a.GetTitle() != "Raise a spend cap for payer 123456789012 (config version 2)" {
+		t.Errorf("title = %q", a.GetTitle())
+	}
+	if p := a.GetPayload().AsMap(); strings.Contains(fmt.Sprint(p), "client-a") {
+		t.Errorf("payload must keep bare ids: %v", p)
+	}
+}
+
+func TestApprovalNamesAnAIScopeRemovalButNotTheReason(t *testing.T) {
+	h := newHarness(t)
+	h.g.Names = testNames
+	acct := config.Target{Kind: "account", ID: "730335604511"}
+	changes := []config.Change{{Target: acct, Field: config.FieldAIScope, From: "present", Direction: config.Loosening}}
+	note := "test done for 730335604511"
+	req, err := h.g.approvalRequest(context.Background(), 24, note, changes, &config.Resolved{}, &config.Resolved{}, h.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(req.Summary, "- Stop the AI guard on account 730335604511 (e2enormal).") {
+		t.Errorf("summary:\n%s", req.Summary)
+	}
+	if !strings.Contains(req.Summary, "Reason given:\n"+note+"\n") {
+		t.Errorf("the reason must stay verbatim:\n%s", req.Summary)
+	}
+	if strings.Contains(req.Title, "(e2enormal)") || strings.Contains(fmt.Sprint(req.Payload), "e2enormal") {
+		t.Errorf("title %q, payload %v", req.Title, req.Payload)
+	}
+
+	// No names (the listing failed): the request is raised with bare ids.
+	h.g.Names = func(context.Context) map[string]string { return nil }
+	req, _ = h.g.approvalRequest(context.Background(), 24, note, changes, &config.Resolved{}, &config.Resolved{}, h.now)
+	if !strings.Contains(req.Summary, "- Stop the AI guard on account 730335604511.") {
+		t.Errorf("summary:\n%s", req.Summary)
 	}
 }

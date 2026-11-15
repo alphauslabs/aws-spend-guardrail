@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/alphauslabs/aws-spend-guardrail/config"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/alerttext"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 	"github.com/alphauslabs/aws-spend-guardrail/schema"
 )
@@ -235,11 +236,17 @@ func (g *Guard) approvalRequest(ctx context.Context, version int64, note string,
 	}
 	fmt.Fprintf(&b, "Config version %d for payer account %s (MSP %s) %s. If approved, it makes %s:\n\n",
 		version, g.S.PayerAccountID, g.S.MSPID, what, intro)
+	// Accounts in the changes and freeze lines are named (design D5 of
+	// add-account-names-in-alerts); the payer id, reason, and payload stay bare.
+	var names map[string]string
+	if g.Names != nil {
+		names = g.Names(ctx)
+	}
 	for _, c := range loosening {
-		fmt.Fprintf(&b, "- %s\n", c.Sentence())
+		fmt.Fprintf(&b, "- %s\n", alerttext.NameAccounts(c.Sentence(), names))
 	}
 	if lines := g.freezeLines(ctx, loosening, effective, desired); len(lines) > 0 {
-		b.WriteString("\n" + strings.Join(lines, "\n") + "\n")
+		b.WriteString("\n" + alerttext.NameAccounts(strings.Join(lines, "\n"), names) + "\n")
 	}
 	fmt.Fprintf(&b, "\nReason given:\n%s\n", reasonText(version, note))
 	if g.S.LooseningDelay > 0 {

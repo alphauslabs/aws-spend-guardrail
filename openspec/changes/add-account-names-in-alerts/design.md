@@ -23,6 +23,8 @@ See proposal.md for why. Today every local alert goes through `awsx.Alerts.Alert
 
 **D4. Names are cached per instance, never block.** The source lists accounts with a 3-second timeout on first use and when the cached list is older than an hour, and keeps the last good list when a refresh fails. With no list yet (first call failed), the alert is sent with bare ids at once; the next alert tries again. Names are labels only: the guard never acts on a name.
 
+**D5. Loosening approvals name accounts too.** The approver deciding whether to loosen protection on an account needs its name most. The guard gets the same name source (`Guard.Names`, shared with `Alerts` in `guard/main.go`) and `approvalRequest` applies `NameAccounts` to each change sentence and each freeze line. The title and the intro sentence carry only the payer id, which stays bare like the alert prefix. The reason given is the operator's own text and stays verbatim. The payload keeps bare ids, like inbox events, so code reading it gets stable keys. The request is built once per version, when the guard first sees it, and stored as pending, so a rename while it waits doesn't resend it. A reinstalled guard that rebuilds it with other text is already handled: Jennah refuses a different request under the same key and the guard adopts the earlier approval (fix-reinstall-loosening D6). The live check found this gap: the v24 approval email read "Stop the AI guard on account 730335604511."
+
 ## Risks / Trade-offs
 
 - Account names are chosen by the organization and can be renamed; an alert shows the name as of the last listing (up to an hour old). Acceptable for a label.

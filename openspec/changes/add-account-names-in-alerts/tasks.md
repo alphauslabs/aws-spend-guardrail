@@ -15,6 +15,11 @@
 - [x] 3.1 Note in `docs/operating.md` (alerts) that alerts name accounts and that events don't; add a CHANGELOG entry; follow the docs' style (no em-dashes, Oxford comma)
 - [x] 3.2 Run `goimports`, `make`, `go vet ./...`, and `go test ./...`; verify all pass
 
-## 4. Live check
+## 4. Loosening approvals
 
-- [ ] 4.1 On e2e, deploy this build, trigger an AI would-cutoff on 730335604511, and confirm the email's subject and body read `730335604511 (e2enormal)` and its cutoff id is unchanged
+- [x] 4.1 Add an optional `Names` source to `Guard`, wire it in `guard/main.go` to the same cached source the alerts use, and apply `NameAccounts` to the change sentences and freeze lines in `approvalRequest` (design D5); tests: an AI scope removal and a frozen account's cap raise name the account, the payer id, reason, and payload stay bare, and a nil source leaves the text as before
+- [x] 4.2 Note in `docs/operating.md` that approval requests name accounts, extend the CHANGELOG entry, and run `goimports`, `make`, `go vet ./...`, and `go test ./...`
+
+## 5. Live check
+
+- [ ] 5.1 On e2e, deploy this build, trigger an AI would-cutoff on 730335604511, and confirm the email's subject and body read `730335604511 (e2enormal)` and its cutoff id is unchanged; and confirm the next loosening approval email names the account it changes
