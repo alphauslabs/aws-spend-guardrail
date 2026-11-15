@@ -27,4 +27,4 @@
 ## 6. Build and verify
 
 - [x] 6.1 Run `goimports`, `make`, and `go test ./...`; verify all pass
-- [ ] 6.2 In the test enterprise: run `setup` (prices created), publish a version with one raised price, and with the e2e guard, confirm it fetches the chunk once, records `prices_applied`, and prices with the raised value; then publish a lower price and confirm it's ignored
+- [x] 6.2 In the test enterprise: run `setup` (prices created), publish a version with one raised price, and with the e2e guard, confirm it fetches the chunk once, records `prices_applied`, and prices with the raised value; then publish a lower price and confirm it's ignored
