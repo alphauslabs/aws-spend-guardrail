@@ -60,8 +60,19 @@ type PriceChunk struct {
 	Models       int
 }
 
-// HashChunk is the manifest hash of a chunk's document.
+// HashChunk is the manifest hash of a chunk's document: SHA-256 of its
+// canonical JSON (compact, keys sorted, numbers re-encoded). Jennah stores a
+// JSON column normalized, with its own key order and number formatting, so the
+// bytes read back differ from the bytes published; the canonical form is the
+// same on both sides. A document that isn't JSON is hashed as is, so it never
+// matches a published hash.
 func HashChunk(doc []byte) string {
+	var v any
+	if err := json.Unmarshal(doc, &v); err == nil {
+		if canon, err := json.Marshal(v); err == nil {
+			doc = canon
+		}
+	}
 	sum := sha256.Sum256(doc)
 	return hex.EncodeToString(sum[:])
 }

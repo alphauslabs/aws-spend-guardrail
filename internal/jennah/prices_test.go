@@ -51,6 +51,14 @@ func TestPublishAndReadPrices(t *testing.T) {
 	if !ok || err != nil || string(doc) != ai || jennah.HashChunk(doc) != ref.SHA256 {
 		t.Fatalf("chunk: %s %v (hash ok: %v)", doc, err, jennah.HashChunk(doc) == ref.SHA256)
 	}
+	// Jennah returns a JSON column normalized: the hash must not depend on key
+	// order, whitespace, or number formatting.
+	if stored := `{ "models": { "m1": { "output_per_1k": 2e0, "input_per_1k": 1.0 } } }`; jennah.HashChunk([]byte(stored)) != ref.SHA256 {
+		t.Fatal("the hash must survive Jennah's normalization")
+	}
+	if jennah.HashChunk([]byte(`{"models":{"m1":{"input_per_1k":1,"output_per_1k":3}}}`)) == ref.SHA256 {
+		t.Fatal("different content must hash differently")
+	}
 	if doc, _ := c.PriceChunkDoc(ctx, 1, "ai", "eu-west-1"); doc != nil {
 		t.Fatal("a missing chunk must read as nil")
 	}

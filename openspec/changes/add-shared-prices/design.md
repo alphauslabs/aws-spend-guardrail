@@ -24,7 +24,7 @@
 ### D1. Manifest plus chunks, fetched by key
 `guardrail.prices` has two tables:
 
-- `price_versions`: `version` (INT64, primary key), `published_at`, `note`, `layout_version`, and `manifest` (JSON): a list of `{pack, region, sha256, models}`.
+- `price_versions`: `version` (INT64, primary key), `published_at`, `note`, `layout_version`, and `manifest` (JSON): a list of `{pack, region, sha256, models}`. `sha256` is the hash of the chunk's canonical JSON (compact, keys sorted, numbers re-encoded), not of the bytes sent: Jennah stores a JSON column normalized and returns it with its own key order and number formatting, which the 6.2 live check found.
 - `price_chunks`: `version`, `pack`, `region` (composite primary key), and `document` (JSON): the chunk's prices in the same per-model format as today's table, with `source`, `published`, and `basis`.
 
 The guard reads the latest manifest (one row, ordered by version, limit 1) and fetches each needed chunk by its full primary key, so no read depends on a capped result count. A chunk is capped at 1 MiB at publish time, well under the 4 MiB request limit. Because all of a version's chunks together can exceed that limit (compute prices for every region), publishing writes the chunks first, in commits that each stay under 3 MiB, and the manifest row last. A version exists for readers only once its manifest does, so a reader never sees a partly written version; chunks left by a publish that failed before its manifest are never referenced. A version is immutable, like a config version.

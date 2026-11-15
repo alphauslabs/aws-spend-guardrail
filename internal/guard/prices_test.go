@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -28,18 +31,56 @@ func (f *fakePrices) PriceChunkDoc(_ context.Context, v int64, pack, region stri
 	return f.docs[v], nil
 }
 
-// publish makes version v with these AI prices; corrupt stores a document
-// that doesn't match the manifest hash.
+// asStored re-encodes JSON the way Jennah returns a JSON column: keys in
+// another order, other whitespace, and numbers in exponent form.
+func asStored(t *testing.T, doc []byte) []byte {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal(doc, &v); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	var write func(v any)
+	write = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			keys := make([]string, 0, len(x))
+			for k := range x {
+				keys = append(keys, k)
+			}
+			sort.Sort(sort.Reverse(sort.StringSlice(keys)))
+			b.WriteString("{ ")
+			for i, k := range keys {
+				if i > 0 {
+					b.WriteString(", ")
+				}
+				fmt.Fprintf(&b, "%q: ", k)
+				write(x[k])
+			}
+			b.WriteString(" }")
+		case float64:
+			b.WriteString(strconv.FormatFloat(x, 'e', -1, 64))
+		default:
+			raw, _ := json.Marshal(x)
+			b.Write(raw)
+		}
+	}
+	write(v)
+	return []byte(b.String())
+}
+
+// publish makes version v with these AI prices, stored as Jennah stores them;
+// corrupt stores a document that doesn't match the manifest hash.
 func (f *fakePrices) publish(t *testing.T, v int64, models map[string]config.ModelPrice, corrupt bool) {
 	t.Helper()
-	doc, err := json.Marshal(map[string]any{"models": models})
+	doc, err := json.Marshal(map[string]any{"source": "test", "models": models})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if f.docs == nil {
 		f.docs = map[int64][]byte{}
 	}
-	f.docs[v] = doc
+	f.docs[v] = asStored(t, doc)
 	if corrupt {
 		f.docs[v] = append([]byte(nil), doc[:len(doc)-1]...)
 	}
