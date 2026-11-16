@@ -137,7 +137,9 @@ Conditions:
   AIGuard: !Equals [!Ref EnableAIGuard, "true"]
   AIGuardKms: !And [!Condition AIGuard, !Not [!Equals [!Ref TrailKmsKeyArn, ""]]]
   HasTrailPrefix: !Not [!Equals [!Ref TrailPrefix, ""]]
-  PricePublishing: !Equals [!Ref PublishSharedPrices, "true"]
+  # The secret is required when publishing is on (PricePublishingNeedsKey);
+  # naming it here too lets cfn-lint see it is never empty where it's used.
+  PricePublishing: !And [!Equals [!Ref PublishSharedPrices, "true"], !Not [!Equals [!Ref PricePublisherSecretArn, ""]]]
 
 Resources:
   # The AI pack's cutoff, created unattached. The guard attaches it to an
