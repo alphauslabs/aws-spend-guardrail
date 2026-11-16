@@ -3,7 +3,7 @@
 ## 0. Order
 
 - [x] 0.1 Apply add-manual-price-overrides first (and archive add-shared-prices before it), since scheduled publishing must carry manual prices forward
-- [ ] 0.2 Archive add-manual-price-overrides before archiving this change, since this change modifies its "Manual prices carry forward until dropped" requirement
+- [x] 0.2 Archive add-manual-price-overrides before archiving this change, since this change modifies its "Manual prices carry forward until dropped" requirement
 
 ## 1. Shared publish logic
 
