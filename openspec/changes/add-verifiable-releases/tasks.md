@@ -28,7 +28,7 @@
 
 ## 6. Integration
 
-- [ ] 6.1 Cut `v0.1.0` once `add-budget-freeze-guard` group 1 is applied, deploy it in the test organization from a self-built package, and confirm the signature verifies, the self-built hashes match the release, the Lambda `CodeSha256` matches the release notes, and the heartbeat in Jennah shows the same hash and version
+- [x] 6.1 Cut `v0.1.0` once `add-budget-freeze-guard` group 1 is applied, deploy it in the test organization from a self-built package, and confirm the signature verifies, the self-built hashes match the release, the Lambda `CodeSha256` matches the release notes, and the heartbeat in Jennah shows the same hash and version
 
 ## Workflow follow-up
 
