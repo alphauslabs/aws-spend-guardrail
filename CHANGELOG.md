@@ -4,6 +4,8 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+## [v0.2.0] - 2026-11-16
+
 ### Upgrade
 1. Update the stack with this release's template and package (template revision 2), as in [upgrading](docs/upgrade.md). A guard of this release on the v0.1.0 template keeps running but alerts that its template is older than it needs.
 2. Optional, in one payer org per enterprise, to publish shared AI prices daily: update the `guardrail` CLI, run `guardrail setup` for that payer org, mint the price publisher key it prints and store it in Secrets Manager, then set `PublishSharedPrices=true` and `PricePublisherSecretArn` on that stack (see [publishing on a schedule](docs/operating.md#publishing-on-a-schedule)).

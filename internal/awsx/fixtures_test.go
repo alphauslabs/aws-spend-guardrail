@@ -68,6 +68,8 @@ func writeFixtureState(t *testing.T, db *fakeDDB) {
 	must(st.MarkFrozen(ctx, guard.Frozen{Target: config.Target{Kind: "account", ID: "111122223333"}, Since: at, PeriodStart: at, PolicyID: "p-b", ThresholdUSD: 90, How: "budget action"}))
 	must(st.MarkReported(ctx, schema.KindUnprotected, "777788889999", at))
 	must(st.SetHeartbeatDigest(ctx, "digest"))
+	// Since v0.2.0: the scheduled price publish's alert state.
+	must(st.SetMeta(ctx, "prices.publish", map[string]any{"unpriced": []string{"xai.grok-5"}}))
 	act := &ActivityStore{API: db, Table: "t"}
 	must(act.PutCutoff(ctx, activity.Cutoff{ID: fixtureCutoff, Pack: "ai", Account: "444455556666", At: at, Rule: "hourly_cap", CapUSD: 1, Detail: "estimated hour 1.20 USD, cap 1.00 USD", Attached: true}))
 	must(act.AddUsage(ctx, "ai", activity.Usage{Account: "444455556666", Time: at, Model: "amazon.nova-micro-v1:0", Calls: 1, In: 10, Out: 20, USD: 1.2}))
