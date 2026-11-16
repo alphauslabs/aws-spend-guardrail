@@ -13,7 +13,7 @@ Each one trips as an unknown model in every guard until someone prices it by han
 ## What Changes
 
 - The builder reads an entry's direction (input or output) from its `inferenceType` when that names input or output tokens in any wording, and from its usage type when `inferenceType` is missing.
-- Model keys from a usage type drop a `-mantle` suffix and the speech and text modality words; a model attribute that is a model id is keyed like an id.
+- Model keys from a usage type drop a `-mantle` suffix, and a speech or text segment right before the token direction; a model attribute that is a model id is keyed like an id.
 - When no key matches exactly, the builder tries a word-order-insensitive key, and uses it only when exactly one Price List model has it.
 - A model with several rates for one side (such as speech and text tokens) is priced at the highest regional rate, as for any model today.
 - The fix only adds matches and rates; it never lowers a price the builder produced before. Models the Price List doesn't list (Kimi K3.1, GLM 5.3) or doesn't price per token (Rerank 3.5, Pegasus 1.2 and 1.5) stay unpriced.
