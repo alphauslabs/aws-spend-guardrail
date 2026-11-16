@@ -11,9 +11,17 @@
       "input_per_1k": 0.0002,
       "output_per_1k": 0.0004
     },
+    "amazon.nova-2-5-sonic": {
+      "input_per_1k": 0.003,
+      "output_per_1k": 0.012
+    },
     "amazon.nova-2-lite-v1:0": {
       "input_per_1k": 0.00033,
       "output_per_1k": 0.00275
+    },
+    "amazon.nova-2-sonic-v1:0": {
+      "input_per_1k": 0.003,
+      "output_per_1k": 0.012
     },
     "amazon.nova-lite-v1:0": {
       "input_per_1k": 0.00006,
@@ -199,6 +207,10 @@
       "input_per_1k": 0.00004,
       "output_per_1k": 0.00004
     },
+    "mistral.voxtral-small-24b-2507": {
+      "input_per_1k": 0.0001,
+      "output_per_1k": 0.0003
+    },
     "moonshot.kimi-k2-thinking": {
       "input_per_1k": 0.0006,
       "output_per_1k": 0.0025
@@ -314,6 +326,10 @@
     "writer.palmyra-x5-v1:0": {
       "input_per_1k": 0.0006,
       "output_per_1k": 0.006
+    },
+    "xai.grok-4.6": {
+      "input_per_1k": 0.0022,
+      "output_per_1k": 0.0066
     },
     "xai.grok-4.7": {
       "input_per_1k": 0.0022,

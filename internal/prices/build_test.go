@@ -3,8 +3,10 @@ package prices
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/alphauslabs/aws-spend-guardrail/config"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/packs/ai"
 )
 
@@ -57,10 +59,118 @@ func TestBuildMatchesTheShippedTable(t *testing.T) {
 	if _, ok := tab.Models["amazon.nova-micro-v1:0:128k"]; ok {
 		t.Error("a context-length variant must not get its own entry")
 	}
-	if len(miss) != 1 || miss[0].ID != "xai.grok-4.7" {
-		t.Errorf("unmatched: %+v", miss)
+	// Not per token (Rerank, Pegasus), or not in the sample (Grok 4.7).
+	var missed []string
+	for _, m := range miss {
+		missed = append(missed, m.ID)
+	}
+	if strings.Join(missed, ",") != "cohere.rerank-v3-5:0,twelvelabs.pegasus-1-2-v1:0,xai.grok-4.7" {
+		t.Errorf("unmatched: %v", missed)
 	}
 	if tab.Published == "" || tab.Source != Source || tab.Basis != Basis {
 		t.Errorf("metadata: %q %q", tab.Published, tab.Source)
+	}
+}
+
+// Models AWS prices but labels in ways the builder used to miss
+// (fix-price-builder-matches).
+func TestBuildMatchesHowAWSLabelsModels(t *testing.T) {
+	items, models := sample(t)
+	tab, _, err := Build(items, models)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]config.ModelPrice{
+		// Listed by id, with no inferenceType: the regional rate, not the global one (D1, D2).
+		"xai.grok-4.6": {InputPer1K: 0.0022, OutputPer1K: 0.0066},
+		// Standard rows mislabeled "Voxtral-Mini-24B"; the -mantle rows carry the id (D2).
+		"mistral.voxtral-small-24b-2507": {InputPer1K: 0.0001, OutputPer1K: 0.0003},
+		// Speech and text token rates: the higher per side (D1, D4).
+		"amazon.nova-2-5-sonic": {InputPer1K: 0.003, OutputPer1K: 0.012},
+		// "Nova Sonic 2.0" in the Price List, "Nova 2 Sonic" in Bedrock (D3).
+		"amazon.nova-2-sonic-v1:0": {InputPer1K: 0.003, OutputPer1K: 0.012},
+	} {
+		if got := tab.Models[id]; got != want {
+			t.Errorf("%s: %+v, want %+v", id, got, want)
+		}
+	}
+	shipped, _ := ai.Prices()
+	if got, want := tab.Models["mistral.voxtral-mini-3b-2507"], shipped.Models["mistral.voxtral-mini-3b-2507"]; got != want {
+		t.Errorf("Voxtral Mini changed: %+v, shipped %+v", got, want)
+	}
+}
+
+// A builder change never lowers a price: every model the shipped table
+// prices that the sample also prices is the same or higher (D5).
+func TestBuildNeverLowersAShippedPrice(t *testing.T) {
+	items, models := sample(t)
+	tab, _, err := Build(items, models)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shipped, _ := ai.Prices()
+	n := 0
+	for id, got := range tab.Models {
+		was, ok := shipped.Models[id]
+		if !ok {
+			continue
+		}
+		n++
+		if got.InputPer1K < was.InputPer1K || got.OutputPer1K < was.OutputPer1K {
+			t.Errorf("%s lowered: %+v, shipped %+v", id, got, was)
+		}
+	}
+	if n < 10 {
+		t.Fatalf("only %d shipped models in the sample", n)
+	}
+}
+
+func TestDirection(t *testing.T) {
+	for _, tc := range []struct {
+		it, usage string
+		input, ok bool
+	}{
+		{"Input tokens", "USE1-x-input-tokens", true, true},
+		{"Text Input Token", "", true, true},
+		{"Speech Understanding output token", "", false, true},
+		{"", "USE1-xai.grok-4.6-mantle-input-tokens-standard", true, true},
+		{"", "USE1-xai.grok-4.6-mantle-output-tokens-global-standard", false, true},
+		{"Input Video Token Count", "USE1-MP:USE1_inputVideoSecond-Units", false, false},
+		{"", "USE1-MP:USE1_search_units-Units", false, false},
+	} {
+		if in, ok := direction(tc.it, tc.usage); in != tc.input || ok != tc.ok {
+			t.Errorf("direction(%q, %q) = %v %v", tc.it, tc.usage, in, ok)
+		}
+	}
+}
+
+// The word-order fallback matches only when exactly one Price List model has
+// the key, so it can't cross-wire two models (D3).
+func TestBagKeyFallbackOnlyWhenUnique(t *testing.T) {
+	row := func(model, usage, kind string, usd string) string {
+		return `{"product":{"attributes":{"model":"` + model + `","usagetype":"` + usage + `","inferenceType":"` + kind +
+			`"}},"terms":{"OnDemand":{"t":{"priceDimensions":{"d":{"unit":"1K tokens","pricePerUnit":{"USD":"` + usd + `"}}}}}}}`
+	}
+	items := []string{
+		row("Acme Turbo 3", "USE1-AcmeTurbo3-input-tokens", "Input tokens", "0.001"),
+		row("Acme Turbo 3", "USE1-AcmeTurbo3-output-tokens", "Output tokens", "0.002"),
+		row("Turbo Acme 3", "USE1-TurboAcme3-input-tokens", "Input tokens", "0.005"),
+		row("Turbo Acme 3", "USE1-TurboAcme3-output-tokens", "Output tokens", "0.006"),
+		row("Zeta Max 2.0", "USE1-ZetaMax2-input-tokens", "Input tokens", "0.003"),
+		row("Zeta Max 2.0", "USE1-ZetaMax2-output-tokens", "Output tokens", "0.004"),
+	}
+	models := []Model{
+		{ID: "acme.3-turbo-v1:0", Name: "3 Turbo Acme", Outputs: []string{"TEXT"}}, // two Price List models share its bag key
+		{ID: "zeta.max-v2:0", Name: "Max Zeta 2", Outputs: []string{"TEXT"}},       // one does
+	}
+	tab, miss, err := Build(items, models)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tab.Models["zeta.max-v2:0"]; got != (config.ModelPrice{InputPer1K: 0.003, OutputPer1K: 0.004}) {
+		t.Errorf("unique bag key: %+v", got)
+	}
+	if _, ok := tab.Models["acme.3-turbo-v1:0"]; ok || len(miss) != 1 || miss[0].ID != "acme.3-turbo-v1:0" {
+		t.Errorf("an ambiguous bag key must match nothing: %+v %+v", tab.Models, miss)
 	}
 }
