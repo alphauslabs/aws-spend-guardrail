@@ -2,7 +2,7 @@
 
 ## 0. Order
 
-- [ ] 0.1 Archive add-shared-prices first (all its tasks are done), so the `shared-prices` capability exists in the main specs before this change's delta is applied
+- [x] 0.1 Archive add-shared-prices first (all its tasks are done), so the `shared-prices` capability exists in the main specs before this change's delta is applied
 
 ## 1. File and merge
 
