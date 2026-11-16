@@ -30,4 +30,4 @@
 
 ## 6. Live check
 
-- [ ] 6.1 On e2e: update only the function package to this build with the old template and confirm one template alert and the heartbeat fields; update the stack with the new template and confirm they clear; set `GuardVersion` wrong and confirm one alert; run `guardrail versions --msp e2e` and check the console shows the version
+- [x] 6.1 On e2e: update only the function package to this build with the old template and confirm one template alert and the heartbeat fields; update the stack with the new template and confirm they clear; set `GuardVersion` wrong and confirm one alert; run `guardrail versions --msp e2e` and check the console shows the version
