@@ -4,6 +4,8 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+## [v0.1.0] - 2026-11-16
+
 ### Upgrade
 The first release for deployment: install it as in [install](docs/install.md). A test install of v0.0.1 (not for deployment) upgrades with:
 1. Update the `guardrail` CLI to this release.
