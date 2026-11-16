@@ -31,3 +31,27 @@ When a build reports a model with no price that the latest version doesn't price
 #### Scenario: A model AWS hasn't priced
 - **WHEN** Bedrock lists `xai.grok-5` and the Price List has no price for it
 - **THEN** one alert names `xai.grok-5` and says to add a manual price, and later runs don't repeat it while it stays unpriced
+
+### Requirement: Scheduled publishing reports manual prices above the Price List
+When a scheduled publish finds a manual price that the Price List undercuts on input or output, the guard SHALL send one alert naming the model, its manual and Price List prices, and how to drop the manual price, and SHALL NOT repeat it while those prices stay the same.
+
+#### Scenario: AWS prices a model below the operator's guess
+- **WHEN** `xai.grok-4.6` has a manual price of $0.003 in and $0.015 out, and the Price List starts pricing it at $0.002 in and $0.010 out
+- **THEN** the scheduled publish keeps the manual price, sends one alert naming both prices and the `--drop-override` command, and later runs don't repeat it
+
+## MODIFIED Requirements
+
+### Requirement: Manual prices carry forward until dropped
+A published version SHALL record which of its prices are manual. A later publish SHALL keep the latest version's manual prices unless the operator gives a new price for the model or drops it, or the Price List prices the model at or above the manual price on both input and output. In that last case publishing SHALL drop the manual price without needing a note and SHALL say so in the version's note. When the Price List prices a manual model below the manual price on either side, publishing SHALL keep the higher price and suggest dropping the manual one.
+
+#### Scenario: A routine publish
+- **WHEN** an operator publishes without a manual price file after a version that priced `xai.grok-4.6` by hand
+- **THEN** the new version still prices `xai.grok-4.6` at its manual price
+
+#### Scenario: Dropping a manual price
+- **WHEN** an operator publishes with `--drop-override xai.grok-4.6` and a note
+- **THEN** the new version doesn't price `xai.grok-4.6` unless the Price List does
+
+#### Scenario: The Price List catches up
+- **WHEN** `xai.grok-4.6` has a manual price of $0.003 in and $0.015 out, and the Price List starts pricing it at $0.003 in and $0.018 out
+- **THEN** the next publish drops the manual price, publishes $0.003 in and $0.018 out, and its version note says the manual price was dropped because the Price List now covers it
