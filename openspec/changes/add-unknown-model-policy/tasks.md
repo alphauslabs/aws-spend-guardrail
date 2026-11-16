@@ -23,4 +23,4 @@
 
 ## 5. Live check
 
-- [ ] 5.1 On e2e with the AI guard on in dry-run: publish a version setting `unknown_models` to `count` (approve it), call a Bedrock model with no price (or temporarily remove one from shared prices), and confirm one `unpriced_model` event and alert, usage at the ceiling price, and no would-cutoff unless a cap is passed; then remove the test setup
+- [x] 5.1 On e2e with the AI guard on in dry-run: publish a version setting `unknown_models` to `count` (approve it), call a Bedrock model with no price (or temporarily remove one from shared prices), and confirm one `unpriced_model` event and alert, usage at the ceiling price, and no would-cutoff unless a cap is passed; then remove the test setup
