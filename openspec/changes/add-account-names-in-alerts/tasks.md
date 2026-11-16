@@ -22,4 +22,4 @@
 
 ## 5. Live check
 
-- [ ] 5.1 On e2e, deploy this build, trigger an AI would-cutoff on 730335604511, and confirm the email's subject and body read `730335604511 (e2enormal)` and its cutoff id is unchanged; and confirm the next loosening approval email names the account it changes
+- [x] 5.1 On e2e, deploy this build, trigger an AI would-cutoff on 730335604511, and confirm the email's subject and body read `730335604511 (e2enormal)` and its cutoff id is unchanged; and confirm the next loosening approval email names the account it changes
