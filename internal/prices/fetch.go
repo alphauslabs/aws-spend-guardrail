@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/alphauslabs/aws-spend-guardrail/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
@@ -95,7 +96,9 @@ func Diff(old, new map[string]PriceOf) []Change {
 // PriceOf is a model's input and output price per 1,000 tokens.
 type PriceOf struct{ In, Out float64 }
 
-func (p PriceOf) String() string { return fmt.Sprintf("in %g / out %g per 1k", p.In, p.Out) }
+func (p PriceOf) String() string {
+	return fmt.Sprintf("in %s / out %s per 1k", config.Decimal(p.In), config.Decimal(p.Out))
+}
 
 // Of converts a table's models for Diff.
 func Of(t *Table) map[string]PriceOf {

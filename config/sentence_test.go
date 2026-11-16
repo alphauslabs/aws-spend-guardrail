@@ -107,3 +107,21 @@ func TestSentenceWording(t *testing.T) {
 		}
 	}
 }
+
+// Prices read as plain decimals in approvals and diffs, never in exponent
+// form, since people read them in emails.
+func TestPricesAreWrittenAsDecimals(t *testing.T) {
+	if got := Decimal(0.00006); got != "0.00006" {
+		t.Errorf("Decimal = %q", got)
+	}
+	if got := Decimal(0.000035); got != "0.000035" {
+		t.Errorf("Decimal = %q", got)
+	}
+	p := priceText(ModelPrice{InputPer1K: 0.00006, OutputPer1K: 0.00024})
+	if p != "in 0.00006/out 0.00024 per 1k" {
+		t.Errorf("priceText = %q", p)
+	}
+	if _, s := splitPrice("amazon.nova-lite-v1:0 " + p); s != "0.00006 USD input and 0.00024 USD output per 1,000 tokens" || strings.Contains(s, "e-") {
+		t.Errorf("sentence = %q", s)
+	}
+}

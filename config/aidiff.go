@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 )
 
 // AI change fields. An AI change has an empty Target unless it is about one
@@ -267,5 +268,11 @@ func capText(v float64) string {
 }
 
 func priceText(p ModelPrice) string {
-	return fmt.Sprintf("in %g/out %g per 1k", p.InputPer1K, p.OutputPer1K)
+	return fmt.Sprintf("in %s/out %s per 1k", Decimal(p.InputPer1K), Decimal(p.OutputPer1K))
+}
+
+// Decimal writes a price as a plain decimal, never in exponent form:
+// 0.00006, not 6e-05, since people read these in emails and approvals.
+func Decimal(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, 64)
 }

@@ -66,3 +66,9 @@ func TestMergeManual(t *testing.T) {
 		t.Errorf("no manual prices: %+v", none)
 	}
 }
+
+func TestPriceOfReadsAsDecimals(t *testing.T) {
+	if got := (PriceOf{In: 0.00001, Out: 0.00005}).String(); got != "in 0.00001 / out 0.00005 per 1k" {
+		t.Errorf("PriceOf = %q", got)
+	}
+}

@@ -169,5 +169,5 @@ func splitPrice(s string) (model, price string) {
 	if _, err := fmt.Sscanf(rest, "in %g/out %g per 1k", &in, &out); err != nil {
 		return model, rest
 	}
-	return model, fmt.Sprintf("%g USD input and %g USD output per 1,000 tokens", in, out)
+	return model, fmt.Sprintf("%s USD input and %s USD output per 1,000 tokens", Decimal(in), Decimal(out))
 }
