@@ -226,6 +226,28 @@ guardrail prices publish --note "Nova price change, Dec 2026"
 
 It prints the enterprise it acts on and the models added, raised, lowered, and removed against the latest version, then writes a new version (nothing, if nothing changed). Versions are never edited. Shared prices only tighten: a guard takes the higher of its release's price and the shared one, so a lowered or removed price changes nothing until a release with the lower price is installed, and a payer org's own `ai.prices` still wins. Each guard records the version it starts using as a `prices_applied` event, and every AI cutoff names the price version behind it. A guard that can't read shared prices alerts once and keeps the last version it read, or its release's prices.
 
+### Manual prices
+
+The build prices only the models it can match between the Price List and Bedrock's model list, and lists the rest as "no price found". To price one of those for every guard in the enterprise, give its price in a file:
+
+```
+{"models": {"xai.grok-4.6": {"input_per_1k": 0.003, "output_per_1k": 0.015}}}
+```
+
+```
+guardrail prices publish --overrides manual.json --note "Grok 4.6 from AWS's pricing page, Nov 2026"
+```
+
+Prices are USD per 1,000 input and output tokens, both above zero. Model ids are read like the AI guard reads them, so `us.xai.grok-4.6` and `xai.grok-4.6` are one model. The file is refused, and nothing published, if it has any other field.
+
+- A model the Price List doesn't price is added at the manual price. For one it does price, each of input and output is published at the higher of the two, and the command says where the Price List was higher.
+- Manual prices are kept in the published version and carried into later versions, so a publish without `--overrides` keeps them, and a file only needs the models you add or change. When the Price List starts pricing a manual model, the command suggests dropping the manual price.
+- `--drop-override MODEL` (repeatable) removes a manual price.
+- Adding, changing, or dropping a manual price needs `--note`, so each one has a reason in the version history. A publish that only carries them forward needs none.
+- For a model its release doesn't list, a guard charges at least the release's highest price for that model's provider (or for any model, if the provider has none in the release). The command warns when a manual price is below that floor, since guards will charge the floor instead.
+
+Shared prices still only tighten: a manual price can add a model or raise a price, never lower what a guard charges.
+
 `guardrail prices build -o internal/packs/ai/prices.json` regenerates the release's table the same way.
 
 ## Before installing: check SCP slots and budget actions

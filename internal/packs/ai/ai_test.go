@@ -179,4 +179,10 @@ func TestSharedPricesOnlyTighten(t *testing.T) {
 	if _, h := p.Evaluate(call("Converse", "anthropic.claude-new", 1, 1)); h != nil {
 		t.Errorf("a shared-only model must not trip as unknown: %+v", h)
 	}
+	// Floor, which publishing warns with, agrees with what the pack charges.
+	for _, id := range []string{"anthropic.claude-new", "acme.model-x"} {
+		if f, _ := p.Price(id); tb.Floor(id) != f {
+			t.Errorf("Floor(%s) = %+v, pack charges %+v", id, tb.Floor(id), f)
+		}
+	}
 }

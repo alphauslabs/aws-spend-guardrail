@@ -19,6 +19,7 @@ import (
 	"github.com/alphauslabs/aws-spend-guardrail/internal/cli"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/packs/ai"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/prices"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -334,18 +335,41 @@ func preflightAI(ctx context.Context, c awsx.TrailCheck, stdout io.Writer) error
 // enterprise's shared prices dataset in Jennah.
 func pricesCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || (args[0] != "build" && args[0] != "publish") {
-		return fmt.Errorf("usage: guardrail prices build -o FILE | guardrail prices publish [--dry-run] [--note TEXT]")
+		return fmt.Errorf("usage: guardrail prices build -o FILE | guardrail prices publish [--dry-run] [--note TEXT] [--overrides FILE] [--drop-override MODEL]...")
 	}
 	sub := args[0]
 	fs := flag.NewFlagSet("prices "+sub, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	out := fs.String("o", "", "write the table to FILE (build)")
 	dry := fs.Bool("dry-run", false, "show the changes without publishing (publish)")
-	note := fs.String("note", "", "note stored with the price version (publish)")
+	note := fs.String("note", "", "note stored with the price version; required when manual prices change (publish)")
+	overrides := fs.String("overrides", "", `JSON file of manual prices, {"models": {"<model id>": {"input_per_1k": N, "output_per_1k": N}}} (publish)`)
+	var drops multiFlag
+	fs.Var(&drops, "drop-override", "remove a model's manual price; repeatable (publish)")
 	endpoint := fs.String("endpoint", os.Getenv("JENNAH_ENDPOINT"), "Jennah gRPC endpoint (default: the public endpoint)")
 	apiKey := fs.String("api-key", os.Getenv("JENNAH_API_KEY"), "Jennah API key")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
+	}
+	opts := cli.PublishOptions{Drop: drops, Note: *note, DryRun: *dry}
+	if sub == "build" && (*overrides != "" || len(drops) > 0) {
+		return errors.New("--overrides and --drop-override apply to publish, not build")
+	}
+	if *overrides != "" {
+		raw, err := os.ReadFile(*overrides)
+		if err != nil {
+			return err
+		}
+		if opts.Manual, err = prices.ReadManual(raw); err != nil {
+			return err
+		}
+	}
+	if sub == "publish" {
+		release, err := ai.Prices()
+		if err != nil {
+			return err
+		}
+		opts.Release = release
 	}
 	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-east-1"))
 	if err != nil {
@@ -378,5 +402,11 @@ func pricesCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		return fmt.Errorf("find the active enterprise: %w", err)
 	}
 	c := &cli.CLI{J: j, Out: stdout, Status: stderr}
-	return c.PublishPrices(ctx, who.GetIdentity().GetActiveEnterpriseId(), table, unmatched, *note, *dry)
+	return c.PublishPrices(ctx, who.GetIdentity().GetActiveEnterpriseId(), table, unmatched, opts)
 }
+
+// multiFlag is a repeatable string flag.
+type multiFlag []string
+
+func (m *multiFlag) String() string     { return strings.Join(*m, ",") }
+func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }

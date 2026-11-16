@@ -29,6 +29,10 @@ type Table struct {
 	Published string                       `json:"published"`
 	Basis     string                       `json:"basis"`
 	Models    map[string]config.ModelPrice `json:"models"`
+	// Manual lists the prices set by hand when publishing, as given
+	// (add-manual-price-overrides D3). Guards ignore it; Models already holds
+	// the merged prices.
+	Manual map[string]ManualPrice `json:"manual,omitempty"`
 }
 
 // Basis describes which rates a table holds.

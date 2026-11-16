@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -56,5 +58,28 @@ func TestPreflightBudgetActionRoom(t *testing.T) {
 	}
 	if err := checkBudgetActions(0, 100, &out); err != nil {
 		t.Fatalf("exactly 100 should pass: %v", err)
+	}
+}
+
+// The manual price flags fail before any AWS or Jennah call.
+func TestPricesManualFlagsFailEarly(t *testing.T) {
+	t.Setenv("AWS_PROFILE", "does-not-exist")
+	bad := filepath.Join(t.TempDir(), "bad.json")
+	if err := os.WriteFile(bad, []byte(`{"models": {"x.grok": {"input_per_1k": 1, "output_per_1k": 0}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"prices", "build", "-o", "x.json", "--overrides", bad}, "apply to publish, not build"},
+		{[]string{"prices", "build", "-o", "x.json", "--drop-override", "x.grok"}, "apply to publish, not build"},
+		{[]string{"prices", "publish", "--overrides", bad}, "x.grok: output_per_1k must be above zero"},
+		{[]string{"prices", "publish", "--overrides", filepath.Join(t.TempDir(), "missing.json")}, "no such file"},
+	} {
+		var out, errb bytes.Buffer
+		if err := run(context.Background(), tc.args, &out, &errb); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%v: err %v, want %q", tc.args, err, tc.want)
+		}
 	}
 }

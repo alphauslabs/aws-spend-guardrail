@@ -112,6 +112,27 @@ func NewShared(t *Table, shared map[string]config.ModelPrice, cfg *config.Resolv
 	return p
 }
 
+// Floor is the least a guard of this release charges for a model only the
+// shared table lists (design D3 of add-shared-prices): the highest input and
+// output prices of the model's provider in this table, or of the whole table
+// when the provider has none here. Publishing uses it to warn when a manual
+// price is below what guards will use.
+func (t *Table) Floor(id string) config.ModelPrice {
+	var f, all config.ModelPrice
+	found := false
+	for m, v := range t.Models {
+		all.InputPer1K, all.OutputPer1K = max(all.InputPer1K, v.InputPer1K), max(all.OutputPer1K, v.OutputPer1K)
+		if provider(m) == provider(id) {
+			found = true
+			f.InputPer1K, f.OutputPer1K = max(f.InputPer1K, v.InputPer1K), max(f.OutputPer1K, v.OutputPer1K)
+		}
+	}
+	if !found {
+		return all
+	}
+	return f
+}
+
 // provider is the part of a model id before its first dot.
 func provider(id string) string {
 	if i := strings.Index(id, "."); i > 0 {

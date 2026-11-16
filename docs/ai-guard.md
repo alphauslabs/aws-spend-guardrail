@@ -70,7 +70,7 @@ The enterprise's shared table in Jennah (`guardrail.prices`, published with `gua
 
 So when AWS raises a price or adds a model, publishing the shared table applies it to every guard within 5 minutes, with no stack update. When AWS lowers a price, guards keep the higher one, estimating high, until a release with the lower price is installed (or an org approves a lower `ai.prices`). A guard that can't read the shared table keeps the last version it read, or its release's prices, and alerts once.
 
-To price a model the table lacks, or to correct a price, add it to `ai.prices` (and to `ai.models` if you use an allowlist). A higher price applies at once; a lower or new one needs approval, since it lets more spend through.
+To price a model the table lacks for every payer org at once, publish it as a manual shared price (see [manual prices](operating.md#manual-prices)); it is merged like any shared price, so it can only add or raise. To price or correct a model for one payer org, add it to `ai.prices` (and to `ai.models` if you use an allowlist). A higher price applies at once; a lower or new one needs approval, since it lets more spend through.
 
 A call through an **application inference profile** names the profile, not the model, and the trail can't tell which model is behind it. Allowlist and price the profile's ARN in config, or such calls trip as unknown.
 
