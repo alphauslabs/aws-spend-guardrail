@@ -80,6 +80,10 @@ type Pack struct {
 	shared  map[string]config.ModelPrice // the enterprise's shared table, if any
 	floors  map[string]config.ModelPrice // per provider: the release's highest prices
 	ceiling config.ModelPrice            // the release's highest prices overall
+	// unknown is what a call to an unpriced model is counted at under
+	// ai.unknown_models count: the highest input and output prices known from
+	// the release, shared, and override tables (add-unknown-model-policy D2).
+	unknown config.ModelPrice
 	cfg     *config.ResolvedAI
 	allowed map[string]bool // normalized model allowlist; nil means any priced model
 }
@@ -102,6 +106,12 @@ func NewShared(t *Table, shared map[string]config.ModelPrice, cfg *config.Resolv
 		f.InputPer1K, f.OutputPer1K = max(f.InputPer1K, v.InputPer1K), max(f.OutputPer1K, v.OutputPer1K)
 		p.floors[provider(id)] = f
 		p.ceiling.InputPer1K, p.ceiling.OutputPer1K = max(p.ceiling.InputPer1K, v.InputPer1K), max(p.ceiling.OutputPer1K, v.OutputPer1K)
+	}
+	p.unknown = p.ceiling
+	for _, m := range []map[string]config.ModelPrice{shared, cfg.Prices} {
+		for _, v := range m {
+			p.unknown.InputPer1K, p.unknown.OutputPer1K = max(p.unknown.InputPer1K, v.InputPer1K), max(p.unknown.OutputPer1K, v.OutputPer1K)
+		}
 	}
 	if cfg.Models != nil {
 		p.allowed = map[string]bool{}
@@ -215,7 +225,7 @@ func (p *Pack) Evaluate(r activity.Record) (*activity.Usage, *activity.Hit) {
 		if p.allowed != nil && !p.allowed[key] {
 			return nil, hit("model_not_allowed", fmt.Sprintf("model %s by %s", r.ModelID, r.CallerARN))
 		}
-		if _, ok := p.Price(key); !ok {
+		if _, ok := p.Price(key); !ok && !p.cfg.CountsUnknown() {
 			return nil, hit("unknown_model", fmt.Sprintf("model %s has no price; allowlist and price it in config to allow it", r.ModelID))
 		}
 		if streaming[r.EventName] {
@@ -225,13 +235,42 @@ func (p *Pack) Evaluate(r activity.Record) (*activity.Usage, *activity.Hit) {
 		return nil, nil
 	}
 	price, ok := p.Price(key)
+	unpriced := false
 	if !ok {
-		return nil, nil // the call record already tripped
+		if !p.cfg.CountsUnknown() {
+			return nil, nil // the call record already tripped
+		}
+		// Counted at the highest known price (D3). A call with no token
+		// counts can't be estimated at all, so it still trips: a model priced
+		// per image, second, or search must not run uncapped at $0.
+		if r.InputTokens == 0 && r.OutputTokens == 0 {
+			return nil, hit("unknown_model", fmt.Sprintf("model %s has no price, and its call has no token counts to estimate from", r.ModelID))
+		}
+		price, unpriced = p.unknown, true
 	}
 	usd := float64(r.InputTokens)/1000*price.InputPer1K + float64(r.OutputTokens)/1000*price.OutputPer1K
 	return &activity.Usage{Account: r.Account, Time: r.EventTime, Model: key, Caller: r.CallerARN, Region: r.Region,
-		Calls: 1, In: r.InputTokens, Out: r.OutputTokens, USD: usd}, nil
+		Calls: 1, In: r.InputTokens, Out: r.OutputTokens, USD: usd, Unpriced: unpriced}, nil
 }
+
+// Priced reports whether a model has a price, from config, the release, or
+// shared prices. The engine uses it to forget unpriced models once they are
+// priced (add-unknown-model-policy D5).
+func (p *Pack) Priced(model string) bool {
+	_, ok := p.Price(ModelKey(model))
+	return ok
+}
+
+// UnknownPrice is what a call to an unpriced model is counted at under
+// ai.unknown_models count.
+func (p *Pack) UnknownPrice() config.ModelPrice { return p.unknown }
+
+// UnknownRates is UnknownPrice for the engine, which doesn't import config.
+func (p *Pack) UnknownRates() (inPer1K, outPer1K float64) {
+	return p.unknown.InputPer1K, p.unknown.OutputPer1K
+}
+
+var _ activity.UnpricedPack = (*Pack)(nil)
 
 func contains(list []string, s string) bool {
 	for _, v := range list {

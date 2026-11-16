@@ -86,3 +86,29 @@ func TestEmptyAllowlistSurvivesASave(t *testing.T) {
 		t.Fatal("an absent allowlist must resolve to nil")
 	}
 }
+
+// Counting unpriced models loosens; going back to cutoff tightens. State saved
+// before the setting existed (empty) reads as cutoff (add-unknown-model-policy D6).
+func TestUnknownModelsClassified(t *testing.T) {
+	cutoff := &ResolvedAI{Mode: ModeDryRun, UnknownModels: UnknownCutoff}
+	count := &ResolvedAI{Mode: ModeDryRun, UnknownModels: UnknownCount}
+	legacy := &ResolvedAI{Mode: ModeDryRun}
+	ch := aiChanges(cutoff, count)
+	if len(ch) != 1 || ch[0].Field != FieldAIUnknown || ch[0].Direction != Loosening ||
+		ch[0].Sentence() != "Count calls to models with no price at the highest known price instead of cutting off the account." {
+		t.Fatalf("to count: %+v", ch)
+	}
+	ch = aiChanges(count, cutoff)
+	if len(ch) != 1 || ch[0].Direction != Tightening || ch[0].Sentence() != "Cut off an account that calls a model with no price, instead of counting the call." {
+		t.Fatalf("to cutoff: %+v", ch)
+	}
+	if ch := aiChanges(legacy, cutoff); len(ch) != 0 || !equalAI(legacy, cutoff) {
+		t.Fatalf("legacy state must equal cutoff: %+v", ch)
+	}
+	if s := stricterAI(cutoff, count); s.UnknownModels != UnknownCutoff {
+		t.Fatalf("count waits for approval: %+v", s)
+	}
+	if s := stricterAI(count, count); s.UnknownModels != UnknownCount {
+		t.Fatalf("count kept: %+v", s)
+	}
+}

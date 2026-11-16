@@ -4,6 +4,15 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Upgrade
+No action is required: the new setting defaults to today's behavior. Guards on this release read state from earlier ones unchanged.
+
+### Added
+- `ai.unknown_models`: what happens when an account calls a model with no price. `cutoff` (the default, as before) cuts off the account; `count` counts the call against the account's caps at the highest input and output prices the guard knows, so the client keeps working until a cap is passed. A call with no token counts still cuts off. The first counted call to each unpriced model sends one alert and writes one `unpriced_model` event. Switching to `count` is a loosening and needs approval; switching back applies at once. See `docs/ai-guard.md`.
+
+### Security-relevant
+- `ai.unknown_models` `count` lets calls to unpriced models through until a cap is passed, instead of cutting off at the first call. It's off by default and needs the loosening approval to turn on.
+
 ## [v0.2.1] - 2026-11-16
 
 ### Upgrade

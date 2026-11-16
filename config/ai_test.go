@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -78,5 +79,31 @@ func TestAIValidation(t *testing.T) {
 		if !hasProblem(probs, c.field, c.msg) {
 			t.Errorf("%s: want %q at %q, got %v", c.ai, c.msg, c.field, probs)
 		}
+	}
+}
+
+// ai.unknown_models (add-unknown-model-policy): resolved to cutoff when
+// absent, and only cutoff or count are accepted.
+func TestUnknownModelsSetting(t *testing.T) {
+	parse := func(ai string) (*Resolved, error) {
+		d, err := Parse([]byte(`{"payer_account_id":"123456789012","scopes":[],"ai":`+ai+`}`), Options{})
+		if err != nil {
+			return nil, err
+		}
+		return d.Resolve(), nil
+	}
+	for ai, want := range map[string]string{`{}`: UnknownCutoff, `{"unknown_models":"cutoff"}`: UnknownCutoff, `{"unknown_models":"count"}`: UnknownCount} {
+		r, err := parse(ai)
+		if err != nil || r.AI.UnknownModels != want || r.AI.CountsUnknown() != (want == UnknownCount) {
+			t.Errorf("%s: %+v %v", ai, r, err)
+		}
+	}
+	_, err := parse(`{"unknown_models":"allow"}`)
+	if err == nil || !strings.Contains(err.Error(), "ai.unknown_models") || !strings.Contains(err.Error(), `"cutoff" (the default) or "count"`) {
+		t.Errorf("allow: %v", err)
+	}
+	var none *ResolvedAI
+	if none.CountsUnknown() {
+		t.Error("no AI section counts nothing")
 	}
 }

@@ -16,6 +16,7 @@ const (
 	FieldAIAPIKey    = "ai.api_key_callers"
 	FieldAIPrice     = "ai.prices"
 	FieldAILift      = "ai.lifts"
+	FieldAIUnknown   = "ai.unknown_models"
 	allowlistAnyText = "any"
 )
 
@@ -96,6 +97,12 @@ func aiChanges(applied, desired *ResolvedAI) []Change {
 		}
 	}
 
+	// Counting unknown models lets calls through that would trip, so it
+	// loosens; going back to cutoff tightens (add-unknown-model-policy D6).
+	if au, du := unknownOf(a), unknownOf(d); au != du {
+		add(Target{}, FieldAIUnknown, au, du, dirLower(du == UnknownCutoff))
+	}
+
 	wasLift, nowLift := set(a.Lifts), set(d.Lifts)
 	for _, l := range d.Lifts {
 		if !wasLift[l] {
@@ -153,6 +160,10 @@ func stricterAI(applied, desired *ResolvedAI) *ResolvedAI {
 		Regions:       tighterAllowlist(a.Regions, d.Regions),
 		APIKeyCallers: intersect(a.APIKeyCallers, d.APIKeyCallers),
 		Lifts:         a.Lifts,
+		UnknownModels: UnknownCutoff,
+	}
+	if unknownOf(a) == UnknownCount && unknownOf(d) == UnknownCount {
+		out.UnknownModels = UnknownCount // count only once both have it
 	}
 	for _, ds := range d.Scopes {
 		as, ok := a.Scope(ds.Target)
@@ -235,7 +246,24 @@ func intersect(a, d []string) []string {
 	return out
 }
 
-func equalAI(a, b *ResolvedAI) bool { return reflect.DeepEqual(a, b) }
+func equalAI(a, b *ResolvedAI) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	// State saved before add-unknown-model-policy has no unknown_models.
+	ac, bc := *a, *b
+	ac.UnknownModels, bc.UnknownModels = unknownOf(a), unknownOf(b)
+	return reflect.DeepEqual(ac, bc)
+}
+
+// unknownOf is how a section treats unpriced models; empty (an absent
+// section, or state saved before add-unknown-model-policy) is cutoff.
+func unknownOf(r *ResolvedAI) string {
+	if r == nil || r.UnknownModels == "" {
+		return UnknownCutoff
+	}
+	return r.UnknownModels
+}
 
 func set(list []string) map[string]bool {
 	m := map[string]bool{}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,9 @@ type Usage struct {
 	Calls   int64
 	In, Out int64
 	USD     float64
+	// Unpriced: the model has no price, and the call was counted at the
+	// highest known price (add-unknown-model-policy D4).
+	Unpriced bool
 }
 
 // Hit is a tripwire firing: cut off at once, no estimate needed.
@@ -130,6 +134,7 @@ const (
 	KindTrailStall  = schema.KindTrailStall
 	KindTrailResume = schema.KindTrailResume
 	KindUsage       = schema.KindUsage
+	KindUnpriced    = schema.KindUnpricedModel
 )
 
 // StallAfter is how long without a new trail file before alerting.
@@ -158,6 +163,7 @@ func (e *Engine) Tick(ctx context.Context, runs []PackRun) error {
 	}
 
 	var usageErr error
+	unpriced := map[string]map[string]Usage{} // per pack: the first counted call of each unpriced model
 	for _, run := range runs {
 		hits := map[string]Hit{}
 		active := map[string]bool{}
@@ -172,6 +178,14 @@ func (e *Engine) Tick(ctx context.Context, runs []PackRun) error {
 					usageErr = err
 				}
 				active[u.Account] = true
+				if u.Unpriced {
+					if unpriced[run.Name] == nil {
+						unpriced[run.Name] = map[string]Usage{}
+					}
+					if _, seen := unpriced[run.Name][u.Model]; !seen {
+						unpriced[run.Name][u.Model] = *u
+					}
+				}
 			}
 			if h != nil {
 				if _, seen := hits[h.Account]; !seen {
@@ -193,6 +207,11 @@ func (e *Engine) Tick(ctx context.Context, runs []PackRun) error {
 	// same files are read again next tick. After a partial failure some calls
 	// are counted twice, which can only cut off sooner, never later.
 	if usageErr == nil {
+		for _, run := range runs {
+			if err := e.reportUnpriced(ctx, run, unpriced[run.Name]); err != nil {
+				errs = append(errs, err)
+			}
+		}
 		if err := e.Reader.Commit(ctx); err != nil {
 			errs = append(errs, err)
 		}
@@ -423,3 +442,70 @@ func sortedKeys(m map[string]bool) []string {
 	sort.Strings(out)
 	return out
 }
+
+// UnpricedPack is a pack that can count calls to models with no price
+// (add-unknown-model-policy): it says whether a model is priced, and the
+// rates it counts unpriced models at.
+type UnpricedPack interface {
+	Priced(model string) bool
+	UnknownRates() (inPer1K, outPer1K float64)
+}
+
+// unpricedSeen is a model the engine already reported as counted without a
+// price.
+type unpricedSeen struct {
+	Account string    `json:"account"`
+	At      time.Time `json:"at"`
+}
+
+// reportUnpriced reports each model counted without a price once: an
+// unpriced_model event and an alert, the first time it is counted. Models the
+// pack now prices are forgotten, so one that loses its price again is
+// reported again (add-unknown-model-policy D5). It runs only when the tick's
+// usage was stored, just before the reader commits, so a failed tick reports
+// again rather than never.
+func (e *Engine) reportUnpriced(ctx context.Context, run PackRun, counted map[string]Usage) error {
+	pricer, ok := run.Pack.(UnpricedPack)
+	if !ok {
+		return nil
+	}
+	name := "unpriced." + run.Name
+	seen := map[string]unpricedSeen{}
+	if _, err := e.Store.GetMeta(ctx, name, &seen); err != nil {
+		return fmt.Errorf("read %s: %w", name, err)
+	}
+	changed := false
+	for m := range seen {
+		if pricer.Priced(m) {
+			delete(seen, m)
+			changed = true
+		}
+	}
+	models := make([]string, 0, len(counted))
+	for m := range counted {
+		models = append(models, m)
+	}
+	sort.Strings(models)
+	in, out := pricer.UnknownRates()
+	for _, m := range models {
+		if _, ok := seen[m]; ok {
+			continue
+		}
+		u := counted[m]
+		seen[m] = unpricedSeen{Account: u.Account, At: u.Time}
+		changed = true
+		e.Emit(ctx, KindUnpriced, fmt.Sprintf("%s:%s:%s", KindUnpriced, run.Name, m), "account:"+u.Account, map[string]any{
+			"pack": run.Name, "model": m, "account": u.Account, "caller": u.Caller, "region": u.Region,
+			"input_per_1k": in, "output_per_1k": out, "unknown_models": "count",
+		})
+		e.Alert(ctx, fmt.Sprintf("guardrail: model %s has no price", m), fmt.Sprintf(
+			"Account %s called %s, which has no price. The %s pack counts calls to it at the highest known price, %s USD input and %s USD output per 1,000 tokens, against the account's caps, so its spend is likely overestimated. Price it for every guard with guardrail prices publish --overrides FILE --note TEXT, or for this payer org in the config's ai.prices.",
+			u.Account, m, run.Name, decimal(in), decimal(out)))
+	}
+	if !changed {
+		return nil
+	}
+	return e.Store.PutMeta(ctx, name, seen)
+}
+
+func decimal(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }

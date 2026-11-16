@@ -2,6 +2,7 @@ package ai
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -184,5 +185,69 @@ func TestSharedPricesOnlyTighten(t *testing.T) {
 		if f, _ := p.Price(id); tb.Floor(id) != f {
 			t.Errorf("Floor(%s) = %+v, pack charges %+v", id, tb.Floor(id), f)
 		}
+	}
+}
+
+// The price an unpriced model is counted at: the highest input and output
+// known across the release, shared, and override tables (add-unknown-model-policy D2).
+func TestUnknownPriceIsTheHighestKnown(t *testing.T) {
+	tb := &Table{Models: map[string]config.ModelPrice{
+		"anthropic.claude-a": {InputPer1K: 0.015, OutputPer1K: 0.075},
+		"amazon.nova-micro":  {InputPer1K: 0.000035, OutputPer1K: 0.00014},
+	}}
+	if got := NewShared(tb, nil, nil).UnknownPrice(); got != (config.ModelPrice{InputPer1K: 0.015, OutputPer1K: 0.075}) {
+		t.Errorf("release only: %+v", got)
+	}
+	shared := map[string]config.ModelPrice{"xai.grok-new": {InputPer1K: 0.02, OutputPer1K: 0.01}}
+	over := &config.ResolvedAI{Prices: map[string]config.ModelPrice{"custom.model": {InputPer1K: 0.001, OutputPer1K: 0.09}}}
+	if got := NewShared(tb, shared, over).UnknownPrice(); got != (config.ModelPrice{InputPer1K: 0.02, OutputPer1K: 0.09}) {
+		t.Errorf("each side's maximum across all three tables: %+v", got)
+	}
+}
+
+func TestUnknownModelsCountedOrCutOff(t *testing.T) {
+	tb := table(t)
+	count := &config.ResolvedAI{UnknownModels: config.UnknownCount}
+	ceiling := NewShared(tb, nil, count).UnknownPrice()
+
+	// Cutoff (the default): the call record trips, as before.
+	if _, h := New(tb, &config.ResolvedAI{UnknownModels: config.UnknownCutoff}).Evaluate(call("Converse", "xai.grok-9", 1000, 1000)); h == nil || h.Rule != "unknown_model" {
+		t.Fatalf("cutoff: %+v", h)
+	}
+	if _, h := New(tb, &config.ResolvedAI{}).Evaluate(call("Converse", "xai.grok-9", 1000, 1000)); h == nil || h.Rule != "unknown_model" {
+		t.Fatalf("state without the setting must cut off: %+v", h)
+	}
+
+	p := New(tb, count)
+	// Count: a non-streaming call is priced at the ceiling.
+	u, h := p.Evaluate(call("Converse", "us.xai.grok-9", 1000, 1000))
+	if h != nil || u == nil || !u.Unpriced || u.Model != "xai.grok-9" || math.Abs(u.USD-(ceiling.InputPer1K+ceiling.OutputPer1K)) > 1e-12 {
+		t.Fatalf("counted call: %+v %+v", u, h)
+	}
+	// A streaming call: nothing at its call record, priced from its completion.
+	api := call("ConverseStream", "xai.grok-9", 0, 0)
+	if u, h := p.Evaluate(api); u != nil || h != nil {
+		t.Fatalf("stream call record: %+v %+v", u, h)
+	}
+	done := api
+	done.EventType, done.InputTokens, done.OutputTokens = "AwsServiceEvent", 2000, 0
+	if u, h := p.Evaluate(done); h != nil || u == nil || !u.Unpriced || math.Abs(u.USD-2*ceiling.InputPer1K) > 1e-12 {
+		t.Fatalf("stream completion: %+v %+v", u, h)
+	}
+	// No token counts: can't be estimated, so it still trips.
+	if _, h := p.Evaluate(call("InvokeModel", "twelvelabs.pegasus-9", 0, 0)); h == nil || h.Rule != "unknown_model" || !strings.Contains(h.Detail, "no token counts") {
+		t.Fatalf("no tokens: %+v", h)
+	}
+	// A priced model is not marked.
+	if u, _ := p.Evaluate(call("Converse", "us.amazon.nova-micro-v1:0", 1000, 1000)); u == nil || u.Unpriced {
+		t.Fatalf("priced model: %+v", u)
+	}
+	// An allowlist still applies first.
+	listed := New(tb, &config.ResolvedAI{UnknownModels: config.UnknownCount, Models: []string{"amazon.nova-micro-v1:0"}})
+	if _, h := listed.Evaluate(call("Converse", "xai.grok-9", 1000, 1000)); h == nil || h.Rule != "model_not_allowed" {
+		t.Fatalf("allowlist: %+v", h)
+	}
+	if !p.Priced("us.amazon.nova-micro-v1:0") || p.Priced("xai.grok-9") {
+		t.Error("Priced")
 	}
 }

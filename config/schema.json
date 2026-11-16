@@ -69,6 +69,10 @@
         "lifts": {
           "description": "Cutoff ids to lift. Adding one is a loosening and needs approval.",
           "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^ai:[0-9]{12}:[0-9]{8}T[0-9]{4}$" }
+        },
+        "unknown_models": {
+          "description": "How a call to a model with no price is treated: cutoff (the default) trips the unknown_model rule; count counts it against the account's caps at the highest known price. Moving to count is a loosening and needs approval.",
+          "type": "string", "enum": ["cutoff", "count"]
         }
       }
     }

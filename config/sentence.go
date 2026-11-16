@@ -75,6 +75,11 @@ func (c Change) Sentence() string {
 		return fmt.Sprintf("Stop allowing %s to call Bedrock with an API key.", c.From)
 	case FieldAIPrice:
 		return priceSentence(c.From, c.To)
+	case FieldAIUnknown:
+		if c.To == UnknownCount {
+			return "Count calls to models with no price at the highest known price instead of cutting off the account."
+		}
+		return "Cut off an account that calls a model with no price, instead of counting the call."
 	case FieldAILift:
 		if c.To != "" {
 			return fmt.Sprintf("Lift the AI cutoff %s.", c.To)

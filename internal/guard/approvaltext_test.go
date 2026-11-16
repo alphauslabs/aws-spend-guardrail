@@ -27,6 +27,7 @@ func TestApprovalTitles(t *testing.T) {
 		{[]config.Change{{Target: a, Field: "mode", To: config.ModeDryRun}}, "Switch a scope to dry-run for payer 339712710400 (config version 8)"},
 		{[]config.Change{{Field: config.FieldAlertEmail, To: "x@example.com"}}, "Change alert recipients for payer 339712710400 (config version 8)"},
 		{[]config.Change{{Field: "ai.models", To: "any"}, {Target: a, Field: "ai.hourly_usd"}}, "Loosen the AI guard for payer 339712710400 (config version 8)"},
+		{[]config.Change{{Field: config.FieldAIUnknown, From: config.UnknownCutoff, To: config.UnknownCount}}, "Loosen the AI guard for payer 339712710400 (config version 8)"},
 		{[]config.Change{{Target: a, Field: "ceiling_usd"}, {Target: b, Field: "scope", From: "present"}}, "Loosen spend protection for payer 339712710400 (config version 8)"},
 		{[]config.Change{{Target: a, Field: "period", To: config.PeriodQuarterly}}, "Loosen spend protection for payer 339712710400 (config version 8)"},
 	} {

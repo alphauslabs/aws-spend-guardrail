@@ -340,3 +340,88 @@ func TestFailedUsageWriteRereadsAndAlertsOnce(t *testing.T) {
 		t.Fatalf("once committed the file must not be read again: %d gets", w.bucket.Gets)
 	}
 }
+
+// unpricedPack counts models named "new.*" as unpriced until they are priced.
+type unpricedPack struct{ priced map[string]bool }
+
+func (unpricedPack) Wants(r activity.Record) bool { return r.EventSource == "bedrock.amazonaws.com" }
+func (p unpricedPack) Evaluate(r activity.Record) (*activity.Usage, *activity.Hit) {
+	u, h := pricePack{}.Evaluate(r)
+	if u != nil && strings.HasPrefix(r.ModelID, "new.") && !p.priced[r.ModelID] {
+		u.Unpriced = true
+	}
+	return u, h
+}
+func (p unpricedPack) Priced(m string) bool           { return !strings.HasPrefix(m, "new.") || p.priced[m] }
+func (unpricedPack) UnknownRates() (float64, float64) { return 0.015, 0.075 }
+
+func (w *world) tickWith(p activity.Pack) error {
+	return w.e.Tick(context.Background(), []activity.PackRun{{Name: "ai", Pack: p, PolicyID: "p-ai", Lifts: w.lifts,
+		CapsFor: func(a string) (activity.Caps, bool) { c, ok := w.caps[a]; return c, ok }}})
+}
+
+// Each model counted without a price is reported once, however many calls
+// and accounts (add-unknown-model-policy D5).
+func TestUnpricedModelReportedOnce(t *testing.T) {
+	w := newWorld(t)
+	p := unpricedPack{priced: map[string]bool{}}
+	for i := 0; i < 500; i++ {
+		w.call([]string{acct1, acct2, "777788889999"}[i%3], "us-east-1", "new.grok", w.now.Add(-time.Minute), 10)
+	}
+	w.call(acct1, "us-east-1", "known.model", w.now.Add(-time.Minute), 10)
+	if err := w.tickWith(p); err != nil {
+		t.Fatal(err)
+	}
+	w.now = w.now.Add(time.Minute)
+	w.call(acct2, "us-east-1", "new.grok", w.now.Add(-time.Minute), 10)
+	if err := w.tickWith(p); err != nil {
+		t.Fatal(err)
+	}
+	if n := w.count("unpriced_model unpriced_model:ai:new.grok"); n != 1 {
+		t.Fatalf("%d events: %v", n, w.events)
+	}
+	if got := strings.Join(w.alerts, "|"); got != "guardrail: model new.grok has no price" {
+		t.Fatalf("alerts %q", got)
+	}
+
+	// Priced, then unpriced again: reported again.
+	p.priced["new.grok"] = true
+	w.now = w.now.Add(time.Minute)
+	w.call(acct1, "us-east-1", "new.grok", w.now.Add(-time.Minute), 10)
+	if err := w.tickWith(p); err != nil {
+		t.Fatal(err)
+	}
+	delete(p.priced, "new.grok")
+	w.now = w.now.Add(time.Minute)
+	w.call(acct1, "us-east-1", "new.grok", w.now.Add(-time.Minute), 10)
+	if err := w.tickWith(p); err != nil {
+		t.Fatal(err)
+	}
+	if n := w.count("unpriced_model unpriced_model:ai:new.grok"); n != 2 {
+		t.Fatalf("a model priced then unpriced must be reported again: %d", n)
+	}
+}
+
+// A tick whose usage couldn't be stored reports nothing; the next one, which
+// reads the same files, does.
+func TestUnpricedModelReportedAfterAFailedTick(t *testing.T) {
+	w := newWorld(t)
+	p := unpricedPack{priced: map[string]bool{}}
+	w.call(acct1, "us-east-1", "new.glm", w.now.Add(-time.Minute), 10)
+	w.store.FailUsage = true
+	if err := w.tickWith(p); err == nil {
+		t.Fatal("expected the failed write")
+	}
+	if n := w.count("unpriced_model"); n != 0 {
+		t.Fatalf("reported before the usage was stored: %v", w.events)
+	}
+	w.store.FailUsage = false
+	w.restart()
+	w.now = w.now.Add(time.Minute)
+	if err := w.tickWith(p); err != nil {
+		t.Fatal(err)
+	}
+	if n := w.count("unpriced_model unpriced_model:ai:new.glm"); n != 1 {
+		t.Fatalf("%d events after recovery: %v", n, w.events)
+	}
+}

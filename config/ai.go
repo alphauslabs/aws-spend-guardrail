@@ -51,7 +51,16 @@ type AISection struct {
 	APIKeyCallers []string              `json:"api_key_callers,omitempty"`
 	Prices        map[string]ModelPrice `json:"prices,omitempty"`
 	Lifts         []string              `json:"lifts,omitempty"`
+	// UnknownModels is how a call to a model with no price is treated:
+	// UnknownCutoff (the default) or UnknownCount (add-unknown-model-policy).
+	UnknownModels string `json:"unknown_models,omitempty"`
 }
+
+// How a call to a model with no price is treated (add-unknown-model-policy D1).
+const (
+	UnknownCutoff = "cutoff" // trip the unknown_model rule
+	UnknownCount  = "count"  // count it at the highest known price
+)
 
 // ResolvedAIScope is an AI scope with defaults applied.
 type ResolvedAIScope struct {
@@ -76,6 +85,15 @@ type ResolvedAI struct {
 	APIKeyCallers []string              `json:"api_key_callers,omitempty"`
 	Prices        map[string]ModelPrice `json:"prices,omitempty"`
 	Lifts         []string              `json:"lifts,omitempty"`
+	// UnknownModels is UnknownCutoff or UnknownCount. State saved before
+	// add-unknown-model-policy has it empty; read it with CountsUnknown.
+	UnknownModels string `json:"unknown_models,omitempty"`
+}
+
+// CountsUnknown reports whether calls to models with no price are counted at
+// the highest known price instead of tripping (add-unknown-model-policy).
+func (r *ResolvedAI) CountsUnknown() bool {
+	return r != nil && r.UnknownModels == UnknownCount
 }
 
 // Scope returns the AI scope for a target, if present.
@@ -109,6 +127,10 @@ func (a *AISection) resolve() *ResolvedAI {
 		Regions:       sortedCopy(a.Regions),
 		APIKeyCallers: sortedCopy(a.APIKeyCallers),
 		Lifts:         sortedCopy(a.Lifts),
+		UnknownModels: a.UnknownModels,
+	}
+	if r.UnknownModels == "" {
+		r.UnknownModels = UnknownCutoff
 	}
 	if len(a.Prices) > 0 {
 		r.Prices = map[string]ModelPrice{}
@@ -157,7 +179,7 @@ var (
 	liftIDRe   = regexp.MustCompile(LiftIDPattern)
 	regionRe   = regexp.MustCompile(`^[a-z]{2}(-[a-z]+)+-[0-9]$`)
 	iamCallRe  = regexp.MustCompile(`^arn:aws[a-z-]*:(iam|sts)::[0-9]{12}:[A-Za-z0-9+=,.@_/-]+$`)
-	aiFields   = []string{"defaults", "scopes", "models", "regions", "api_key_callers", "prices", "lifts"}
+	aiFields   = []string{"defaults", "scopes", "models", "regions", "api_key_callers", "prices", "lifts", "unknown_models"}
 	capFields  = []string{"hourly_usd", "daily_usd", "monthly_usd", "mode"}
 	aiScopeFld = append([]string{"account_id", "ou_id"}, capFields...)
 )
@@ -292,6 +314,9 @@ func aiSemantics(a *AISection) []Problem {
 		return nil
 	}
 	var probs []Problem
+	if u := a.UnknownModels; u != "" && u != UnknownCutoff && u != UnknownCount {
+		probs = append(probs, Problem{Field: "ai.unknown_models", Message: fmt.Sprintf("%q is not one of the two values: \"cutoff\" (the default) or \"count\"", u)})
+	}
 	seen := map[Target]int{}
 	for i, s := range a.Scopes {
 		t := s.Target()

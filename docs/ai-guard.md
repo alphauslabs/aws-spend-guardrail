@@ -30,11 +30,24 @@ Set in the config's `ai` section ([config](config.md#ai)):
 
 - **Caps**, per account or OU: `hourly_usd`, `daily_usd`, and `monthly_usd` of estimated spend. An account scope beats an OU scope. An account no AI scope covers has no caps.
 - **Rules that cut off immediately** for every account:
-  - a call to a model not on `ai.models` (when set), or to a model the price table doesn't know;
+  - a call to a model not on `ai.models` (when set), or to a model with no price, unless `ai.unknown_models` is `count` (see [models with no price](#models-with-no-price));
   - a call in a region not on `ai.regions` (when set);
   - a call made with a Bedrock API key by a caller not on `ai.api_key_callers`. With no list, nobody may use API keys;
   - a change to Bedrock's model invocation logging settings.
 - **Mode.** Each scope has `dry-run` or `enforce`; `ai.defaults.mode` applies to accounts no scope covers. In dry-run, the guard records and alerts what it would have cut off, at most once an hour per account and rule, and attaches nothing. Start in dry-run.
+
+## Models with no price
+
+A model has no price when neither the release's table, the enterprise's shared prices, nor the config's `ai.prices` lists it: a model released this week, or one the Price List names in a way the builder can't match. `ai.unknown_models` sets what happens when an account calls one:
+
+- `cutoff` (the default) cuts off the account at once, as a rule. Safest for spend, harshest for the client.
+- `count` counts the call against the account's caps at the highest input and output prices the guard knows, from the release table, shared prices, and `ai.prices`, taken separately (today about $0.015 input and $0.075 output per 1,000 tokens). No priced model is cheaper, so most new models are overestimated, often many times over, and the caps trip sooner. The client keeps working until a cap is passed.
+
+Under `count`, a call whose trail record has no token counts still cuts off, since it can't be estimated at all: models priced per image, second of video, or search would otherwise run uncapped. An allowlist (`ai.models`) still applies first; a model not on it is cut off as `model_not_allowed`.
+
+The first time the guard counts a call to an unpriced model, it sends one alert and writes one `unpriced_model` event naming the model, the account, and the prices used. Later calls to it don't repeat them. To stop the overestimate, price the model for every guard with a manual shared price (`guardrail prices publish --overrides`, see [operating](operating.md#manual-prices)) or for one payer org in `ai.prices`; a model priced and later unpriced again is reported again.
+
+Switching to `count` is a loosening and needs approval, even in a first config; switching back to `cutoff` applies at once.
 
 ## Lifting a cutoff
 
@@ -48,6 +61,7 @@ The guard writes to the payer org's inbox:
 - `cutoff_lifted`;
 - `trail_stalled` and `trail_resumed`;
 - `usage_summary` once an hour per account and model: calls, input and output tokens, and estimated USD;
+- `unpriced_model` the first time it counts a call to a model with no price (`ai.unknown_models` `count`), with the model, account, caller, region, and the prices used;
 - `prices_applied` when it starts using a new shared price version, with how many models it raised, added, or listed lower (ignored).
 
 Each `cutoff` and `would_cutoff` names the shared price version in use (0 for the release's prices only).

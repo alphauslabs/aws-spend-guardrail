@@ -71,6 +71,7 @@ const (
 	KindTrailResume   = "trail_resumed"
 	KindUsage         = "usage_summary"  // one account and model's usage for an hour
 	KindPricesApplied = "prices_applied" // the guard started using a shared price version
+	KindUnpricedModel = "unpriced_model" // a model with no price was first counted at the highest known price
 )
 
 // ValidateMSPID checks that an MSP id can form dataset ids under Jennah's id

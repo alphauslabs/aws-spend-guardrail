@@ -3,6 +3,7 @@ package guard
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -43,6 +44,15 @@ func (k *fastKit) call(h *harness, account, model string, in, out int64) {
 	at := h.now.Add(-time.Minute)
 	key := activitytest.TrailKey(trailBase, account, "us-east-1", at, string(rune('a'+k.n)))
 	k.bucket.Put(key, activitytest.TrailFile(activitytest.BedrockCall(account, "us-east-1", model, "arn:aws:sts::"+account+":assumed-role/app/s", at, in, out, false)), h.now)
+}
+
+func (k *fastKit) prices(t *testing.T) *ai.Table {
+	t.Helper()
+	p, err := ai.Prices()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }
 
 func (h *harness) trail() {
@@ -130,5 +140,54 @@ func TestTeardownDetachesAICutoffs(t *testing.T) {
 	}
 	if k.policies.Attached["p-ai/444455556666"] {
 		t.Fatal("teardown left the AI cutoff attached")
+	}
+}
+
+// With ai.unknown_models count, an unpriced model's calls add to the
+// account's totals at the highest known price, and the hourly cap cuts it off
+// (add-unknown-model-policy). The model is reported once.
+func TestUnpricedModelCountedAgainstCaps(t *testing.T) {
+	h := newHarness(t)
+	k := withFast(t, h)
+	h.publish(`{"payer_account_id":"123456789012","scopes":[],"ai":{"unknown_models":"count","scopes":[{"account_id":"444455556666","hourly_usd":0.05,"mode":"enforce"}]}}`)
+	h.pull()
+	// Counting is a loosening, even in a first config: it waits for approval.
+	if st := h.st(); st.Effective.AI.CountsUnknown() || st.Pending == nil {
+		t.Fatalf("count applied without approval: %+v", st.Effective.AI)
+	}
+	approveAndWait(h, "1", time.Hour)
+	h.pull()
+	if st := h.st(); !st.Effective.AI.CountsUnknown() {
+		t.Fatalf("count not in force after approval: %+v", st.Effective.AI)
+	}
+	ceiling := ai.NewShared(k.prices(t), nil, h.st().Effective.AI).UnknownPrice()
+	// 300 input and 300 output tokens at the ceiling stay under $0.05.
+	k.call(h, "444455556666", "us.xai.grok-9", 300, 300)
+	h.trail()
+	if k.policies.Attached["p-ai/444455556666"] {
+		t.Fatal("cut off below the cap: an unpriced model must be counted, not tripped")
+	}
+	tot, _ := h.g.Fast.Engine.Store.Totals(context.Background(), aiPack, "444455556666", h.now)
+	if want := 0.3*ceiling.InputPer1K + 0.3*ceiling.OutputPer1K; math.Abs(tot.Hour-want) > 1e-9 {
+		t.Fatalf("hour total %v, want %v at the ceiling %+v", tot.Hour, want, ceiling)
+	}
+	h.now = h.now.Add(time.Minute)
+	k.call(h, "444455556666", "us.xai.grok-9", 1000, 1000)
+	h.trail()
+	if !k.policies.Attached["p-ai/444455556666"] {
+		t.Fatalf("not cut off past the cap: %v", k.policies.Calls)
+	}
+	var detail map[string]any
+	unpriced := 0
+	for _, e := range h.events.list {
+		switch e.Kind {
+		case schema.KindCutoff:
+			_ = json.Unmarshal(e.Detail, &detail)
+		case schema.KindUnpricedModel:
+			unpriced++
+		}
+	}
+	if detail["rule"] != "hourly_cap" || unpriced != 1 || countAlerts(h, "model xai.grok-9 has no price") != 1 {
+		t.Fatalf("cutoff %v, %d unpriced events, alerts %v", detail, unpriced, h.alerts.list)
 	}
 }
