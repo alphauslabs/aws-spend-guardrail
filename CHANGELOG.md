@@ -4,6 +4,8 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+## [v0.2.2] - 2026-11-16
+
 ### Upgrade
 No action is required: the new setting defaults to today's behavior. Guards on this release read state from earlier ones unchanged.
 

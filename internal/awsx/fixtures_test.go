@@ -47,7 +47,7 @@ func writeFixtureState(t *testing.T, db *fakeDDB) {
 	at := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
 	doc, err := config.Parse([]byte(`{"payer_account_id": "123456789012",
 		"scopes": [{"account_id": "111122223333", "ceiling_usd": 100, "mode": "enforce"}],
-		"ai": {"scopes": [{"account_id": "444455556666", "hourly_usd": 1, "mode": "enforce"}]}}`), config.Options{})
+		"ai": {"unknown_models": "count", "scopes": [{"account_id": "444455556666", "hourly_usd": 1, "mode": "enforce"}]}}`), config.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +74,8 @@ func writeFixtureState(t *testing.T, db *fakeDDB) {
 	must(act.PutCutoff(ctx, activity.Cutoff{ID: fixtureCutoff, Pack: "ai", Account: "444455556666", At: at, Rule: "hourly_cap", CapUSD: 1, Detail: "estimated hour 1.20 USD, cap 1.00 USD", Attached: true}))
 	must(act.AddUsage(ctx, "ai", activity.Usage{Account: "444455556666", Time: at, Model: "amazon.nova-micro-v1:0", Calls: 1, In: 10, Out: 20, USD: 1.2}))
 	must(act.PutMeta(ctx, "prices.status", map[string]string{}))
+	// Since v0.2.2: unpriced models already reported.
+	must(act.PutMeta(ctx, "unpriced.ai", map[string]any{"moonshotai.kimi-k3.1": map[string]string{"account": "444455556666", "at": "2026-11-16T00:00:00Z"}}))
 }
 
 func dumpFixture(db *fakeDDB) []fixtureItem {
