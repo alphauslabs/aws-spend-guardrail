@@ -241,12 +241,39 @@ guardrail prices publish --overrides manual.json --note "Grok 4.6 from AWS's pri
 Prices are USD per 1,000 input and output tokens, both above zero. Model ids are read like the AI guard reads them, so `us.xai.grok-4.6` and `xai.grok-4.6` are one model. The file is refused, and nothing published, if it has any other field.
 
 - A model the Price List doesn't price is added at the manual price. For one it does price, each of input and output is published at the higher of the two, and the command says where the Price List was higher.
-- Manual prices are kept in the published version and carried into later versions, so a publish without `--overrides` keeps them, and a file only needs the models you add or change. When the Price List starts pricing a manual model, the command suggests dropping the manual price.
+- Manual prices are kept in the published version and carried into later versions, so a publish without `--overrides` keeps them, and a file only needs the models you add or change.
+- When the Price List starts pricing a manual model at or above its manual price on both input and output, the next publish drops the manual price by itself, since that changes no price guards use, and says so in the version's note; no `--note` is needed. When the manual price is still higher on either side, it is kept and the command suggests dropping it.
 - `--drop-override MODEL` (repeatable) removes a manual price.
 - Adding, changing, or dropping a manual price needs `--note`, so each one has a reason in the version history. A publish that only carries them forward needs none.
 - For a model its release doesn't list, a guard charges at least the release's highest price for that model's provider (or for any model, if the provider has none in the release). The command warns when a manual price is below that floor, since guards will charge the floor instead.
 
 Shared prices still only tighten: a manual price can add a model or raise a price, never lower what a guard charges.
+
+### Publishing on a schedule
+
+Instead of running `prices publish` by hand, one guard per enterprise can publish every day at 00:45 UTC. It does what `guardrail prices publish` does with no `--overrides`: builds from the Price List, carries manual prices forward, and writes a version only when something changed, with the note "scheduled publish by guard <payer id>". To turn it on, in one payer org of the enterprise:
+
+1. Run `guardrail setup` for that payer org. It prints the price publisher credential's reach: `guardrail.prices`, with `datastore.data:read` and `datastore.data:write`.
+2. Mint that key and store it in Secrets Manager in the payer account:
+
+   ```
+   umask 077
+   jnh keys create --label guardrail-prices-publisher --datasets guardrail.prices \
+     --scopes datastore.data:read,datastore.data:write --expires-in 1y -o json | jq -r .secret > publisher.key
+   aws secretsmanager create-secret --region us-east-1 --name guardrail/prices/publisher --secret-string file://publisher.key
+   rm publisher.key
+   ```
+
+3. Update the stack with `PublishSharedPrices=true` and `PricePublisherSecretArn` set to that secret's ARN.
+
+The guard reads the key only when it publishes and when it checks key expiry; its expiry is warned like the reader and writer keys. Its role gains `pricing:GetProducts` and `bedrock:ListFoundationModels`, which read public data, and read access to that one secret. It sends local alerts:
+
+- once when a scheduled publish fails, and once when it works again;
+- when it publishes a version, listing what changed;
+- when the Price List has no price for a model it didn't report before, so you can add a manual price;
+- when a manual price is above the Price List's on input or output, so you can drop it if the Price List is right.
+
+Turn it on in only one payer org; a second publishing guard is harmless, since a publish with nothing changed writes nothing, but it doubles the alerts. Before deleting that payer org's stack, turn it on in another, or publishing stops.
 
 `guardrail prices build -o internal/packs/ai/prices.json` regenerates the release's table the same way.
 

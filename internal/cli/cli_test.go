@@ -37,6 +37,10 @@ func TestSetupIsIdempotent(t *testing.T) {
 	if !strings.Contains(out.String(), "reader dataset selectors guardrail.msp_a.123456789012.config,guardrail.prices,guardrail.msp_a.123456789012.inbox, permissions datastore.data:read,") {
 		t.Fatalf("reader reach not printed with the inbox: %s", out)
 	}
+	// The price publisher's reach, for the one publishing payer org (add-scheduled-price-publish D7).
+	if !strings.Contains(out.String(), "only for the one payer org whose stack sets PublishSharedPrices:\n  price publisher dataset selectors guardrail.prices, permissions datastore.data:read, datastore.data:write") {
+		t.Fatalf("publisher reach not printed: %s", out)
+	}
 	declares := f.Declares
 	out.Reset()
 	if err := c.Setup(ctx); err != nil {

@@ -19,6 +19,8 @@ Metadata:
         Parameters: [ReactToAccountEvents]
       - Label: { default: AI guard (optional) }
         Parameters: [EnableAIGuard, TrailBucket, TrailPrefix, TrailKmsKeyArn]
+      - Label: { default: Shared price publishing (optional; one payer org per enterprise) }
+        Parameters: [PublishSharedPrices, PricePublisherSecretArn]
 
 Parameters:
   MSPId:
@@ -97,6 +99,16 @@ Parameters:
     Default: ""
     AllowedPattern: "^(arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+)?$"
     Description: KMS key the trail encrypts its files with, if any. A key in another account must also allow this stack's guard role to decrypt (see docs/ai-guard.md).
+  PublishSharedPrices:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: When true, the guard builds the AI price table from the AWS Price List once a day and publishes it to the Jennah enterprise's shared prices (guardrail.prices), carrying manual prices forward. Turn it on in one payer org per enterprise (see docs/operating.md).
+  PricePublisherSecretArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^(arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+)?$"
+    Description: Secrets Manager secret holding the price publisher API key (read and write guardrail.prices only). Required when PublishSharedPrices is true.
 
 Rules:
   UsEast1Only:
@@ -113,6 +125,11 @@ Rules:
     Assertions:
       - Assert: !Not [!Equals [!Ref TrailBucket, ""]]
         AssertDescription: The AI guard reads the organization trail. Set TrailBucket to the bucket it writes to.
+  PricePublishingNeedsKey:
+    RuleCondition: !Equals [!Ref PublishSharedPrices, "true"]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref PricePublisherSecretArn, ""]]
+        AssertDescription: Publishing shared prices needs the price publisher key. Set PricePublisherSecretArn to the secret holding it.
 
 Conditions:
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
@@ -120,6 +137,7 @@ Conditions:
   AIGuard: !Equals [!Ref EnableAIGuard, "true"]
   AIGuardKms: !And [!Condition AIGuard, !Not [!Equals [!Ref TrailKmsKeyArn, ""]]]
   HasTrailPrefix: !Not [!Equals [!Ref TrailPrefix, ""]]
+  PricePublishing: !Equals [!Ref PublishSharedPrices, "true"]
 
 Resources:
   # The AI pack's cutoff, created unattached. The guard attaches it to an
@@ -781,6 +799,40 @@ Resources:
                 StringLike: { kms:ViaService: s3.*.amazonaws.com }
             - !Ref AWS::NoValue
 
+  # Shared price publishing (add-scheduled-price-publish), only in the payer
+  # org that publishes for the enterprise: read the AWS Price List and
+  # Bedrock's model list, both public data, and the price publisher key.
+  PricePublishPolicy:
+    Type: AWS::IAM::RolePolicy
+    Condition: PricePublishing
+    Properties:
+      RoleName: !Ref GuardRole
+      PolicyName: price-publish
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ReadPriceList
+            Effect: Allow
+            # Neither action has resource-level permissions.
+            Action: [pricing:GetProducts, bedrock:ListFoundationModels]
+            Resource: "*"
+          - Sid: PricePublisherKey
+            Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Ref PricePublisherSecretArn
+
+  PricePublishSchedule:
+    Type: AWS::Scheduler::Schedule
+    Condition: PricePublishing
+    Properties:
+      Description: Publish the enterprise's shared AI prices from the AWS Price List, after the daily run.
+      ScheduleExpression: cron(45 0 * * ? *)
+      FlexibleTimeWindow: { Mode: "OFF" }
+      Target:
+        Arn: !GetAtt GuardFunction.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: '{"task":"publish_prices"}'
+
   TrailSchedule:
     Type: AWS::Scheduler::Schedule
     Condition: AIGuard
@@ -826,6 +878,7 @@ Resources:
           ALERT_EMAIL: !Ref AlertEmail
           AI_POLICY_ID: !If [AIGuard, !GetAtt AIDenyPolicy.Id, ""]
           TRAIL_BUCKET: !If [AIGuard, !Ref TrailBucket, ""]
+          PRICE_PUBLISHER_SECRET_ARN: !If [PricePublishing, !Ref PricePublisherSecretArn, ""]
           TRAIL_PREFIX: !Ref TrailPrefix
           OUTBOX_QUEUE_URL: !Ref OutboxQueue
           STATE_TABLE: !Ref StateTable
@@ -836,7 +889,7 @@ Resources:
           GUARD_VERSION: !Ref GuardVersion
           # Bump with MinTemplateRevision (internal/guard/deployment.go) when the
           # code needs something older templates lack (add-guard-upgrades D2).
-          TEMPLATE_REVISION: "1"
+          TEMPLATE_REVISION: "2"
 
   NotifySubscription:
     Type: AWS::SNS::Subscription

@@ -21,17 +21,20 @@ import (
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/outbox"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/packs/ai"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/prices"
 	"github.com/alphauslabs/aws-spend-guardrail/schema"
 	"github.com/aws/aws-lambda-go/cfn"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/budgets"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	lambdasvc "github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
@@ -132,6 +135,34 @@ func setup(ctx context.Context) *app {
 		},
 		consumer: &outbox.Consumer{Jennah: writer, DatasetID: schema.InboxDatasetID(mspID, payer)},
 	}
+	// Shared price publishing, on in one payer org per enterprise
+	// (add-scheduled-price-publish). The publisher key is read only when it's
+	// used: by the publish task, and by the daily expiry check (D4, D6).
+	if arn := os.Getenv("PRICE_PUBLISHER_SECRET_ARN"); arn != "" {
+		dial := func(ctx context.Context) (*jennah.Client, error) {
+			out, err := sm.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: aws.String(arn)})
+			if err != nil {
+				return nil, fmt.Errorf("read the price publisher secret: %w", err)
+			}
+			return jennah.Dial(endpoint, strings.TrimSpace(aws.ToString(out.SecretString)))
+		}
+		a.g.PublishPrices = func(ctx context.Context) (*prices.PublishResult, error) {
+			j, err := dial(ctx)
+			if err != nil {
+				return nil, err
+			}
+			table, unmatched, err := prices.Fetch(ctx, pricing.NewFromConfig(cfg), bedrock.NewFromConfig(cfg))
+			if err != nil {
+				return nil, err
+			}
+			release, err := ai.Prices()
+			if err != nil {
+				return nil, err
+			}
+			return prices.Publish(ctx, j, table, unmatched, prices.PublishOptions{Note: "scheduled publish by guard " + payer, Release: release})
+		}
+		a.g.Keys = append(a.g.Keys, guard.GuardKey{Name: "price publisher", Key: lazyKey{dial}})
+	}
 	if policy := os.Getenv("AI_POLICY_ID"); policy != "" {
 		fast, err := fastPath(ctx, cfg, orgs, policy)
 		if err != nil {
@@ -167,6 +198,7 @@ const (
 	routeNotify   = "notification"
 	routeCoverage = "coverage"
 	routeTrail    = "trail"
+	routePrices   = "publish_prices"
 )
 
 // route names what an incoming event is, without acting on it.
@@ -184,6 +216,8 @@ func route(raw json.RawMessage) (string, error) {
 		return routeDaily, nil
 	case p.Task == "trail":
 		return routeTrail, nil
+	case p.Task == "publish_prices":
+		return routePrices, nil
 	case p.Source == "aws.organizations":
 		return routeCoverage, nil // an account created, invited or moved
 	case len(p.Records) > 0 && p.Records[0].EventSource == "aws:sqs":
@@ -216,6 +250,8 @@ func (a *app) handle(ctx context.Context, raw json.RawMessage) (any, error) {
 		return nil, a.g.Pull(ctx)
 	case routeDaily:
 		return nil, a.g.Daily(ctx)
+	case routePrices:
+		return nil, a.g.PublishSharedPrices(ctx)
 	case routeTrail:
 		return nil, a.g.Trail(ctx)
 	case routeCoverage:
@@ -308,4 +344,18 @@ func templateRevision() int {
 		return 0
 	}
 	return n
+}
+
+// lazyKey dials a key only when its expiry is checked, so a task that doesn't
+// use it never holds it.
+type lazyKey struct {
+	dial func(ctx context.Context) (*jennah.Client, error)
+}
+
+func (k lazyKey) CallingKey(ctx context.Context) (jennah.KeyInfo, error) {
+	j, err := k.dial(ctx)
+	if err != nil {
+		return jennah.KeyInfo{}, err
+	}
+	return j.CallingKey(ctx)
 }

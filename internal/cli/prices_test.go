@@ -196,3 +196,26 @@ func TestManualPriceNotes(t *testing.T) {
 		t.Errorf("carry-forward note:\n%s", out)
 	}
 }
+
+// A manual price the Price List now covers is dropped by itself, and the CLI
+// says so (add-scheduled-price-publish D8).
+func TestManualPriceDroppedWhenCovered(t *testing.T) {
+	ctx := context.Background()
+	c, _, out, _, built := manualSetup(t)
+	if err := c.PublishPrices(ctx, "ent-1", built, nil, PublishOptions{Manual: map[string]config.ModelPrice{"x.grok": {InputPer1K: 3, OutputPer1K: 15}}, Note: "n"}); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	covered := table(map[string]config.ModelPrice{"a.m1": {InputPer1K: 1, OutputPer1K: 2}, "a.m2": {InputPer1K: 1, OutputPer1K: 1}, "x.grok": {InputPer1K: 3, OutputPer1K: 15}})
+	if err := c.PublishPrices(ctx, "ent-1", covered, nil, PublishOptions{}); err != nil {
+		t.Fatalf("no note needed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "manual price dropped for x.grok: the Price List now prices it at or above it") || !strings.Contains(got, "manual prices changed") || !strings.Contains(got, "published price version 3") {
+		t.Fatalf("output:\n%s", got)
+	}
+	v, _ := c.J.LatestPrices(ctx)
+	if !strings.Contains(v.Note, "Manual price for x.grok dropped") {
+		t.Fatalf("version note %q", v.Note)
+	}
+}

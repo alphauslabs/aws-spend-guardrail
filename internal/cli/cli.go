@@ -110,6 +110,9 @@ func (c *CLI) Setup(ctx context.Context) error {
 	for _, n := range schema.GuardCredentials(c.MSP, c.Payer) {
 		fmt.Fprintf(c.Out, "  %-6s dataset selectors %s, permissions %s\n", n.Name, strings.Join(n.DatasetIDs, ","), strings.Join(n.Permissions, ", "))
 	}
+	p := schema.PricePublisherCredential()
+	fmt.Fprintf(c.Out, "Price publisher credential, only for the one payer org whose stack sets PublishSharedPrices:\n  %-6s dataset selectors %s, permissions %s\n",
+		p.Name, strings.Join(p.DatasetIDs, ","), strings.Join(p.Permissions, ", "))
 	fmt.Fprintf(c.Out, "Operators need dataset selector %s for this payer org, or %s for every payer org of the MSP.\n",
 		schema.PayerSelector(c.MSP, c.Payer), schema.MSPSelector(c.MSP))
 	return nil

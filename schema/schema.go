@@ -193,6 +193,18 @@ func GuardCredentials(msp, payer string) []CredentialNeeds {
 	}
 }
 
+// PricePublisherCredential is the reach of the price publisher key, held by
+// the one payer org whose stack publishes the enterprise's shared prices
+// (add-scheduled-price-publish D7). It reads the latest version and writes new
+// ones, and nothing else.
+func PricePublisherCredential() CredentialNeeds {
+	return CredentialNeeds{
+		Name:        "price publisher",
+		DatasetIDs:  []string{PricesDatasetID},
+		Permissions: []string{"datastore.data:read", "datastore.data:write"},
+	}
+}
+
 // Shared prices: one dataset per Jennah enterprise, read by every guard in it.
 const (
 	PricesDatasetID   = datasetPrefix + "prices"

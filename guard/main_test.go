@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -13,13 +14,15 @@ import (
 
 	"github.com/alphauslabs/aws-spend-guardrail/internal/alerttext"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 )
 
 func TestRoute(t *testing.T) {
 	cases := map[string]string{
-		`{"task":"pull"}`:  routePull,
-		`{"task":"daily"}`: routeDaily,
-		`{"task":"trail"}`: routeTrail,
+		`{"task":"pull"}`:           routePull,
+		`{"task":"daily"}`:          routeDaily,
+		`{"task":"trail"}`:          routeTrail,
+		`{"task":"publish_prices"}`: routePrices,
 		`{"RequestType":"Delete","ResponseURL":"https://example.com"}`:  routeTeardown,
 		`{"Records":[{"eventSource":"aws:sqs","body":"{}"}]}`:           routeOutbox,
 		`{"Records":[{"EventSource":"aws:sns","Sns":{"Message":"x"}}]}`: routeNotify,
@@ -63,7 +66,7 @@ func TestGuardRoleGrantsCalls(t *testing.T) {
 	}
 	grants := tpl[start:end]
 
-	call := regexp.MustCompile(`\b(organizations|dynamodb)\.([A-Z][A-Za-z]+)Input\b`)
+	call := regexp.MustCompile(`\b(organizations|dynamodb|pricing|bedrock)\.([A-Z][A-Za-z]+)Input\b`)
 	cliOnly := map[string]bool{filepath.Join("..", "internal", "awsx", "preflight.go"): true}
 	calls := map[string]string{}
 	for _, root := range []string{".", filepath.Join("..", "internal")} {
@@ -84,7 +87,7 @@ func TestGuardRoleGrantsCalls(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, want := range []string{"organizations:DescribeOrganization", "organizations:AttachPolicy", "dynamodb:UpdateItem", "dynamodb:GetItem"} {
+	for _, want := range []string{"organizations:DescribeOrganization", "organizations:AttachPolicy", "dynamodb:UpdateItem", "dynamodb:GetItem", "pricing:GetProducts", "bedrock:ListFoundationModels"} {
 		if calls[want] == "" {
 			t.Fatalf("expected to find the guard's call %s, found %v", want, calls)
 		}
@@ -118,5 +121,21 @@ func TestTemplateRevisionFromEnvironment(t *testing.T) {
 		if got := templateRevision(); got != want {
 			t.Errorf("%q: %d, want %d", v, got, want)
 		}
+	}
+}
+
+// The price publisher key is dialed only when checked; a failure to read it
+// is the check's error, not a crash (add-scheduled-price-publish D4, D6).
+func TestLazyKeyDialsOnUse(t *testing.T) {
+	dialed := 0
+	k := lazyKey{dial: func(context.Context) (*jennah.Client, error) {
+		dialed++
+		return nil, errors.New("read the price publisher secret: AccessDenied")
+	}}
+	if dialed != 0 {
+		t.Fatal("dialed before use")
+	}
+	if _, err := k.CallingKey(context.Background()); err == nil || !strings.Contains(err.Error(), "AccessDenied") || dialed != 1 {
+		t.Fatalf("err %v, dialed %d", err, dialed)
 	}
 }

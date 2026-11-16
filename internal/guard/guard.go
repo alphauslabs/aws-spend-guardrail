@@ -127,6 +127,12 @@ type StateStore interface {
 	// it, and saving State there could overwrite a concurrent Pull's.
 	HeartbeatDigest(ctx context.Context) (string, error)
 	SetHeartbeatDigest(ctx context.Context, digest string) error
+	// Meta and SetMeta keep a small named item of a task's own, such as the
+	// scheduled price publish's alert state (add-scheduled-price-publish D5),
+	// apart from State for the same reason as the heartbeat digest. Meta
+	// reports false when the item doesn't exist.
+	Meta(ctx context.Context, name string, v any) (bool, error)
+	SetMeta(ctx context.Context, name string, v any) error
 }
 
 // BudgetSpec is one budget the guard owns, as it should exist in AWS.
@@ -256,6 +262,10 @@ type Guard struct {
 	// Spend reads actual cost from Cost Explorer for lift decisions and the
 	// watch on changed budgets. Nil keeps every freeze and skips the watch.
 	Spend SpendSource
+	// PublishPrices publishes the enterprise's shared prices on the
+	// publish_prices task (add-scheduled-price-publish). Nil: this stack
+	// doesn't publish prices.
+	PublishPrices PricePublisher
 	// Names returns the organization's account names by id, for naming
 	// accounts in loosening approvals (add-account-names-in-alerts D5). Nil,
 	// or an empty result, leaves ids bare.

@@ -74,6 +74,8 @@ Within 5 minutes the guard pulls the config and creates one budget per scope. Wa
 | `TrailBucket` | empty | Bucket the organization trail writes to. Required with `EnableAIGuard=true`. |
 | `TrailPrefix` | empty | The trail's S3 key prefix, if it has one. |
 | `TrailKmsKeyArn` | empty | KMS key the trail encrypts its files with, if any. |
+| `PublishSharedPrices` | `false` | When `true`, the guard publishes the enterprise's shared AI prices daily ([publishing on a schedule](operating.md#publishing-on-a-schedule)). Turn it on in one payer org per enterprise. |
+| `PricePublisherSecretArn` | empty | Secret holding the price publisher key. Required when `PublishSharedPrices` is `true`. |
 | `ReactToAccountEvents` | `false` | When `true`, a new, invited, or moved account is checked within minutes instead of at the daily run. Only works when a CloudTrail trail in the payer account records management events; without one, account events never reach EventBridge, and the daily check is the only one. |
 
 The approval settings are stack parameters on purpose: changing them takes a stack update in the payer account, which a Jennah credential can't do.

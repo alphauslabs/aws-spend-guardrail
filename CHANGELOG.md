@@ -4,6 +4,23 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Upgrade
+1. Update the stack with this release's template and package (template revision 2), as in [upgrading](docs/upgrade.md). A guard of this release on the v0.1.0 template keeps running but alerts that its template is older than it needs.
+2. Optional, in one payer org per enterprise, to publish shared AI prices daily: update the `guardrail` CLI, run `guardrail setup` for that payer org, mint the price publisher key it prints and store it in Secrets Manager, then set `PublishSharedPrices=true` and `PricePublisherSecretArn` on that stack (see [publishing on a schedule](docs/operating.md#publishing-on-a-schedule)).
+
+Rolling back to v0.1.0 is supported.
+
+### Added
+- Scheduled publishing of shared AI prices: with `PublishSharedPrices=true`, the guard builds the AI price table from the AWS Price List daily at 00:45 UTC and publishes it to `guardrail.prices` as `guardrail prices publish` does, carrying manual prices forward and writing nothing when nothing changed. It alerts once when a publish fails and when it recovers, when it publishes a version, when the Price List has no price for a model it hadn't reported, and when a manual price is above the Price List's. Its key's expiry is reported and warned like the reader's and writer's. `guardrail setup` prints the publisher key's reach.
+- A manual price the Price List now prices at or above it on both input and output is dropped by the next publish, by hand or scheduled, since that changes no price guards use; the version's note says so, and no `--note` is needed.
+
+### Changed
+- Prices in alerts, approval requests, and `guardrail` output are written as plain decimals (`0.00006`), never in exponent form (`6e-05`).
+
+### Security-relevant
+- Optional, only with `PublishSharedPrices=true`: the guard's role gains `pricing:GetProducts` and `bedrock:ListFoundationModels` (public data; neither has resource-level permissions) and `secretsmanager:GetSecretValue` on the price publisher secret, and the guard calls the AWS Price List API and Bedrock's model list once a day. The price publisher key can read and write only `guardrail.prices`; shared prices still only tighten what guards charge.
+- New optional stack parameters `PublishSharedPrices` and `PricePublisherSecretArn`. The template revision is now 2.
+
 ## [v0.1.0] - 2026-11-16
 
 ### Upgrade

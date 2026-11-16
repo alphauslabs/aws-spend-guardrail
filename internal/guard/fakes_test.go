@@ -86,6 +86,27 @@ type memState struct {
 	frozen   map[config.Target]Frozen
 	reported map[string]map[string]time.Time
 	digest   string
+	meta     map[string][]byte
+}
+
+func (m *memState) Meta(_ context.Context, name string, v any) (bool, error) {
+	raw, ok := m.meta[name]
+	if !ok {
+		return false, nil
+	}
+	return true, json.Unmarshal(raw, v)
+}
+
+func (m *memState) SetMeta(_ context.Context, name string, v any) error {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	if m.meta == nil {
+		m.meta = map[string][]byte{}
+	}
+	m.meta[name] = raw
+	return nil
 }
 
 func (m *memState) HeartbeatDigest(context.Context) (string, error) { return m.digest, nil }

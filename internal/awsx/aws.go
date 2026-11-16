@@ -302,6 +302,16 @@ func (s *State) SetHeartbeatDigest(ctx context.Context, digest string) error {
 	return s.put(ctx, pkState, "heartbeat_digest", digest)
 }
 
+// Meta reads a named item a task keeps for itself.
+func (s *State) Meta(ctx context.Context, name string, v any) (bool, error) {
+	return s.get(ctx, pkState, "meta#"+name, v)
+}
+
+// SetMeta writes a named item a task keeps for itself.
+func (s *State) SetMeta(ctx context.Context, name string, v any) error {
+	return s.put(ctx, pkState, "meta#"+name, v)
+}
+
 // ClearReported forgets a report, so a later lapse is reported again.
 func (s *State) ClearReported(ctx context.Context, kind, account string) error {
 	_, err := s.API.DeleteItem(ctx, &dynamodb.DeleteItemInput{TableName: aws.String(s.Table), Key: key(pkReported, kind+"#"+account)})

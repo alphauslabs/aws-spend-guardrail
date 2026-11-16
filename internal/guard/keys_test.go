@@ -135,3 +135,24 @@ func TestUnknownAndNeverDontWarn(t *testing.T) {
 		t.Fatal("a failed key check must not stop the daily run")
 	}
 }
+
+// A stack that publishes prices checks its price publisher key like the
+// others (add-scheduled-price-publish D6).
+func TestPricePublisherKeyIsChecked(t *testing.T) {
+	h, _, _ := withKeys(t)
+	publisher := &fakeKey{info: jennah.KeyInfo{Known: true, ID: "k-p1", Label: "guardrail-prices-publisher", ExpiresAt: h.now.Add(13 * 24 * time.Hour)}}
+	h.g.Keys = append(h.g.Keys, GuardKey{Name: "price publisher", Key: publisher})
+	h.daily()
+	keys := h.heartbeatKeys()
+	if len(keys) != 3 || keys[2]["name"] != "price publisher" || keys[2]["expires_at"] != publisher.info.ExpiresAt.Format(time.RFC3339) {
+		t.Fatalf("heartbeat keys: %v", keys)
+	}
+	if h.expiryAlerts() != 1 || !h.alerts.has("guardrail: price publisher key expires in 13 day(s)") {
+		t.Fatalf("alerts: %v", h.alerts.list)
+	}
+	h.now = h.now.Add(24 * time.Hour)
+	h.daily()
+	if h.expiryAlerts() != 1 {
+		t.Fatalf("the next day sends nothing new: %v", h.alerts.list)
+	}
+}
