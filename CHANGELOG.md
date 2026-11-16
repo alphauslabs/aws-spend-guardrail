@@ -4,8 +4,12 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+## [v0.2.1] - 2026-11-16
+
 ### Upgrade
-None. Updating the stack as in [upgrading](docs/upgrade.md) gives guards the 4 newly priced models in their built-in table. Guards on an earlier release get them from shared prices once the enterprise's prices are published again, by hand or on the daily schedule.
+No action is required. Updating the stack as in [upgrading](docs/upgrade.md) gives guards the 4 newly priced models in their built-in table, and guards on an earlier release get them from shared prices once the enterprise's prices are published again.
+
+If a payer org publishes shared prices on a schedule (`PublishSharedPrices=true`), update that stack to this release before anyone publishes these prices, or as soon as possible after: a v0.2.0 publisher builds without the 4 models, so its daily publish would remove them from shared prices again.
 
 ### Fixed
 - The price builder now prices 4 Bedrock models the AWS Price List does price but labels in ways it used to miss: `xai.grok-4.6` (listed by its model id, with no inference type), `mistral.voxtral-small-24b-2507` (its standard usage types say Voxtral Mini; its `-mantle` ones carry the id), and `amazon.nova-2-sonic-v1:0` and `amazon.nova-2-5-sonic` (speech and text token rates, priced at the higher of the two, and "Nova Sonic 2.0" against Bedrock's "Nova 2 Sonic"). The release's price table adds them; no other price changed. Models the Price List doesn't list, or doesn't price per token (Rerank, Pegasus), still have no price.
