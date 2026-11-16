@@ -69,7 +69,7 @@ Publishing SHALL refuse the file, and publish nothing, when it has an unknown fi
 - **THEN** publishing fails naming the model and the field, and no version is written
 
 ### Requirement: Manual prices carry forward until dropped
-A published version SHALL record which of its prices are manual. A later publish SHALL keep the latest version's manual prices unless the operator gives a new price for the model or drops it, or the Price List prices the model at or above the manual price on both input and output. In that last case publishing SHALL drop the manual price without needing a note and SHALL say so in the version's note. When the Price List prices a manual model below the manual price on either side, publishing SHALL keep the higher price and suggest dropping the manual one.
+A published version SHALL record which of its prices are manual, and a later publish SHALL keep the latest version's manual prices unless the operator gives a new price for the model or drops it, or the Price List covers the model as the requirement on covered manual prices describes.
 
 #### Scenario: A routine publish
 - **WHEN** an operator publishes without a manual price file after a version that priced `xai.grok-4.6` by hand
@@ -161,3 +161,17 @@ A change to how the builder matches Price List entries SHALL NOT lower the price
 #### Scenario: The recorded sample
 - **WHEN** the builder runs on the recorded Price List sample before and after a change to its matching
 - **THEN** every model priced before is priced the same or higher after
+
+### Requirement: A manual price the Price List covers is dropped by itself
+When the Price List prices a manual model at or above the manual price on both input and output, publishing SHALL drop the manual price without needing a note, and SHALL say so in the version's note.
+
+#### Scenario: Equal prices
+- **WHEN** a manual price equals the Price List's on both input and output
+- **THEN** the next publish drops the manual price, publishes the same prices, and its note names the dropped model
+
+### Requirement: A manual price above the Price List is kept
+When the Price List prices a manual model below the manual price on input or output, publishing SHALL keep the higher price and suggest dropping the manual one.
+
+#### Scenario: AWS prices a model lower
+- **WHEN** a manual price is $0.015 output and the Price List's is $0.010
+- **THEN** the published version keeps $0.015 output, and publishing suggests `--drop-override` for the model
