@@ -13,6 +13,8 @@
 | `InvokeAgent`, `InvokeInlineAgent`, `InvokeFlow` | the action of the same name |
 | batch, provisioned throughput, customization | `bedrock:CreateModelInvocationJob`, `CreateProvisionedModelThroughput`, `CreateModelCustomizationJob` |
 
+Confirmed live on 2026-11-16 (task 1.1): with e2enormal (730335604511) cut off by the v0.2.2 policy, `bedrock-runtime` `Converse` was refused (AccessDeniedException), while `POST https://bedrock-mantle.us-east-1.api.aws/v1/chat/completions` (SigV4, model `zai.glm-4.7-flash`) returned a completion. `ListFoundationModels` and S3 still worked.
+
 ## Goals / Non-Goals
 
 **Goals:** a cut-off account can't start paid Bedrock or AgentCore work through any endpoint; everything else in the account, and reading and cleaning up AI resources, still works.

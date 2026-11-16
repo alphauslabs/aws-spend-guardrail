@@ -144,8 +144,10 @@ Conditions:
 Resources:
   # The AI pack's cutoff, created unattached. The guard attaches it to an
   # account that passes an AI cap or trips an AI rule. It denies AI access
-  # only: Bedrock model invocation (which also governs Converse), Bedrock API
-  # keys, and AgentCore invoke and session actions.
+  # only: every Bedrock and AgentCore action that starts paid model work or a
+  # new AI spend commitment, through bedrock-runtime or bedrock-mantle, and
+  # Bedrock API keys; never reads, lists, or cleanup (widen-ai-cutoff D1). An
+  # explicit list, so its effect is reviewable; guard/main_test.go pins it.
   AIDenyPolicy:
     Type: AWS::Organizations::Policy
     Condition: AIGuard
@@ -159,9 +161,31 @@ Resources:
           - Sid: GuardrailAICutoff
             Effect: Deny
             Action:
+              # Model calls: InvokeModel also governs Converse, the
+              # bidirectional stream, and async invoke.
               - bedrock:InvokeModel
               - bedrock:InvokeModelWithResponseStream
               - bedrock:CallWithBearerToken
+              # Knowledge bases, reranking, agents, and flows.
+              - bedrock:Rerank
+              - bedrock:Retrieve
+              - bedrock:RetrieveAndGenerate
+              - bedrock:AgenticRetrieveStream
+              - bedrock:InvokeAgent
+              - bedrock:InvokeInlineAgent
+              - bedrock:InvokeFlow
+              # New spend commitments.
+              - bedrock:CreateModelInvocationJob
+              - bedrock:CreateProvisionedModelThroughput
+              - bedrock:CreateModelCustomizationJob
+              - bedrock:InvokeDataAutomation
+              - bedrock:InvokeDataAutomationAsync
+              # The OpenAI- and Anthropic-compatible endpoint.
+              - bedrock-mantle:CreateInference
+              - bedrock-mantle:CallWithBearerToken
+              - bedrock-mantle:CreateFineTuningJob
+              - bedrock-mantle:CreateReservation
+              # AgentCore.
               - bedrock-agentcore:Invoke*
               - bedrock-agentcore:Start*
             Resource: "*"
@@ -891,7 +915,7 @@ Resources:
           GUARD_VERSION: !Ref GuardVersion
           # Bump with MinTemplateRevision (internal/guard/deployment.go) when the
           # code needs something older templates lack (add-guard-upgrades D2).
-          TEMPLATE_REVISION: "2"
+          TEMPLATE_REVISION: "3"
 
   NotifySubscription:
     Type: AWS::SNS::Subscription

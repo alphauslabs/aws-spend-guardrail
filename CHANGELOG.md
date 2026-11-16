@@ -4,6 +4,17 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Upgrade
+1. Update the stack with this release's template and package (template revision 3), as in [upgrading](docs/upgrade.md). The AI cutoff policy is updated in place: accounts already cut off get the wider cutoff at once, with no new cutoff. A guard of this release on an older template keeps running but alerts that its template is older than it needs.
+
+Rolling back to v0.2.2 is supported; it restores the narrower cutoff.
+
+### Changed
+- The AI cutoff now denies every way to start paid Bedrock or AgentCore work, not only model invocation: inference through the OpenAI- and Anthropic-compatible `bedrock-mantle` endpoint, Bedrock API keys on it, reranking, knowledge-base retrieval and generation, agents and flows, batch inference, provisioned throughput, model customization, Bedrock Data Automation, and mantle fine-tuning and reservations. Before this, a cut-off account could keep calling models through the `bedrock-mantle` endpoint. Reads, listing, and cleanup stay allowed, and work already running is not stopped. See `docs/ai-guard.md`.
+
+### Security-relevant
+- The AI cutoff service control policy denies more actions: `bedrock:Rerank`, `Retrieve`, `RetrieveAndGenerate`, `AgenticRetrieveStream`, `InvokeAgent`, `InvokeInlineAgent`, `InvokeFlow`, `CreateModelInvocationJob`, `CreateProvisionedModelThroughput`, `CreateModelCustomizationJob`, `InvokeDataAutomation`, and `InvokeDataAutomationAsync`, and `bedrock-mantle:CreateInference`, `CallWithBearerToken`, `CreateFineTuningJob`, and `CreateReservation`. It applies only to accounts the AI guard cuts off. The guard's role is unchanged.
+
 ## [v0.2.2] - 2026-11-16
 
 ### Upgrade

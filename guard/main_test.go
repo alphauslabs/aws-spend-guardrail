@@ -139,3 +139,44 @@ func TestLazyKeyDialsOnUse(t *testing.T) {
 		t.Fatalf("err %v, dialed %d", err, dialed)
 	}
 }
+
+// The AI cutoff denies exactly these actions (widen-ai-cutoff D1, D4), so a
+// change to what a cutoff blocks is deliberate, and the policy stays under the
+// 5,120-character limit for a service control policy.
+func TestAICutoffActions(t *testing.T) {
+	raw, err := os.ReadFile("template.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := string(raw)
+	start := strings.Index(tpl, "\n  AIDenyPolicy:\n")
+	end := strings.Index(tpl, "\n  # Freeze policies")
+	if start < 0 || end < start {
+		t.Fatal("can't find AIDenyPolicy in template.yaml")
+	}
+	var got []string
+	for _, l := range strings.Split(tpl[start:end], "\n") {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "- bedrock") {
+			got = append(got, strings.TrimPrefix(l, "- "))
+		}
+	}
+	want := []string{
+		"bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream", "bedrock:CallWithBearerToken",
+		"bedrock:Rerank", "bedrock:Retrieve", "bedrock:RetrieveAndGenerate", "bedrock:AgenticRetrieveStream",
+		"bedrock:InvokeAgent", "bedrock:InvokeInlineAgent", "bedrock:InvokeFlow",
+		"bedrock:CreateModelInvocationJob", "bedrock:CreateProvisionedModelThroughput", "bedrock:CreateModelCustomizationJob",
+		"bedrock:InvokeDataAutomation", "bedrock:InvokeDataAutomationAsync",
+		"bedrock-mantle:CreateInference", "bedrock-mantle:CallWithBearerToken", "bedrock-mantle:CreateFineTuningJob", "bedrock-mantle:CreateReservation",
+		"bedrock-agentcore:Invoke*", "bedrock-agentcore:Start*",
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("AI cutoff actions:\n got %v\nwant %v", got, want)
+	}
+	// The policy as AWS stores it: compact JSON of the statement.
+	policy, _ := json.Marshal(map[string]any{"Version": "2012-10-17", "Statement": []map[string]any{{
+		"Sid": "GuardrailAICutoff", "Effect": "Deny", "Action": got, "Resource": "*"}}})
+	if len(policy) >= 5120 {
+		t.Fatalf("the AI cutoff policy is %d characters; service control policies allow 5,120", len(policy))
+	}
+}

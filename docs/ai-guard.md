@@ -16,13 +16,18 @@ The guard moves past a trail file only once the spend of its calls is stored. If
 
 ## What a cutoff blocks
 
-The cutoff is a service control policy, `guardrail-ai-cutoff-<msp id>`, attached to one account at a time, never an OU. It denies:
+The cutoff is a service control policy, `guardrail-ai-cutoff-<msp id>`, attached to one account at a time, never an OU. It denies every way to start paid Bedrock or AgentCore work:
 
-- Bedrock model calls (`bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`, which also govern `Converse` and `ConverseStream`);
-- Bedrock API keys (`bedrock:CallWithBearerToken`);
-- AgentCore invoke and session calls (`bedrock-agentcore:Invoke*` and `Start*`).
+- **Model calls:** `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`, which also govern `Converse`, `ConverseStream`, the bidirectional stream (Nova Sonic), and async invoke.
+- **The OpenAI- and Anthropic-compatible endpoint** (`bedrock-mantle`): `CreateInference`, which covers `/v1/chat/completions`, `/v1/responses`, and `/anthropic/v1/messages`, plus `CreateFineTuningJob` and `CreateReservation`.
+- **Bedrock API keys**, on both endpoints: `bedrock:CallWithBearerToken` and `bedrock-mantle:CallWithBearerToken`.
+- **Knowledge bases, reranking, agents, and flows:** `Rerank`, `Retrieve`, `RetrieveAndGenerate`, `AgenticRetrieveStream`, `InvokeAgent`, `InvokeInlineAgent`, and `InvokeFlow`.
+- **New spend commitments:** batch inference (`CreateModelInvocationJob`), provisioned throughput, model customization, and Bedrock Data Automation.
+- **AgentCore** invoke and session calls (`bedrock-agentcore:Invoke*` and `Start*`).
 
-Nothing else in the account is affected: EC2, S3, and every other service keep working. Nothing already running is stopped.
+Everything else keeps working: EC2, S3, and every other service, and reading, listing, and cleaning up Bedrock resources (listing models, reading a batch job's status, deleting provisioned throughput). Nothing already running is stopped: a batch job or provisioned throughput started before the cutoff keeps running and billing.
+
+When a release widens this list, updating the stack updates the policy in place, so accounts already cut off get the wider cutoff at once, with no new cutoff.
 
 ## Caps and rules
 
