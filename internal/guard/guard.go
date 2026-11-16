@@ -213,7 +213,13 @@ type Settings struct {
 	GuardVersion   string
 	// CodeSHA256 is the deployed package's hash as AWS Lambda reports it
 	// (base64 SHA-256), or "unknown". Set once at cold start.
-	CodeSHA256         string
+	CodeSHA256 string
+	// TemplateRevision is the stack template's TEMPLATE_REVISION, 0 for a
+	// template from before add-guard-upgrades.
+	TemplateRevision int
+	// StackGuardVersion is the stack's GuardVersion parameter, a label the
+	// operator sets; GuardVersion is the version built into the code.
+	StackGuardVersion  string
 	PolicyA            string
 	PolicyB            string
 	LooseningApprovers []string
@@ -332,5 +338,13 @@ func (g *Guard) selfReport(detail map[string]any) map[string]any {
 		code = "unknown"
 	}
 	detail["code_sha256"] = code
+	// A stack that doesn't match its code (add-guard-upgrades D2, D4).
+	detail["template_revision"] = g.S.TemplateRevision
+	if g.S.TemplateRevision < MinTemplateRevision {
+		detail["template_revision_needed"] = MinTemplateRevision
+	}
+	if g.labelMismatch() {
+		detail["stack_guard_version"] = g.S.StackGuardVersion
+	}
 	return detail
 }

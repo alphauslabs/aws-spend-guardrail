@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/packs/ai"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/prices"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/releases"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
@@ -49,8 +51,10 @@ Usage:
                      [--approvers EMAIL,...] [--alert-email EMAIL]
                      (prints a CloudFormation console link; needs no credentials)
   guardrail prices build -o FILE   (build the AI price table from the AWS Price List API)
-  guardrail prices publish [--dry-run] [--note TEXT]
+  guardrail prices publish [--dry-run] [--note TEXT] [--overrides FILE] [--drop-override MODEL]...
                      (publish it to the enterprise's shared guardrail.prices; run once per enterprise)
+  guardrail versions --msp ID [--payer ACCOUNT] [--latest vX.Y.Z] [--json]
+                     (the guard version each payer org runs, against the latest release)
   guardrail schema   (print the config JSON schema)
   guardrail version
 
@@ -80,6 +84,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 	if cmd == "prices" {
 		return pricesCmd(ctx, rest, stdout, stderr)
+	}
+	if cmd == "versions" {
+		return versionsCmd(ctx, rest, stdout, stderr)
 	}
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -410,3 +417,39 @@ type multiFlag []string
 
 func (m *multiFlag) String() string     { return strings.Join(*m, ",") }
 func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
+
+// latestURL is the latest-release API the versions command reads; tests
+// replace it.
+var latestURL = releases.LatestURL
+
+// versionsCmd lists the guard version each payer org of an MSP runs, against
+// the latest release (add-guard-upgrades D6).
+func versionsCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("versions", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	msp := fs.String("msp", "", "MSP id")
+	payer := fs.String("payer", "", "only this payer (management) account")
+	latest := fs.String("latest", "", "compare with this release instead of looking up the latest on GitHub")
+	asJSON := fs.Bool("json", false, "print JSON")
+	endpoint := fs.String("endpoint", os.Getenv("JENNAH_ENDPOINT"), "Jennah gRPC endpoint (default: the public endpoint)")
+	apiKey := fs.String("api-key", os.Getenv("JENNAH_API_KEY"), "Jennah API key")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *msp == "" {
+		return errors.New("--msp is required")
+	}
+	if *latest != "" && !releases.Valid(*latest) {
+		return fmt.Errorf("--latest %q is not a vX.Y.Z version", *latest)
+	}
+	var latestErr error
+	if *latest == "" {
+		*latest, latestErr = releases.Latest(ctx, http.DefaultClient, latestURL)
+	}
+	j, err := jennah.Dial(*endpoint, *apiKey)
+	if err != nil {
+		return fmt.Errorf("connect to Jennah: %w", err)
+	}
+	c := &cli.CLI{J: j, MSP: *msp, Payer: *payer, Out: stdout, Status: stderr}
+	return c.Versions(ctx, *latest, latestErr, *asJSON)
+}

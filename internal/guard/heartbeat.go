@@ -31,6 +31,9 @@ const (
 // digest has been taken so that spend moving is never a change.
 func (g *Guard) snapshot(ctx context.Context, st *State) (map[string]any, error) {
 	snap := map[string]any{"state_layout": StateLayout}
+	// What runs, so a new code hash or template changes the digest and the
+	// first run after an upgrade writes a heartbeat (add-guard-upgrades).
+	snap["deployment"] = map[string]any{"guard_version": g.S.GuardVersion, "code_sha256": g.S.CodeSHA256, "template_revision": g.S.TemplateRevision}
 
 	frozen, err := g.State.ListFrozen(ctx)
 	if err != nil {

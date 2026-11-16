@@ -78,4 +78,4 @@ jnh datasets query guardrail.<msp id>.<payer account>.inbox --table events \
 
 ## What to read before upgrading
 
-[CHANGELOG.md](../CHANGELOG.md) has an entry for every release. Its **Security-relevant** section lists changes to the freeze policies, IAM permissions, the stack parameters that control approvals, and outbound calls. Review those, and the diff between the two tags, before deploying a new version.
+[CHANGELOG.md](../CHANGELOG.md) has an entry for every release. Its **Upgrade** section lists what upgrading to it needs, in order; the steps are in [upgrading](upgrade.md). Its **Security-relevant** section lists changes to the freeze policies, IAM permissions, the stack parameters that control approvals, and outbound calls. Review those, and the diff between the two tags, before deploying a new version.

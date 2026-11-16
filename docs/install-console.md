@@ -91,7 +91,7 @@ After the first daily run (00:15 UTC), expect one alert listing every active acc
 
 ## Updating or removing
 
-- **New release:** upload its `guard.zip` under a new folder, then **CloudFormation → the stack → Update → Replace existing template** with the new `template.yaml`, and change `FunctionPackageKey` and `GuardVersion`.
+- **New release:** follow [upgrading](upgrade.md): check which release each payer org runs, read the release's Upgrade steps, then **CloudFormation → the stack → Update → Replace existing template** with the new `template.yaml`, and change `FunctionPackageKey` and `GuardVersion`.
 - **Change approvers or the delay:** **Update → Use existing template**, and change the parameters.
 - **Remove:** **CloudFormation → the stack → Delete**. Before it goes, the guard lifts every freeze it recorded and deletes the budgets it owns.
 

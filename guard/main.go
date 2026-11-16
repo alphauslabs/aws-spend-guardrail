@@ -94,6 +94,8 @@ func setup(ctx context.Context) *app {
 		PayerAccountID:     payer,
 		MSPID:              mspID,
 		GuardVersion:       version,
+		StackGuardVersion:  os.Getenv("GUARD_VERSION"),
+		TemplateRevision:   templateRevision(),
 		PolicyA:            env("FREEZE_POLICY_A"),
 		PolicyB:            env("FREEZE_POLICY_B"),
 		LooseningApprovers: strings.Split(env("LOOSENING_APPROVERS"), ","),
@@ -142,6 +144,7 @@ func setup(ctx context.Context) *app {
 	}
 	hash, err := awsx.CodeSHA256(ctx, lambdasvc.NewFromConfig(cfg), os.Getenv("AWS_LAMBDA_FUNCTION_NAME"))
 	a.g.SetCodeHash(ctx, hash, err)
+	a.g.CheckDeployment(ctx)
 	return a
 }
 
@@ -295,4 +298,14 @@ func fastPath(ctx context.Context, cfg aws.Config, orgs *organizations.Client, p
 // guard keeps working.
 func aiNotStarted(err error) string {
 	return alerttext.WithError("The AI guard could not start, so AI spend is not being watched. The budget guard keeps working. It tries again the next time the function starts.", err)
+}
+
+// templateRevision is the stack template's TEMPLATE_REVISION, or 0 when the
+// template predates it (add-guard-upgrades D2).
+func templateRevision() int {
+	n, err := strconv.Atoi(os.Getenv("TEMPLATE_REVISION"))
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }

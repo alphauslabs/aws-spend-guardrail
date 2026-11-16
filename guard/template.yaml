@@ -834,6 +834,9 @@ Resources:
           LOOSENING_APPROVAL_WINDOW: !Ref LooseningApprovalWindow
           LOOSENING_DELAY: !Ref LooseningDelay
           GUARD_VERSION: !Ref GuardVersion
+          # Bump with MinTemplateRevision (internal/guard/deployment.go) when the
+          # code needs something older templates lack (add-guard-upgrades D2).
+          TEMPLATE_REVISION: "1"
 
   NotifySubscription:
     Type: AWS::SNS::Subscription

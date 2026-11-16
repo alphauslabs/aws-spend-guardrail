@@ -83,3 +83,18 @@ func TestPricesManualFlagsFailEarly(t *testing.T) {
 		}
 	}
 }
+
+func TestVersionsFlagsFailEarly(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"versions"}, "--msp is required"},
+		{[]string{"versions", "--msp", "msp_a", "--latest", "latest"}, `"latest" is not a vX.Y.Z version`},
+	} {
+		var out, errb bytes.Buffer
+		if err := run(context.Background(), tc.args, &out, &errb); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%v: err %v, want %q", tc.args, err, tc.want)
+		}
+	}
+}

@@ -1,9 +1,10 @@
 // Command changelogcheck fails unless CHANGELOG.md has an entry for a version
-// with a non-empty "Security-relevant" section.
+// with non-empty "Upgrade" and "Security-relevant" sections.
 //
 //	go run ./tools/changelogcheck CHANGELOG.md v0.1.0
 //
-// With -notes, it prints the version's entry, for the release notes.
+// With -notes, it prints the version's entry, Upgrade section first, for the
+// release notes.
 package main
 
 import (
@@ -37,8 +38,9 @@ func main() {
 }
 
 // Entry returns a version's section ("## [vX.Y.Z]" or "## vX.Y.Z", up to the
-// next "## "), and fails if it is missing or has no non-empty
-// "### Security-relevant" subsection.
+// next "## ") with its "### Upgrade" subsection moved first, and fails if it
+// is missing or lacks a non-empty "### Upgrade" or "### Security-relevant"
+// subsection (add-guard-upgrades D1).
 func Entry(changelog, version string) (string, error) {
 	lines := strings.Split(changelog, "\n")
 	start := -1
@@ -60,25 +62,41 @@ func Entry(changelog, version string) (string, error) {
 		}
 	}
 	section := lines[start+1 : end]
-	sec := -1
+	up, upFrom, upTo, err := subsection(section, version, "Upgrade", "write \"None.\" if upgrading needs no action")
+	if err != nil {
+		return "", err
+	}
+	if _, _, _, err := subsection(section, version, "Security-relevant", "write \"None.\" if nothing changed"); err != nil {
+		return "", err
+	}
+	rest := append(append([]string{}, section[:upFrom]...), section[upTo:]...)
+	return strings.Join(append(up, rest...), "\n") + "\n", nil
+}
+
+// subsection finds "### <name>" in an entry and returns its lines (heading
+// included) and their range, failing when it is missing or empty.
+func subsection(section []string, version, name, hint string) ([]string, int, int, error) {
+	from := -1
 	for i, l := range section {
-		if strings.TrimSpace(l) == "### Security-relevant" {
-			sec = i
+		if strings.TrimSpace(l) == "### "+name {
+			from = i
 			break
 		}
 	}
-	if sec < 0 {
-		return "", fmt.Errorf("the %s entry has no \"### Security-relevant\" section", version)
+	if from < 0 {
+		return nil, 0, 0, fmt.Errorf("the %s entry has no \"### %s\" section", version, name)
 	}
+	to := len(section)
 	body := ""
-	for _, l := range section[sec+1:] {
-		if strings.HasPrefix(l, "### ") {
+	for i := from + 1; i < len(section); i++ {
+		if strings.HasPrefix(section[i], "### ") {
+			to = i
 			break
 		}
-		body += strings.TrimSpace(l)
+		body += strings.TrimSpace(section[i])
 	}
 	if body == "" {
-		return "", errors.New("the Security-relevant section of " + version + " is empty; write \"None.\" if nothing changed")
+		return nil, 0, 0, errors.New("the " + name + " section of " + version + " is empty; " + hint)
 	}
-	return strings.Join(section, "\n") + "\n", nil
+	return section[from:to], from, to, nil
 }

@@ -7,10 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/alphauslabs/aws-spend-guardrail/internal/alerttext"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
 )
 
 func TestRoute(t *testing.T) {
@@ -90,6 +92,31 @@ func TestGuardRoleGrantsCalls(t *testing.T) {
 	for action, path := range calls {
 		if !strings.Contains(grants, action) {
 			t.Errorf("%s calls %s, which the guard role isn't granted in template.yaml", path, action)
+		}
+	}
+}
+
+// The template's TEMPLATE_REVISION must equal the code's MinTemplateRevision,
+// so a release always ships them matched (add-guard-upgrades D2).
+func TestTemplateRevisionMatchesCode(t *testing.T) {
+	raw, err := os.ReadFile("template.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^\s+TEMPLATE_REVISION: "(\d+)"$`).FindStringSubmatch(string(raw))
+	if m == nil {
+		t.Fatal(`template.yaml has no TEMPLATE_REVISION: "N" in the function's environment`)
+	}
+	if n, _ := strconv.Atoi(m[1]); n != guard.MinTemplateRevision {
+		t.Fatalf("template revision %d, code needs %d: bump both together", n, guard.MinTemplateRevision)
+	}
+}
+
+func TestTemplateRevisionFromEnvironment(t *testing.T) {
+	for v, want := range map[string]int{"": 0, "3": 3, "x": 0, "-1": 0} {
+		t.Setenv("TEMPLATE_REVISION", v)
+		if got := templateRevision(); got != want {
+			t.Errorf("%q: %d, want %d", v, got, want)
 		}
 	}
 }

@@ -25,8 +25,24 @@ jobs:
         run: |
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "tag $GITHUB_REF_NAME is not on main"; exit 1; }
-      - name: The changelog has an entry with a Security-relevant section
+      - name: The changelog has an entry with Upgrade and Security-relevant sections
         run: go run ./tools/changelogcheck CHANGELOG.md "$GITHUB_REF_NAME"
+      - name: The release has a state fixture
+        run: |
+          f="internal/awsx/testdata/state/$GITHUB_REF_NAME.json"
+          test -f "$f" || { echo "missing $f; write it with GUARDRAIL_WRITE_STATE_FIXTURE=$GITHUB_REF_NAME go test ./internal/awsx -run TestWriteStateFixture"; exit 1; }
+          go test ./internal/awsx -run TestFixtures -count=1
+      - name: The previous release reads this release's state (rollback)
+        run: |
+          prev=$(git tag --list 'v*.*.*' --sort=-v:refname | awk -v cur="$GITHUB_REF_NAME" 'found { print; exit } $0 == cur { found = 1 }')
+          if [ -z "$prev" ]; then echo "no previous release"; exit 0; fi
+          git worktree add -q "$RUNNER_TEMP/prev" "$prev"
+          if ! grep -q 'func TestFixtures' "$RUNNER_TEMP/prev/internal/awsx/fixtures_test.go" 2>/dev/null; then
+            echo "$prev predates state fixtures; rollback check skipped"
+            exit 0
+          fi
+          cp "internal/awsx/testdata/state/$GITHUB_REF_NAME.json" "$RUNNER_TEMP/prev/internal/awsx/testdata/state/"
+          (cd "$RUNNER_TEMP/prev" && go test ./internal/awsx -run TestFixtures -count=1)
       - name: Actions are pinned
         run: go run ./tools/pincheck .github/workflows/*.yml
       - name: No known vulnerabilities in reachable code

@@ -388,6 +388,27 @@ func (s *Server) GetSchema(_ context.Context, in *datastorev1.GetSchemaRequest) 
 	return resp, nil
 }
 
+// ListDatasets lists created datasets two at a time, so callers' paging is
+// exercised. The page token is the last dataset id of the previous page.
+func (s *Server) ListDatasets(_ context.Context, in *datastorev1.ListDatasetsRequest) (*datastorev1.ListDatasetsResponse, error) {
+	if s.FailReads {
+		return nil, status.Error(codes.Unavailable, "fake: reads failing")
+	}
+	ids := s.Datasets()
+	out := &datastorev1.ListDatasetsResponse{}
+	for _, id := range ids {
+		if id <= in.GetPageToken() {
+			continue
+		}
+		if len(out.Datasets) == 2 {
+			out.NextPageToken = out.Datasets[1].GetDatasetId()
+			break
+		}
+		out.Datasets = append(out.Datasets, &datastorev1.Dataset{DatasetId: id})
+	}
+	return out, nil
+}
+
 // Datasets lists created datasets.
 func (s *Server) Datasets() []string {
 	s.mu.Lock()
