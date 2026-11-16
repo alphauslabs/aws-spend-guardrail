@@ -13,24 +13,36 @@ Docs: [install](docs/install.md) (or [from the AWS console](docs/install-console
 ## How it works
 
 ```
-guardrail CLI (pull, edit, publish)
-        |
-        v
-distributor's Jennah enterprise
-  guardrail.<msp>.<payer>.config   versioned config documents
-  guardrail.<msp>.<payer>.inbox    freezes, cutoffs, approvals, heartbeats
-  guardrail.prices                 shared AI price table, one per enterprise
-        ^                         ^
-        | pulls config and prices | writes events
-        | every 5 min             |
-payer (management) account, one stack per AWS organization
-  guard Lambda
-        | creates and updates               | reads every minute (AI guard, optional)
-        v                                   v
-  AWS Budgets, one budget per account or OU  organization CloudTrail trail
-        | action at the threshold           | prices Bedrock calls
-        v                                   v
-  freeze SCP attached to the account or OU   AI cutoff SCP attached to the account
+┌─────────────────────────────────────────────────────────────────┐
+│ guardrail CLI                                                   │
+│ pull, edit, and publish config; list versions                   │
+└────────────────┬────────────────────────────────────────────────┘
+                 │ publishes config versions
+                 ▼
+┌────────────────┴────────────────────────────────────────────────┐
+│ Jennah enterprise                                               │
+│   guardrail.<msp>.<payer>.config   versioned config documents   │
+│   guardrail.<msp>.<payer>.inbox    freezes, cutoffs, approvals  │
+│   guardrail.prices                 shared AI prices             │
+└────────────────┬───────────────────────────────▲────────────────┘
+                 │ config and prices             │ events
+                 ▼ every 5 minutes               │
+┌────────────────┴───────────────────────────────┴────────────────┐
+│ guard Lambda, in the payer (management) account                 │
+│ one stack per AWS organization                                  │
+└────────────────┬───────────────────────────────┬────────────────┘
+                 │ creates budgets               │ reads every minute
+                 ▼                               ▼ (AI guard, optional)
+┌────────────────┴──────────────┐ ┌──────────────┴────────────────┐
+│ AWS Budgets                   │ │ organization CloudTrail trail │
+│ one budget per account or OU  │ │ records every Bedrock call    │
+└────────────────┬──────────────┘ └──────────────┬────────────────┘
+                 │ at the threshold              │ cap passed or
+                 ▼                               ▼ rule broken
+┌────────────────┴──────────────┐ ┌──────────────┴────────────────┐
+│ freeze SCP                    │ │ AI cutoff SCP                 │
+│ on the account or OU          │ │ on the account                │
+└───────────────────────────────┘ └───────────────────────────────┘
 ```
 
 - **Freeze policies:** A freeze SCP blocks actions that create new cost. Style A denies specific cost-creating actions. Style B denies everything except reads and teardown actions (stop, terminate, and delete) of common services, and support, billing, and security tooling. Unlisted services are blocked entirely while frozen.
