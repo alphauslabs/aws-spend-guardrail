@@ -32,9 +32,9 @@ The schema is [`config/schema.json`](../config/schema.json), also printed by `gu
 | `account_id` | one of these two | | A 12-digit member account. |
 | `ou_id` | one of these two | | An OU (`ou-...`). Its budget covers every active account in the OU and the OUs below it, and the freeze attaches to the OU. Membership is re-read on every reconcile and at least daily. |
 | `ceiling_usd` | yes | | Budget limit in USD for the period. Must be greater than 0. |
-| `period` | no | `monthly` | `monthly`, `quarterly` or `annually`. |
+| `period` | no | `monthly` | `monthly`, `quarterly`, or `annually`. |
 | `threshold_pct` | no | `100` | Percentage of the ceiling at which the freeze fires, 1 to 100. Budgets lags spend by hours, so 90 is a sensible value for `enforce`. |
-| `freeze_style` | no | `B` | `A` denies a list of actions that create cost. `B` denies everything except reads and actions that reduce cost (stop, terminate, delete) of about 35 common services, and support, billing and security tooling. A service not on its list is blocked entirely while frozen, reads included. |
+| `freeze_style` | no | `B` | `A` denies a list of actions that create cost. `B` denies everything except reads and actions that reduce cost (stop, terminate, delete) of about 35 common services, and support, billing, and security tooling. A service not on its list is blocked entirely while frozen, reads included. |
 | `mode` | no | `dry-run` | `dry-run` records `would_freeze` and attaches nothing. `enforce` attaches the freeze policy. |
 | `month_end` | no | `stay_frozen` | What happens to a frozen scope when a new period starts: `auto_lift` lifts it, `stay_frozen` keeps it frozen until its ceiling is raised. If AWS Budgets resets the executed freeze action when the period starts, which detaches the policy, the guard attaches it again within one pull and records `freeze_carried` with `reason: period_reset`. To end a `stay_frozen` freeze on purpose, approve a raise or switch to `auto_lift`: a policy detached by hand while the action still reads as executed is reported as drift, and not attached again. |
 
@@ -105,7 +105,7 @@ The guard compares each new version with the config in force, field by field:
 
 - A version that only tightens applies on the guard's next pull, within about 5 minutes.
 - A version that loosens anything applies its tightening parts at once. For the rest, the guard raises one Jennah approval to the approvers set in the stack. The loosening applies only once the approval is approved **and** the stack's delay has passed since the guard first saw the version. The approval shows the version's note (`guardrail publish --note`) as the reason given, so write why the change is needed there: approvers decide from it.
-- If the approval is rejected, expires or is cancelled, the stricter config stays in force.
+- If the approval is rejected, expires, or is cancelled, the stricter config stays in force.
 - When a version's only changes awaiting approval are to `alert_emails`, the approval is titled "Change alert recipients" instead of "Loosen", and lists each address added or removed. Until it's approved, the recipients in force stay as they are.
 - A newer version supersedes a pending one, and the pending approval is cancelled.
 

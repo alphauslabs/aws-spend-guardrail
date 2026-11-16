@@ -1,14 +1,14 @@
 # AI guard
 
-The AI guard caps spend on AI models in Amazon Bedrock, and stops abuse of a leaked AI credential, within minutes. AWS Budgets lags by hours, at times a day, which is fine for a monthly budget but not for a key that burns money in minutes. So the AI guard doesn't wait for billing data: it reads what is being called, prices each call, and cuts off an account's AI access when it passes a cap or does something it shouldn't.
+The AI guard caps spend on AI models in Amazon Bedrock and limits the damage from a leaked credential within minutes. AWS Budgets lags by hours, sometimes a day, which works for a monthly budget but is too slow for a leaked key or runaway loop. Instead of waiting for billing data, the AI guard reads CloudTrail events, prices each call, and cuts off an account's AI access when it passes a cap or breaks a rule.
 
 It runs in the same stack as the budget guard, in the payer (management) account, and installs nothing in member accounts. It's off unless you turn it on.
 
 ## How it works
 
-1. **It reads the organization trail.** An organization CloudTrail trail records every Bedrock call in every account, with the caller, model, region, and the exact input and output token counts. The trail's files land in S3 0.5 to 5 minutes after a call. Every minute, the guard reads the new ones.
-2. **It prices each call.** Tokens times the model's price, from a table shipped with each release (see [Prices](#prices)). It keeps each account's estimated spend for the last hour, the current UTC day, and the current calendar month.
-3. **It cuts off when needed.** When an account passes a cap, or trips a rule, the guard attaches the AI cutoff policy to that account. The policy takes effect in a few seconds.
+1. An organization CloudTrail trail records every Bedrock call in every account, including the caller, model, region, and input and output token counts. Trail files land in S3 0.5 to 5 minutes after a call, and the guard reads new files every minute.
+2. The guard multiplies token counts by the model's price from the table shipped with each release (see [Prices](#prices)), and tracks each account's estimated spend for the last hour, the current UTC day, and the current calendar month.
+3. When an account passes a cap or breaks a rule, the guard attaches the AI cutoff policy to that account. The policy takes effect within seconds.
 
 From a call to a cutoff is typically 2 to 6 minutes. Nothing on this path waits for Jennah: if Jennah is unreachable, the guard keeps going on the last config, and its events reach the inbox when Jennah returns.
 
@@ -29,7 +29,7 @@ Nothing else in the account is affected: EC2, S3, and every other service keep w
 Set in the config's `ai` section ([config](config.md#ai)):
 
 - **Caps**, per account or OU: `hourly_usd`, `daily_usd`, and `monthly_usd` of estimated spend. An account scope beats an OU scope. An account no AI scope covers has no caps.
-- **Rules that cut off at once**, for every account, no estimate needed:
+- **Rules that cut off immediately** for every account:
   - a call to a model not on `ai.models` (when set), or to a model the price table doesn't know;
   - a call in a region not on `ai.regions` (when set);
   - a call made with a Bedrock API key by a caller not on `ai.api_key_callers`. With no list, nobody may use API keys;
@@ -52,7 +52,7 @@ The guard writes to the payer org's inbox:
 
 Each `cutoff` and `would_cutoff` names the shared price version in use (0 for the release's prices only).
 
-Raw trail records and prompts never leave your AWS.
+Raw trail records and prompts never leave your AWS account.
 
 ## When the trail stops
 
@@ -122,7 +122,7 @@ You need an **organization trail** that records management events (both read and
 
 ## Limits
 
-- **Minutes, not seconds.** CloudTrail delivers in batches; a cutoff typically lands 2 to 6 minutes after spend starts. A call in a region the account hasn't used in the last 24 hours is found at the guard's next 10-minute scan for new regions, so its cutoff can take up to about 16 minutes (13.5 minutes measured). Leaked spend is bounded by the burn rate in that window. Bedrock's token quotas can't be lowered below AWS's defaults, so the bound depends on how fast the guard sees the calls.
-- **Estimates, not the bill.** Prices are list prices; the bill and the budget guard remain the authority.
+- **Detection delay:** CloudTrail delivers in batches, so a cutoff typically lands 2 to 6 minutes after spend starts. A call in a region the account hasn't used in the last 24 hours is found at the guard's next 10-minute scan for new regions, so its cutoff can take up to about 16 minutes (13.5 minutes measured). Leaked spend is bounded by the burn rate in that window. Bedrock's token quotas can't be lowered below AWS's defaults, so the bound depends on how fast the guard sees the calls.
+- **Estimated spend:** Prices are list prices; the AWS bill and the budget guard remain authoritative.
 - **Not covered:** Bedrock Agents, knowledge bases, flows, and async invokes (CloudTrail records them only as paid data events), and AgentCore runtime and session calls themselves, which aren't in the trail. Models AgentCore calls through Bedrock are counted, and the cutoff blocks AgentCore.
-- **An account with 10 SCPs attached directly can't take the cutoff.** The guard alerts when an attach fails.
+- **SCP limit:** An account with 10 SCPs attached directly can't take the cutoff; the guard alerts when an attach fails.

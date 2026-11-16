@@ -28,7 +28,7 @@ aws organizations enable-policy-type --root-id <root id, r-...> --policy-type SE
 
 The guard never does this itself. It is an organization-wide decision for the organization's owner:
 
-- AWS attaches its default `FullAWSAccess` policy to the root, every OU and every account, so nobody's access changes, but every account is evaluated against SCPs from then on.
+- AWS attaches its default `FullAWSAccess` policy to the root, every OU, and every account, so nobody's access changes, but every account is evaluated against SCPs from then on.
 - It is not undone when the guard's stack is deleted, since other policies may come to rely on it.
 - Many organizations already have SCPs enabled, in which case there is nothing to do.
 
@@ -86,7 +86,7 @@ An approval alone doesn't guard against a fast mistake: a careless click, or an 
 
 ## What the stack creates
 
-- Two freeze SCPs, unattached: style A (deny cost-creating actions) and style B (deny all but reads and cost-reducing actions of common services, and support, billing and security tooling; unlisted services are blocked entirely).
+- Two freeze SCPs, unattached: style A (deny cost-creating actions) and style B (deny all but reads and cost-reducing actions of common services, and support, billing, and security tooling; unlisted services are blocked entirely).
 - The role AWS Budgets assumes to attach them.
 - The guard function, run every 5 minutes and daily, and on budget notifications. Its role can read Cost Explorer (`ce:GetCostAndUsage`) and attach or detach the two freeze policies, so it can freeze a scope whose budget AWS hasn't recalculated yet and lift a freeze.
 - A DynamoDB table for the guard's state, an SQS outbox for events (with a dead-letter queue and an alarm), and an SNS alert topic.
@@ -197,8 +197,8 @@ Prefer OU scopes where accounts can share a ceiling: one OU scope is one budget 
 
 - **Budgets lags spend by hours**, so a scope can go past its ceiling before it freezes. Use a threshold below 100%, such as 90.
 - **Existing resources keep billing** during a freeze: data transfer, storage growth, Lambda triggered by existing events, on-demand DynamoDB, log ingestion. A freeze stops new resources, not all spend.
-- **AWS services acting through service-linked roles are not bound by SCPs.** An Auto Scaling group, EKS managed node group or ECS capacity provider can still scale out during a freeze.
-- **The payer account itself can't be frozen.** Run no workloads there.
+- **AWS services acting through service-linked roles are not bound by SCPs.** An Auto Scaling group, EKS managed node group, or ECS capacity provider can still scale out during a freeze.
+- **The payer account itself can't be frozen.** Do not run workloads there.
 
 ## Remove
 

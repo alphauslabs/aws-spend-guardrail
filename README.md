@@ -30,10 +30,10 @@ payer (management) account, one stack per AWS organization
   freeze SCP attached to the account or OU
 ```
 
-- **Freeze Policies:** A freeze SCP blocks actions that create new cost. Style A denies specific cost-creating actions. Style B denies everything except reads and teardown actions (stop, terminate, and delete) of common services, and support, billing, and security tooling. Unlisted services are blocked entirely while frozen.
-- **Dry-Run Mode:** New scopes start in dry-run mode and log `would_freeze` events until switched to enforce.
-- **Asymmetric Updates:** Lowering a limit takes effect within minutes. Raising a limit, removing a scope, or switching to dry-run requires approval in Jennah (from approvers defined in the CloudFormation stack) followed by a cooldown delay.
-- **Offline Enforcement:** If Jennah is unreachable or a new config is invalid, the guard keeps the last valid config. Because AWS Budgets applies the SCP directly, freezes still trigger even if Jennah is down.
+- **Freeze policies:** A freeze SCP blocks actions that create new cost. Style A denies specific cost-creating actions. Style B denies everything except reads and teardown actions (stop, terminate, and delete) of common services, and support, billing, and security tooling. Unlisted services are blocked entirely while frozen.
+- **Dry-run mode:** New scopes start in dry-run mode and log `would_freeze` events until switched to enforce.
+- **Asymmetric updates:** Lowering a limit takes effect within minutes. Raising a limit, removing a scope, or switching to dry-run requires approval in Jennah (from approvers defined in the CloudFormation stack) followed by a cooldown delay.
+- **Offline enforcement:** If Jennah is unreachable or a new config is invalid, the guard keeps the last valid config. Because AWS Budgets applies the SCP directly, freezes still trigger even if Jennah is down.
 
 ## Roadmap and limitations
 
@@ -53,11 +53,11 @@ Limitations:
 
 - `guard/`: CloudFormation template and the Go Lambda entry point.
 - `cmd/guardrail/`: the operator CLI.
-- `config/`: config JSON schema, validator and examples.
+- `config/`: config JSON schema, validator, and examples.
 - `schema/`: Jennah dataset and table definitions.
-- `internal/`: guard logic, AWS and Jennah adapters, outbox, CLI commands.
-- `docs/`: install, operating and config guides.
-- `openspec/`: Specs and change proposals managed with [OpenSpec](https://github.com/Fission-AI/OpenSpec).
+- `internal/`: guard logic, AWS and Jennah adapters, outbox, and CLI commands.
+- `docs/`: install, operating, and config guides.
+- `openspec/`: specs and change proposals managed with [OpenSpec](https://github.com/Fission-AI/OpenSpec).
 
 Build with `make` (CLI in `bin/guardrail`, function package in `bin/guard.zip`), test with `make test`.
 
