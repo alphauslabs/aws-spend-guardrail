@@ -19,6 +19,27 @@ Not in this change: enrollment without a pasted code (the stack proving its acco
 
 `add-install-link` lists "hosting the template or package in an Alphaus-owned bucket" as a non-goal, so clients deploy what they verified. This change reverses that for the guided path only: hosted files are the default the guide links to, byte-identical to the signed release assets, and the running guard's reported code hash lets anyone check it against the release. The own-bucket path is unchanged and stays documented for clients who require it.
 
+## Dependencies and sequencing
+
+Before this change (this repository):
+
+- **`add-install-link`** must be archived first. It introduces `guard-install`, which this change modifies, and the `install-link` command it extends.
+- **`add-mantle-usage`** and **`add-regional-prices`** should land first. Both edit `guard/template.yaml` and `internal/guard`, and `add-regional-prices` claims template revision 4. This change takes the next free revision once they're in.
+
+Waiting on this change (jennah repository, `add-guardrail-guided-setup`):
+
+- **Part one** (provisioning, the setup record, guide steps 1, 2, 5, and 6, the in-progress list) does not wait for this change. It imports this repository's `schema` and `config` packages at any current release tag.
+- **Part two** (the install code step and "Open in AWS" with hosted files) starts only after this change is released, and after Jennah's `add-service-accounts`. It needs the `InstallCode` parameter, the hosted bucket's name (decided here, in task 1.2), the first-run report, and a bump of the vendored module to the release that ships them.
+
+Nothing in this change depends on Jennah's changes. It can be released, and archived, as soon as it's done.
+
+Overall order:
+
+1. Now: `add-mantle-usage` and `add-regional-prices` here; part one of `add-guardrail-guided-setup` and `add-service-accounts` in jennah.
+2. Next: archive `add-install-link`, then implement and release this change.
+3. Then: part two of `add-guardrail-guided-setup`.
+4. Later, as separate changes: enrollment without a pasted code, and the AI guard step in the guided setup.
+
 ## Capabilities
 
 ### New Capabilities
@@ -39,4 +60,4 @@ None.
 - `internal/guard`: first-run coverage (`install.go`, `coverage.go`), the heartbeat's `org` section (`heartbeat.go`), and the SCP checks moved from the CLI's preflight into a shared package (`internal/awsx`) used by both.
 - `internal/cli/installlink.go`: an option to link to the hosted files.
 - `docs/install-console.md`, `docs/install.md`, `docs/operating.md`, `docs/verify.md`: the install code, the hosted files and how to check them, and the faster first report.
-- Coordination: `add-mantle-usage` and `add-regional-prices` also edit `guard/template.yaml` and `internal/guard`; implement this after both land. The jennah guide's install code step also waits for Jennah service accounts (`add-service-accounts` in jennah), but nothing here depends on them.
+- Coordination: see Dependencies and sequencing.

@@ -40,4 +40,5 @@
 
 ## Workflow follow-up
 
-- Archive after the jennah change `add-guardrail-guided-setup` has shipped its install code step, or earlier if the guard side is released first; the guard side does not depend on it.
+- Archive once the tasks above are done and the change is released; it does not wait for any jennah change.
+- After release, tell whoever runs jennah's `add-guardrail-guided-setup` part two the release tag and the hosted bucket name, so they can bump the vendored module and set `GUARDRAIL_RELEASE_BUCKET` (its task 6.2).
