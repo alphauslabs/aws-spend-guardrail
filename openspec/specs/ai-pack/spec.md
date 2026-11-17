@@ -36,11 +36,23 @@ The AI pack SHALL cut off an account at once when it sees a Bedrock call with a 
 - **THEN** the account is cut off and the event names the model
 
 ### Requirement: The cutoff denies AI access only
-The AI deny policy SHALL deny Bedrock model invocation (`bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`, which also govern `Converse`), Bedrock API key use (`bedrock:CallWithBearerToken`), and AgentCore invoke and session actions, and SHALL deny nothing else.
+The AI deny policy SHALL deny every Bedrock and AgentCore action that starts paid model work or a new AI spend commitment, through either the `bedrock-runtime` or the `bedrock-mantle` endpoint, and Bedrock API key use, and SHALL deny nothing else: no action outside Bedrock and AgentCore, and no action that only reads, lists, or stops work.
 
 #### Scenario: A cut-off account keeps its other services
 - **WHEN** an account is cut off by the AI pack
 - **THEN** its Bedrock and AgentCore calls are refused, and its EC2, S3, and other calls are not
+
+#### Scenario: The OpenAI-compatible endpoint
+- **WHEN** a cut-off account calls `/v1/chat/completions` on the `bedrock-mantle` endpoint
+- **THEN** the call is refused
+
+#### Scenario: Agents, knowledge bases, and batch jobs
+- **WHEN** a cut-off account calls `InvokeAgent`, `RetrieveAndGenerate`, or `CreateModelInvocationJob`
+- **THEN** each call is refused
+
+#### Scenario: Looking and cleaning up still work
+- **WHEN** a cut-off account lists its models, reads a batch job's status, or deletes a provisioned throughput
+- **THEN** each call is allowed
 
 ### Requirement: Unpriced models can be counted at the highest known price
 When config counts unpriced models, the AI pack SHALL price a call to an allowed model that has no price at the highest input price and the highest output price it knows, from the release table, the shared table, and the org's price overrides. The call SHALL count against the account's caps like any other. A call to an unpriced model whose record has no token counts SHALL still trip.
@@ -67,3 +79,10 @@ The first time the guard counts a call to an unpriced model, it SHALL send one a
 #### Scenario: Many calls to one new model
 - **WHEN** three accounts make 500 calls to `xai.grok-4.6` while it has no price
 - **THEN** one alert and one `unpriced_model` event are sent, naming the first account
+
+### Requirement: Accounts already cut off get a widened cutoff in place
+When a release widens the AI deny policy, updating the stack SHALL apply the wider policy to accounts already cut off, without a new cutoff, a lift, or a new cutoff id.
+
+#### Scenario: An update during a cutoff
+- **WHEN** an account is cut off and the stack is updated to a release whose cutoff also denies mantle inference
+- **THEN** the account's mantle calls are refused from then on, and its cutoff id and record are unchanged
