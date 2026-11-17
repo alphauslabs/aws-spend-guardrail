@@ -18,11 +18,14 @@ type Record struct {
 	EventSource string
 	EventName   string
 	EventType   string // AwsApiCall, AwsServiceEvent, ...
-	Region      string
-	Account     string // the account the call was made in
-	CallerARN   string
-	CallerType  string
-	ErrorCode   string
+	// EventCategory is Management or Data. A trail that logs a service's
+	// data events can record one call as both (fix-data-event-double-count).
+	EventCategory string
+	Region        string
+	Account       string // the account the call was made in
+	CallerARN     string
+	CallerType    string
+	ErrorCode     string
 	// ModelID is requestParameters.modelId, or for a record without request
 	// parameters (a streaming completion) the first resource ARN.
 	ModelID      string
@@ -31,11 +34,18 @@ type Record struct {
 	BearerToken  bool // additionalEventData.callWithBearerToken
 }
 
+// The CloudTrail event categories the guard tells apart.
+const (
+	CategoryManagement = "Management"
+	CategoryData       = "Data"
+)
+
 type rawRecord struct {
 	EventTime    string `json:"eventTime"`
 	EventSource  string `json:"eventSource"`
 	EventName    string `json:"eventName"`
 	EventType    string `json:"eventType"`
+	EventCat     string `json:"eventCategory"`
 	AWSRegion    string `json:"awsRegion"`
 	RecipientAcc string `json:"recipientAccountId"`
 	ErrorCode    string `json:"errorCode"`
@@ -91,19 +101,23 @@ func ParseFile(gz []byte) ([]Record, error) {
 			continue
 		}
 		rec := Record{
-			EventTime:    t.UTC(),
-			EventSource:  r.EventSource,
-			EventName:    r.EventName,
-			EventType:    r.EventType,
-			Region:       r.AWSRegion,
-			Account:      r.RecipientAcc,
-			CallerARN:    r.UserIdentity.ARN,
-			CallerType:   r.UserIdentity.Type,
-			ErrorCode:    r.ErrorCode,
-			ModelID:      r.RequestParameters.ModelID,
-			InputTokens:  r.AdditionalEventData.InputTokens,
-			OutputTokens: r.AdditionalEventData.OutputTokens,
-			BearerToken:  r.AdditionalEventData.CallWithBearerToken,
+			EventTime:     t.UTC(),
+			EventSource:   r.EventSource,
+			EventName:     r.EventName,
+			EventType:     r.EventType,
+			EventCategory: r.EventCat,
+			Region:        r.AWSRegion,
+			Account:       r.RecipientAcc,
+			CallerARN:     r.UserIdentity.ARN,
+			CallerType:    r.UserIdentity.Type,
+			ErrorCode:     r.ErrorCode,
+			ModelID:       r.RequestParameters.ModelID,
+			InputTokens:   r.AdditionalEventData.InputTokens,
+			OutputTokens:  r.AdditionalEventData.OutputTokens,
+			BearerToken:   r.AdditionalEventData.CallWithBearerToken,
+		}
+		if rec.EventCategory == "" {
+			rec.EventCategory = CategoryManagement // management records always carried one; old fixtures don't
 		}
 		if e := r.ServiceEventDetails.AdditionalEventData.AdditionalEntries; e.InputTokens != 0 || e.OutputTokens != 0 {
 			rec.InputTokens, rec.OutputTokens = e.InputTokens, e.OutputTokens

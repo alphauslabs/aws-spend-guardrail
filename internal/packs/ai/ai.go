@@ -194,8 +194,15 @@ func SharedEffect(release, shared map[string]config.ModelPrice) (raised, added, 
 	return raised, added, ignored
 }
 
-// Wants reports whether a record is a Bedrock runtime or logging call.
+// Wants reports whether a record is a Bedrock runtime or logging call. It
+// skips data events: a trail that logs Bedrock model data events records each
+// runtime call twice, as a management and a data event with the same tokens,
+// and the guard requires management events, so the management copy is always
+// there (fix-data-event-double-count D1).
 func (p *Pack) Wants(r activity.Record) bool {
+	if r.EventCategory == activity.CategoryData {
+		return false
+	}
 	return r.EventSource == "bedrock.amazonaws.com" && (runtimeCalls[r.EventName] || loggingCalls[r.EventName])
 }
 

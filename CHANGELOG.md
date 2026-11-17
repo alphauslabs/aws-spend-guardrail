@@ -4,6 +4,17 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Upgrade
+1. Update the stack with this release's package, as in [upgrading](docs/upgrade.md). The template is unchanged (revision 3).
+
+Rolling back to v0.2.3 is supported; on a trail that logs Bedrock data events, it brings back the double count.
+
+### Fixed
+- On an organization trail that also logs Bedrock model data events (`AWS::Bedrock::Model`), CloudTrail records each `InvokeModel`, `Converse`, and streaming call twice, as a management event and a data event. The AI guard counted both, doubling every estimate and cutting accounts off at half their caps, and fired tripwires twice. It now counts each call once, from its management event. Trails that log only management events are unaffected.
+
+### Security-relevant
+None.
+
 ## [v0.2.3] - 2026-11-17
 
 ### Upgrade

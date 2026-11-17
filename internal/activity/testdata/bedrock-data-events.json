@@ -1,0 +1,155 @@
+{
+  "Records": [
+    {
+      "eventVersion": "1.11",
+      "userIdentity": {
+        "type": "AssumedRole",
+        "principalId": "AROAEXAMPLEROLEID0000:app",
+        "arn": "arn:aws:sts::111122223333:assumed-role/app/s1",
+        "accountId": "111122223333"
+      },
+      "eventTime": "2026-11-17T02:55:10Z",
+      "eventSource": "bedrock.amazonaws.com",
+      "eventName": "Converse",
+      "awsRegion": "us-east-1",
+      "requestParameters": {
+        "modelId": "us.amazon.nova-micro-v1:0",
+        "inferenceConfig": {
+          "maxTokens": 20
+        }
+      },
+      "responseElements": null,
+      "additionalEventData": {
+        "inferenceRegion": "us-west-2",
+        "inputTokens": 3,
+        "outputTokens": 20
+      },
+      "requestID": "00000000-0000-4000-8000-0000000000aa",
+      "eventID": "00000000-0000-4000-8000-000000000001",
+      "readOnly": true,
+      "resources": [
+        {
+          "accountId": "111122223333",
+          "type": "AWS::Bedrock::Model",
+          "ARN": "arn:aws:bedrock:us-east-1:111122223333:inference-profile/us.amazon.nova-micro-v1:0"
+        }
+      ],
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333",
+      "eventCategory": "Management"
+    },
+    {
+      "eventVersion": "1.11",
+      "userIdentity": {
+        "type": "AssumedRole",
+        "principalId": "AROAEXAMPLEROLEID0000:app",
+        "arn": "arn:aws:sts::111122223333:assumed-role/app/s1",
+        "accountId": "111122223333"
+      },
+      "eventTime": "2026-11-17T02:55:10Z",
+      "eventSource": "bedrock.amazonaws.com",
+      "eventName": "Converse",
+      "awsRegion": "us-east-1",
+      "requestParameters": {
+        "modelId": "us.amazon.nova-micro-v1:0",
+        "inferenceConfig": {
+          "maxTokens": 20
+        }
+      },
+      "responseElements": null,
+      "additionalEventData": {
+        "inferenceRegion": "us-west-2",
+        "inputTokens": 3,
+        "outputTokens": 20
+      },
+      "requestID": "00000000-0000-4000-8000-0000000000aa",
+      "eventID": "00000000-0000-4000-8000-000000000002",
+      "readOnly": true,
+      "resources": [
+        {
+          "accountId": "111122223333",
+          "type": "AWS::Bedrock::Model",
+          "ARN": "arn:aws:bedrock:us-east-1:111122223333:inference-profile/us.amazon.nova-micro-v1:0"
+        }
+      ],
+      "eventType": "AwsApiCall",
+      "managementEvent": false,
+      "recipientAccountId": "111122223333",
+      "eventCategory": "Data"
+    },
+    {
+      "eventVersion": "1.11",
+      "userIdentity": {
+        "type": "AssumedRole",
+        "principalId": "AROAEXAMPLEROLEID0000:app",
+        "arn": "arn:aws:sts::111122223333:assumed-role/app/s1",
+        "accountId": "111122223333"
+      },
+      "eventTime": "2026-11-17T02:56:00Z",
+      "eventSource": "bedrock.amazonaws.com",
+      "eventName": "Converse",
+      "awsRegion": "us-east-1",
+      "requestParameters": {
+        "modelId": "us.amazon.nova-micro-v1:0",
+        "inferenceConfig": {
+          "maxTokens": 20
+        }
+      },
+      "responseElements": null,
+      "additionalEventData": {
+        "inferenceRegion": "us-west-2",
+        "inputTokens": 5,
+        "outputTokens": 7
+      },
+      "requestID": "00000000-0000-4000-8000-0000000000bb",
+      "eventID": "00000000-0000-4000-8000-000000000003",
+      "readOnly": true,
+      "resources": [
+        {
+          "accountId": "111122223333",
+          "type": "AWS::Bedrock::Model",
+          "ARN": "arn:aws:bedrock:us-east-1:111122223333:inference-profile/us.amazon.nova-micro-v1:0"
+        }
+      ],
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333",
+      "eventCategory": "Management"
+    },
+    {
+      "eventVersion": "1.11",
+      "userIdentity": {
+        "type": "AssumedRole",
+        "principalId": "AROAEXAMPLEROLEID0000:app",
+        "arn": "arn:aws:sts::111122223333:assumed-role/app/s1",
+        "accountId": "111122223333"
+      },
+      "eventTime": "2026-11-17T02:57:57Z",
+      "eventSource": "bedrock.amazonaws.com",
+      "eventName": "InvokeModelWithBidirectionalStream",
+      "awsRegion": "us-east-1",
+      "requestParameters": {
+        "modelId": "amazon.nova-2-sonic-v1:0",
+        "body": {
+          "publisher": {}
+        }
+      },
+      "responseElements": null,
+      "requestID": "00000000-0000-4000-8000-0000000000cc",
+      "eventID": "00000000-0000-4000-8000-000000000004",
+      "readOnly": true,
+      "resources": [
+        {
+          "accountId": "111122223333",
+          "type": "AWS::Bedrock::Model",
+          "ARN": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-sonic-v1:0"
+        }
+      ],
+      "eventType": "AwsApiCall",
+      "managementEvent": false,
+      "recipientAccountId": "111122223333",
+      "eventCategory": "Data"
+    }
+  ]
+}
