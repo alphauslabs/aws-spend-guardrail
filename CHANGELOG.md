@@ -4,6 +4,8 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+## [v0.2.4] - 2026-11-17
+
 ### Upgrade
 1. Update the stack with this release's package, as in [upgrading](docs/upgrade.md). The template is unchanged (revision 3).
 
