@@ -73,6 +73,11 @@ func (f *fakeDDB) Query(_ context.Context, in *dynamodb.QueryInput, _ ...func(*d
 		if hasA && (sk < sval(a) || sk > sval(in.ExpressionAttributeValues[":b"])) {
 			continue
 		}
+		// begins_with(sk, :k), as State.Reported queries (fixed in v0.2.6;
+		// earlier fakes returned every kind).
+		if k, ok := in.ExpressionAttributeValues[":k"]; ok && !strings.HasPrefix(sk, sval(k)) {
+			continue
+		}
 		out = append(out, it)
 	}
 	return &dynamodb.QueryOutput{Items: out}, nil

@@ -83,6 +83,13 @@ func writeFixtureState(t *testing.T, db *fakeDDB) {
 			"doc": map[string]any{"source": "fixture", "models": map[string]any{"amazon.nova-pro-v1:0": map[string]float64{"input_per_1k": in, "output_per_1k": in * 4}}}}))
 	}
 	must(act.PutMeta(ctx, "prices.ai.regions", map[string]any{"regions": []string{"eu-west-2", "us-east-1"}}))
+	// Since add-mantle-usage: what the mantle reader counted, and its read
+	// status. A mantle_unlinked report is left out until v0.2.7: the fake
+	// DynamoDB of v0.2.5 and earlier ignores begins_with, so their fixture
+	// test would count it as an unprotected account in the rollback check.
+	must(act.PutMeta(ctx, "mantle.us-east-1", map[string]any{"counted": map[string]any{
+		"2026-11-16T00:29:00Z|444455556666|openai.gpt-oss-20b": map[string]int64{"calls": 2, "in": 140, "out": 117}}}))
+	must(act.PutMeta(ctx, "mantle.status", map[string]any{"failing": map[string]string{"eu-west-2": "no CloudWatch observability sink"}}))
 }
 
 func dumpFixture(db *fakeDDB) []fixtureItem {
