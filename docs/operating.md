@@ -300,3 +300,38 @@ and fails when the two add up to more than 100. Reading them needs `budgets:Desc
 ## When AWS refuses a budget action
 
 If the payer account reaches AWS's limit of 100 budget actions anyway (for example, budget actions made outside the guard after install, or a loosening that swaps enforcing scopes while it waits for approval, when the guard keeps both sets), AWS refuses the next scope's action. The guard still writes that scope's budget, but the scope can't freeze until it has an action. You get one alert, "guardrail: scopes can't freeze, budget action limit reached", naming the scopes. The guard tries again on every run, and creates the action as soon as there is room. To make room, enforce fewer scopes (OU scopes, or `dry-run`), or remove budget actions outside the guard.
+
+## Lift a freeze or cutoff by hand
+
+Normally a freeze or AI cutoff is lifted through config: a version that raises the ceiling or cap, or lists the cutoff under `ai.lifts`, approved and past the stack's delay. Sometimes that isn't possible in time: Jennah is unreachable for a long time, the approvers can't be reached, or the Jennah plan lapsed, so no new config version can be published (the guard keeps reading and enforcing the config it has, but can't receive changes or record events). Then someone with administrator access to the payer account can detach the policy directly. Each step below is recorded by CloudTrail in the payer account.
+
+The freeze policy ids are in the stack's outputs (`FreezePolicyAId`, `FreezePolicyBId`). Find the AI policies by name, and the organization root with `aws organizations list-roots`:
+
+```
+aws organizations list-policies --filter SERVICE_CONTROL_POLICY \
+  --query "Policies[?starts_with(Name, 'guardrail-')].[Name,Id]" --output text
+```
+
+- **A budget freeze:** detach the freeze policy from the account or OU:
+
+  ```
+  aws organizations detach-policy --policy-id <freeze policy id> --target-id <account id or ou id>
+  ```
+
+  At its next daily run the guard reports it as drift ("freeze policy detached outside the guard"), forgets the freeze, and doesn't attach it again. The budget's action has already run, so AWS Budgets doesn't apply it again either. The account is unfrozen until a later config change or a new budget period makes the budget fire again.
+
+- **An AI cutoff:** detach the AI cutoff policy (`guardrail-ai-cutoff-<msp id>`) from the account:
+
+  ```
+  aws organizations detach-policy --policy-id <cutoff policy id> --target-id <account id>
+  ```
+
+  The guard doesn't notice: it still records the account as cut off, so it doesn't cut that account off again, and the account's AI use is uncapped until the cutoff is lifted through config. Once a config version can be published again, publish one that lists the cutoff id under `ai.lifts`, so the guard forgets the cutoff and watches the account again.
+
+- **The AI block policy** (`guardrail-ai-blocked-<msp id>`, see [AI guard](ai-guard.md#blocking-what-the-guard-cant-count)): the guard's daily run attaches it again if it is detached by hand. To stop blocking without a config change, detach it from the organization root and then update the stack with `EnableAIGuard=false`, which removes the policy and turns the AI guard off:
+
+  ```
+  aws organizations detach-policy --policy-id <block policy id> --target-id <root id>
+  ```
+
+After any of these, tell the approvers why, since the change bypassed them, and bring the config in line once you can publish again.
