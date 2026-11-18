@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
@@ -283,6 +284,29 @@ func (b *TrailBucket) Get(ctx context.Context, key string) ([]byte, error) {
 type PolicyAttachAPI interface {
 	AttachPolicy(context.Context, *organizations.AttachPolicyInput, ...func(*organizations.Options)) (*organizations.AttachPolicyOutput, error)
 	DetachPolicy(context.Context, *organizations.DetachPolicyInput, ...func(*organizations.Options)) (*organizations.DetachPolicyOutput, error)
+	ListTargetsForPolicy(context.Context, *organizations.ListTargetsForPolicyInput, ...func(*organizations.Options)) (*organizations.ListTargetsForPolicyOutput, error)
+}
+
+// AttachedTo lists the accounts a pack's deny policy is attached to
+// (fix-cutoff-drift D1).
+func (p *PackPolicies) AttachedTo(ctx context.Context, policyID string) (map[string]bool, error) {
+	out := map[string]bool{}
+	in := &organizations.ListTargetsForPolicyInput{PolicyId: aws.String(policyID)}
+	for {
+		page, err := p.API.ListTargetsForPolicy(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		for _, t := range page.Targets {
+			if t.Type == orgtypes.TargetTypeAccount {
+				out[aws.ToString(t.TargetId)] = true
+			}
+		}
+		if page.NextToken == nil {
+			return out, nil
+		}
+		in.NextToken = page.NextToken
+	}
 }
 
 // PackPolicies implements activity.Policies. Attaching a policy that is

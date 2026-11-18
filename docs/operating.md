@@ -326,7 +326,9 @@ aws organizations list-policies --filter SERVICE_CONTROL_POLICY \
   aws organizations detach-policy --policy-id <cutoff policy id> --target-id <account id>
   ```
 
-  The guard doesn't notice: it still records the account as cut off, so it doesn't cut that account off again, and the account's AI use is uncapped until the cutoff is lifted through config. Once a config version can be published again, publish one that lists the cutoff id under `ai.lifts`, so the guard forgets the cutoff and watches the account again.
+  Within a few minutes the guard notices, counts the cutoff as lifted ("detached outside the guard"), with a `cutoff_lifted` and a `drift` event and one alert, and watches the account again: a new breach cuts it off again with a new id. If the account must keep working beyond its cap until a config change can be published, also turn the AI guard off (`EnableAIGuard=false`). Guards before v0.2.8 don't notice a detached cutoff: they keep the account recorded as cut off, never cut it off again, and leave its AI use uncapped until the cutoff is lifted through config.
+
+  The daily run also reports the AI cutoff policy attached to an account the guard has no cutoff for, and leaves it attached.
 
 - **The AI block policy** (`guardrail-ai-blocked-<msp id>`, see [AI guard](ai-guard.md#blocking-what-the-guard-cant-count)): the guard's daily run attaches it again if it is detached by hand. To stop blocking without a config change, detach it from the organization root and then update the stack with `EnableAIGuard=false`, which removes the policy and turns the AI guard off:
 

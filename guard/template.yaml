@@ -867,6 +867,12 @@ Resources:
             Resource:
               - !GetAtt AIDenyPolicy.Arn
               - !Sub arn:${AWS::Partition}:organizations::${AWS::AccountId}:account/o-*/*
+          - Sid: AICutoffTargets
+            Effect: Allow
+            # Which accounts carry the cutoff, to notice one detached by hand
+            # (fix-cutoff-drift).
+            Action: organizations:ListTargetsForPolicy
+            Resource: !GetAtt AIDenyPolicy.Arn
           - !If
             - AIGuardKms
             - Sid: DecryptTrail
@@ -979,7 +985,7 @@ Resources:
           GUARD_VERSION: !Ref GuardVersion
           # Bump with MinTemplateRevision (internal/guard/deployment.go) when the
           # code needs something older templates lack (add-guard-upgrades D2).
-          TEMPLATE_REVISION: "6"
+          TEMPLATE_REVISION: "7"
 
   NotifySubscription:
     Type: AWS::SNS::Subscription

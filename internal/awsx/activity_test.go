@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
@@ -184,13 +185,39 @@ func TestTrailBucketPages(t *testing.T) {
 	}
 }
 
-type fakeAttach struct{ attachErr, detachErr error }
+type fakeAttach struct {
+	attachErr, detachErr error
+	targets              []orgtypes.PolicyTargetSummary
+}
 
 func (f *fakeAttach) AttachPolicy(context.Context, *organizations.AttachPolicyInput, ...func(*organizations.Options)) (*organizations.AttachPolicyOutput, error) {
 	return &organizations.AttachPolicyOutput{}, f.attachErr
 }
 func (f *fakeAttach) DetachPolicy(context.Context, *organizations.DetachPolicyInput, ...func(*organizations.Options)) (*organizations.DetachPolicyOutput, error) {
 	return &organizations.DetachPolicyOutput{}, f.detachErr
+}
+
+func (f *fakeAttach) ListTargetsForPolicy(_ context.Context, in *organizations.ListTargetsForPolicyInput, _ ...func(*organizations.Options)) (*organizations.ListTargetsForPolicyOutput, error) {
+	if in.NextToken == nil && len(f.targets) > 1 {
+		return &organizations.ListTargetsForPolicyOutput{Targets: f.targets[:1], NextToken: aws.String("p2")}, nil
+	}
+	if in.NextToken != nil {
+		return &organizations.ListTargetsForPolicyOutput{Targets: f.targets[1:]}, nil
+	}
+	return &organizations.ListTargetsForPolicyOutput{Targets: f.targets}, nil
+}
+
+// AttachedTo lists only accounts, across pages (fix-cutoff-drift D1).
+func TestPackPoliciesAttachedTo(t *testing.T) {
+	f := &fakeAttach{targets: []orgtypes.PolicyTargetSummary{
+		{TargetId: aws.String("111122223333"), Type: orgtypes.TargetTypeAccount},
+		{TargetId: aws.String("ou-ab12-cd34ef56"), Type: orgtypes.TargetTypeOrganizationalUnit},
+		{TargetId: aws.String("444455556666"), Type: orgtypes.TargetTypeAccount},
+	}}
+	got, err := (&PackPolicies{API: f}).AttachedTo(context.Background(), "p")
+	if err != nil || len(got) != 2 || !got["111122223333"] || !got["444455556666"] {
+		t.Fatalf("%v %v", got, err)
+	}
 }
 
 func TestPackPoliciesAreIdempotent(t *testing.T) {

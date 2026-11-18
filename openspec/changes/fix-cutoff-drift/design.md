@@ -18,7 +18,7 @@ The activity engine (`internal/activity/engine.go`) records each cutoff in its s
 
 ### D1: Detached cutoffs are found on the minute run, only while any is held
 
-`activity.Policies` gains `Attached(ctx, policyID) (map[string]bool, error)`, the accounts a policy is attached to. In `lifts`, when the pack holds any attached cutoff, the engine reads the policy's accounts once per tick (one `ListTargetsForPolicy` page in practice) and treats each recorded attached cutoff whose account is missing as lifted with the reason "detached outside the guard": it deletes the record without detaching, emits `cutoff_lifted` and a `drift` event, and alerts once. A read that fails is skipped for the tick (no cutoff is forgotten on a failed read). With no cutoffs held, nothing is read.
+`activity.Policies` gains `AttachedTo(ctx, policyID) (map[string]bool, error)`, the accounts a policy is attached to. In `lifts`, when the pack holds any attached cutoff, the engine reads the policy's accounts once per tick (one `ListTargetsForPolicy` page in practice) and treats each recorded attached cutoff whose account is missing as lifted with the reason "detached outside the guard": it deletes the record without detaching, emits `cutoff_lifted` and a `drift` event, and alerts once. A read that fails is skipped for the tick (no cutoff is forgotten on a failed read). With no cutoffs held, nothing is read.
 
 Daily was considered, as for freezes; a cutoff guards fast spend, and an account left uncapped for up to a day defeats it. The read costs one Organizations call a minute only while a cutoff is held.
 

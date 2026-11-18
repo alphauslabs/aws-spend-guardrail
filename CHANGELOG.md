@@ -5,15 +5,17 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 ## [Unreleased]
 
 ### Upgrade
-1. Update the `guardrail` CLI. The stack and the guard are unchanged; updating them is optional.
+1. Update the stack with this release's template and package (template revision 7), as in [upgrading](docs/upgrade.md). A guard of this release on an older template keeps running but alerts that its template is older than it needs.
+2. Update the `guardrail` CLI.
 
 Rolling back to v0.2.7 is supported.
 
 ### Fixed
+- An AI cutoff policy detached by hand (an emergency lift, see [lift a freeze or cutoff by hand](docs/operating.md#lift-a-freeze-or-cutoff-by-hand)) is noticed within minutes: the guard counts the cutoff as lifted, records `cutoff_lifted` and `drift` events, alerts once, and watches the account again. Before, the guard kept the account recorded as cut off, never cut it off again, and left its AI use uncapped until the cutoff was lifted through config. The daily run also reports the AI cutoff policy attached to an account the guard has no cutoff for.
 - `guardrail diff` and `publish` compare a document with what the guard will compare it with, instead of the version the inbox last reported applied. Right after a tightening version was applied, before its report reached the inbox, they compared with the version before it, so undoing part of it showed as a tightening while the guard treated it as a loosening needing approval. While a loosening waits, they now compare with the applied version plus the waiting version's tightening parts, as the guard does. The "compared with" line says which.
 
 ### Security-relevant
-None.
+- With the AI guard on, the guard's role gains `organizations:ListTargetsForPolicy` on the AI cutoff policy, read once a minute only while the guard holds a cutoff. The template revision is now 7.
 
 ## [v0.2.7] - 2026-11-18
 

@@ -191,3 +191,23 @@ func TestUnpricedModelCountedAgainstCaps(t *testing.T) {
 		t.Fatalf("cutoff %v, %d unpriced events, alerts %v", detail, unpriced, h.alerts.list)
 	}
 }
+
+// The AI cutoff policy attached without a recorded cutoff is reported by the
+// daily run, and left attached (fix-cutoff-drift D3).
+func TestUnrecordedCutoffAttachmentReported(t *testing.T) {
+	h := newHarness(t)
+	k := withFast(t, h)
+	h.publish(doc("50000", "50000"))
+	h.pull()
+	k.policies.Attached["p-ai/777788889999"] = true // attached by hand
+	daily(h)
+	if n := countAlerts(h, "AI cutoff policy is attached to account 777788889999"); n != 1 {
+		t.Fatalf("alerts %v", h.alerts.list)
+	}
+	if !k.policies.Attached["p-ai/777788889999"] {
+		t.Fatal("the guard must not detach it")
+	}
+	if h.events.count(schema.KindDrift) != 1 {
+		t.Fatalf("drift events: %v", h.events.kinds())
+	}
+}

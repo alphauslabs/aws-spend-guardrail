@@ -210,6 +210,26 @@ type Policies struct {
 	mu       sync.Mutex
 	Attached map[string]bool // policy/account
 	Calls    []string
+	// ListErr makes AttachedTo fail; Lists counts its calls.
+	ListErr error
+	Lists   int
+}
+
+// AttachedTo lists the accounts a policy is attached to.
+func (p *Policies) AttachedTo(_ context.Context, policy string) (map[string]bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.Lists++
+	if p.ListErr != nil {
+		return nil, p.ListErr
+	}
+	out := map[string]bool{}
+	for k := range p.Attached {
+		if pol, acct, ok := strings.Cut(k, "/"); ok && pol == policy {
+			out[acct] = true
+		}
+	}
+	return out, nil
 }
 
 func NewPolicies() *Policies { return &Policies{Attached: map[string]bool{}} }

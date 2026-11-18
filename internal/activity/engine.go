@@ -112,6 +112,8 @@ type Store interface {
 type Policies interface {
 	Attach(ctx context.Context, policyID, account string) error
 	Detach(ctx context.Context, policyID, account string) error
+	// AttachedTo lists the accounts a policy is attached to (fix-cutoff-drift).
+	AttachedTo(ctx context.Context, policyID string) (map[string]bool, error)
 }
 
 // Engine runs the fast path once per tick.
@@ -137,7 +139,12 @@ const (
 	KindTrailResume = schema.KindTrailResume
 	KindUsage       = schema.KindUsage
 	KindUnpriced    = schema.KindUnpricedModel
+	KindDrift       = schema.KindDrift
 )
+
+// DetachedGrace is how long after attaching a cutoff the engine trusts it
+// without seeing it listed, as AWS's listing can lag (fix-cutoff-drift).
+const DetachedGrace = 5 * time.Minute
 
 // StallAfter is how long without a new trail file before alerting.
 const StallAfter = 30 * time.Minute
@@ -313,9 +320,24 @@ func (e *Engine) lifts(ctx context.Context, run PackRun, now time.Time) error {
 		return fmt.Errorf("read cutoffs: %w", err)
 	}
 	var errs []error
+	// A cutoff detached outside the guard is a lift (fix-cutoff-drift D1).
+	// The policy's accounts are read only while a cutoff is held; a failed
+	// read forgets nothing.
+	var attached map[string]bool
+	for _, c := range cuts {
+		if c.Attached {
+			if a, err := e.Policies.AttachedTo(ctx, run.PolicyID); err == nil {
+				attached = a
+			}
+			break
+		}
+	}
 	for _, c := range cuts {
 		reason := ""
+		detached := false
 		switch {
+		case c.Attached && attached != nil && !attached[c.Account] && now.Sub(c.At) >= DetachedGrace:
+			reason, detached = "detached outside the guard", true
 		case run.Lifts[c.ID]:
 			reason = "lift approved"
 		case c.CapUSD > 0:
@@ -334,7 +356,7 @@ func (e *Engine) lifts(ctx context.Context, run PackRun, now time.Time) error {
 		if reason == "" {
 			continue
 		}
-		if c.Attached {
+		if c.Attached && !detached {
 			if err := e.Policies.Detach(ctx, run.PolicyID, c.Account); err != nil {
 				errs = append(errs, fmt.Errorf("lift %s: %w", c.ID, err))
 				continue
@@ -342,6 +364,13 @@ func (e *Engine) lifts(ctx context.Context, run PackRun, now time.Time) error {
 		}
 		if err := e.Store.DeleteCutoff(ctx, run.Name, c.Account); err != nil {
 			errs = append(errs, err)
+			continue
+		}
+		if detached {
+			e.Emit(ctx, KindLift, KindLift+":"+c.ID, "account:"+c.Account, map[string]any{"cutoff_id": c.ID, "pack": run.Name, "account": c.Account, "reason": reason})
+			e.Emit(ctx, KindDrift, "drift:"+c.ID+":detached", "account:"+c.Account, map[string]any{"what": run.Name + " cutoff policy detached outside the guard", "cutoff_id": c.ID})
+			e.Alert(ctx, fmt.Sprintf("guardrail: %s cutoff detached by hand", c.Account),
+				fmt.Sprintf("The %s cutoff policy was detached from account %s outside the guard, so the guard counts cutoff %s as lifted. It watches the account again and cuts it off again on a new breach. If that was an emergency lift, bring the config in line once you can publish, and tell the approvers why.", run.Name, c.Account, c.ID))
 			continue
 		}
 		if c.Attached {

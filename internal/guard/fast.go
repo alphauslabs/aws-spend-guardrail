@@ -3,10 +3,12 @@ package guard
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/alphauslabs/aws-spend-guardrail/config"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/activity"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/packs/ai"
+	"github.com/alphauslabs/aws-spend-guardrail/schema"
 )
 
 // FastPath is the guard's trail-reading fast path (the AI pack). Nil
@@ -93,4 +95,41 @@ func (g *Guard) aiCaps(ctx context.Context, cfg *config.ResolvedAI) (map[string]
 		}
 	}
 	return out, nil
+}
+
+// checkCutoffAttachments, daily, reports the AI cutoff policy attached to an
+// account the guard has no cutoff for, once per account per day, and leaves
+// it attached (fix-cutoff-drift D3).
+func (g *Guard) checkCutoffAttachments(ctx context.Context) error {
+	if g.Fast == nil || g.Fast.AIPolicyID == "" {
+		return nil
+	}
+	attached, err := g.Fast.Engine.Policies.AttachedTo(ctx, g.Fast.AIPolicyID)
+	if err != nil {
+		return fmt.Errorf("list the AI cutoff policy's accounts: %w", err)
+	}
+	cuts, err := g.Fast.Engine.Store.Cutoffs(ctx, aiPack)
+	if err != nil {
+		return fmt.Errorf("read cutoffs: %w", err)
+	}
+	recorded := map[string]bool{}
+	for _, c := range cuts {
+		if c.Attached {
+			recorded[c.Account] = true
+		}
+	}
+	day := g.now().Format("2006-01-02")
+	var accts []string
+	for a := range attached {
+		if !recorded[a] {
+			accts = append(accts, a)
+		}
+	}
+	sort.Strings(accts)
+	for _, a := range accts {
+		g.emit(ctx, schema.KindDrift, fmt.Sprintf("drift:ai-cutoff:%s:attached:%s", a, day), "account:"+a, 0,
+			map[string]any{"what": "AI cutoff policy attached without a recorded cutoff"})
+		g.alert(ctx, "guardrail: drift", fmt.Sprintf("The AI cutoff policy is attached to %s, but the guard recorded no cutoff for it, so the account's AI use is blocked with nothing in the guard's record to say why. Check who attached it, and detach it if the account shouldn't be cut off.", targetRef(config.Target{Kind: "account", ID: a})))
+	}
+	return nil
 }

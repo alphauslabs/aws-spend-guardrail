@@ -58,7 +58,7 @@ Switching to `count` is a loosening and needs approval, even in a first config; 
 
 Every cutoff has an id, such as `ai:111122223333:20261111T0930`, given in its alert and its `cutoff` event. To lift it, publish a config version that adds the id to `ai.lifts`, with a reason in `--note`. That's a loosening, so it waits for the approvers set in the stack and the stack's delay. Raising the cap that was passed also lifts it once applied. If the account breaks a cap or rule again after a lift, it's cut off again with a new id.
 
-If a cutoff must go before an approval can come through (for example, Jennah is unreachable, or the Jennah plan lapsed and no config can be published), an administrator of the payer account can detach the cutoff policy by hand; see [lift a freeze or cutoff by hand](operating.md#lift-a-freeze-or-cutoff-by-hand) for what the guard does then.
+If a cutoff must go before an approval can come through (for example, Jennah is unreachable, or the Jennah plan lapsed and no config can be published), an administrator of the payer account can detach the cutoff policy by hand. The guard notices within minutes, counts the cutoff as lifted, and watches the account again; see [lift a freeze or cutoff by hand](operating.md#lift-a-freeze-or-cutoff-by-hand).
 
 ## What reaches Jennah
 
