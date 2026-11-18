@@ -18,7 +18,7 @@ AWS adds models and regions often. The daily scheduled publish should price ever
 - Guards price each call at the price of its region: the call's region for trail records, and the region read for mantle usage. A model with no price in a region falls back to its highest price in any region. Config overrides and manual prices apply in every region, and shared prices still only tighten.
 - A manual price is dropped by itself once the Price List prices the model in every region at or above it.
 - The scheduled publish reports models still without a price in any region, and changes summarized per model across regions.
-- The guard's function gets a longer timeout and read permissions for the publish to list regions and mantle models. Template revision 4.
+- The guard's function gets a longer timeout, and the publishing role a permission to list mantle models. Template revision 4.
 
 ## Capabilities
 
@@ -33,7 +33,7 @@ AWS adds models and regions often. The daily scheduled publish should price ever
 
 - `internal/prices` (fetch, build, publish, manual), `internal/jennah` (chunks per region), `internal/guard` (pull and hold a chunk per region), `internal/packs/ai` (regional lookup), `internal/cli` (`prices build` and `publish` output).
 - `internal/packs/ai/prices.json` regenerated with regions; its format changes.
-- `guard/template.yaml`: timeout, `ec2:DescribeRegions` and a mantle model-list permission for the publishing role, revision 4.
+- `guard/template.yaml`: timeout, `bedrock-mantle:ListModels` for the publishing role, revision 4.
 - Docs: `ai-guard.md` (how prices work), `operating.md` (manual prices and publishing), `aws-facts.md` (regional prices, cross-region billing, mantle Price List naming), `upgrade.md`; CHANGELOG.
 - Guards of earlier releases keep working on the `us-east-1` chunk, still at us-east-1 prices, until upgraded.
 - add-mantle-usage, not yet applied, then takes its prices from here: its model-id matching (design D4) shrinks to what the builder doesn't resolve, and its template revision becomes 5.

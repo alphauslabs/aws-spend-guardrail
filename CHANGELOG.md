@@ -4,6 +4,23 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Upgrade
+1. Update the stack with this release's template and package (template revision 4), as in [upgrading](docs/upgrade.md). A guard of this release on an older template keeps running but alerts that its template is older than it needs.
+2. If a payer org publishes shared prices on a schedule (`PublishSharedPrices=true`), the update gives its role the new read permissions; its next daily publish writes the first version with prices per region. To publish by hand, update the `guardrail` CLI and give its AWS credentials `pricing:GetAttributeValues` and `bedrock-mantle:ListModels` as well.
+
+Guards of earlier releases read only the us-east-1 prices of a version with prices per region, and keep pricing every call at them until upgraded; no upgrade order is needed between payer orgs. Rolling back to v0.2.4 is supported; it prices every call at us-east-1 prices again.
+
+### Changed
+- Each AI call is priced at its model's price in the region it was made from, as AWS bills it, instead of at the us-east-1 price everywhere. Against us-east-1, prices are typically the same in us-west-2, about 20% higher in Frankfurt, Tokyo, and Mumbai, and about 55% higher in London, so caps there were reached late. A model with no price in a call's region is priced at its highest price in any region. See `docs/ai-guard.md`.
+- The price builder (`guardrail prices build` and `publish`, and the scheduled publish) reads the AWS Price List for every region, and Bedrock's and the `bedrock-mantle` endpoint's model lists in every region the account can reach. The release's table now prices 109 models in 34 regions, up from 86 models in us-east-1: models offered only outside us-east-1 (such as `deepseek.v3-v1:0` and `qwen.qwen3-coder-480b-a35b-v1:0`), mantle model ids (such as `google.gemma-4-31b` and `xai.grok-4.3`), and dated snapshots (such as `openai.gpt-5.4-2026-03-05`). No price is lower.
+- A shared price version holds one chunk per region. Its us-east-1 chunk also lists each model not offered in us-east-1 at its highest price, so guards of earlier releases stop treating those models as unknown.
+- A manual shared price applies in every region, and is dropped by itself only once the Price List covers the model in every region it's offered in.
+- Publishing reports changes per model across regions, and names the regions whose model lists it couldn't read.
+
+### Security-relevant
+- With `PublishSharedPrices=true`, the guard's role gains `pricing:GetAttributeValues` (public data, no resource-level permissions) and `bedrock-mantle:ListModels` on the account's own mantle projects, and the scheduled publish calls Bedrock and the `bedrock-mantle` endpoint in every region once a day.
+- The function's timeout is 300 seconds, up from 120, for the scheduled publish. The template revision is now 4.
+
 ## [v0.2.4] - 2026-11-17
 
 ### Upgrade

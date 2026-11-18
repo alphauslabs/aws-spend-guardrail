@@ -25,11 +25,9 @@ import (
 	"github.com/alphauslabs/aws-spend-guardrail/internal/releases"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/budgets"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
-	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
@@ -382,11 +380,12 @@ func pricesCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	if err != nil {
 		return err
 	}
-	table, unmatched, err := prices.Fetch(ctx, pricing.NewFromConfig(cfg), bedrock.NewFromConfig(cfg))
+	built, unmatched, err := prices.Fetch(ctx, prices.NewSources(cfg))
 	if err != nil {
 		return err
 	}
 	if sub == "build" {
+		table := built.Table
 		if *out == "" {
 			return errors.New("-o FILE is required")
 		}
@@ -397,7 +396,10 @@ func pricesCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		for _, u := range unmatched {
 			fmt.Fprintf(stderr, "no price found for %s (%s)\n", u.ID, u.Name)
 		}
-		fmt.Fprintf(stdout, "%d models priced, %d without a price, Price List published %s\n", len(table.Models), len(unmatched), table.Published)
+		if len(built.Unlisted) > 0 {
+			fmt.Fprintf(stderr, "model lists not read in %s (not enabled for this account, or refused); those regions are priced for the models listed elsewhere\n", strings.Join(built.Unlisted, ", "))
+		}
+		fmt.Fprintf(stdout, "%d models priced in %d regions, %d without a price, Price List published %s\n", len(table.Models), len(table.Regions), len(unmatched), table.Published)
 		return os.WriteFile(*out, append(raw, '\n'), 0o644)
 	}
 	j, err := jennah.Dial(*endpoint, *apiKey)
@@ -409,7 +411,7 @@ func pricesCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		return fmt.Errorf("find the active enterprise: %w", err)
 	}
 	c := &cli.CLI{J: j, Out: stdout, Status: stderr}
-	return c.PublishPrices(ctx, who.GetIdentity().GetActiveEnterpriseId(), table, unmatched, opts)
+	return c.PublishPrices(ctx, who.GetIdentity().GetActiveEnterpriseId(), built, unmatched, opts)
 }
 
 // multiFlag is a repeatable string flag.

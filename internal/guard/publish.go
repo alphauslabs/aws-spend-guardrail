@@ -93,23 +93,38 @@ func (g *Guard) PublishSharedPrices(ctx context.Context) error {
 // publishedText describes a version the scheduled publish wrote.
 func publishedText(r *prices.PublishResult) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "The scheduled publish wrote shared AI prices version %d. Guards apply added and raised prices on their next pull; lowered or removed prices take effect only through a release.", r.Version)
+	fmt.Fprintf(&b, "The scheduled publish wrote shared AI prices version %d, with prices for %s. Guards apply added and raised prices on their next pull; lowered or removed prices take effect only through a release.", r.Version, regionCount(r.Regions))
+	if r.FirstRegional {
+		b.WriteString(" This is the first version with prices per region, so changes are against the us-east-1 prices guards used in every region until now; guards of earlier releases keep using us-east-1 prices.")
+	}
 	var lines []string
 	for _, ch := range r.Changes {
+		where := ""
+		if w := ch.Where(); w != "" {
+			where = " (" + w + ")"
+		}
 		switch ch.Kind {
 		case "added":
-			lines = append(lines, fmt.Sprintf("- %s added: %s", ch.Model, ch.To))
+			lines = append(lines, fmt.Sprintf("- %s added%s: %s", ch.Model, where, ch.To))
 		case "removed":
-			lines = append(lines, fmt.Sprintf("- %s removed: was %s", ch.Model, ch.From))
+			lines = append(lines, fmt.Sprintf("- %s removed%s: was %s", ch.Model, where, ch.From))
 		default:
-			lines = append(lines, fmt.Sprintf("- %s %s: %s, was %s", ch.Model, ch.Kind, ch.To, ch.From))
+			lines = append(lines, fmt.Sprintf("- %s %s%s: %s, was %s", ch.Model, ch.Kind, where, ch.To, ch.From))
 		}
 	}
 	for _, id := range r.AutoDropped {
-		lines = append(lines, fmt.Sprintf("- %s: manual price dropped, since the Price List now prices it at or above it", id))
+		lines = append(lines, fmt.Sprintf("- %s: manual price dropped, since the Price List now prices it at or above it in every region it's offered in", id))
 	}
 	if len(lines) > 0 {
 		b.WriteString(" Changes:\n" + strings.Join(lines, "\n"))
 	}
 	return b.String()
+}
+
+// regionCount is "1 region" or "N regions".
+func regionCount(n int) string {
+	if n == 1 {
+		return "1 region"
+	}
+	return fmt.Sprintf("%d regions", n)
 }

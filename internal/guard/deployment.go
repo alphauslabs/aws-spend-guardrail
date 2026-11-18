@@ -9,7 +9,7 @@ import (
 // (add-guard-upgrades D2). Bump it, and TEMPLATE_REVISION in
 // guard/template.yaml, whenever the code needs a template resource,
 // permission, parameter, or environment variable older templates lack.
-const MinTemplateRevision = 3
+const MinTemplateRevision = 4
 
 // kindDeployment keys the deployment mismatches already alerted, one per pair
 // of values, in the reported store.

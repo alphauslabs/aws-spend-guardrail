@@ -79,12 +79,14 @@ If no new trail file arrives for 30 minutes, or the guard can't read the trail (
 
 ## Prices
 
-`internal/packs/ai/prices.json` lists each Bedrock model's on-demand input and output price per 1,000 tokens in us-east-1, from the AWS Price List API, with the date it was published. It uses the standard (regional) rate where AWS lists one, so estimates lean high against the cheaper global rate. It leaves out batch, provisioned, prompt-cache, and long-context rates, so a heavy long-context user is estimated low.
+`internal/packs/ai/prices.json` lists each Bedrock model's on-demand input and output price per 1,000 tokens in every region the AWS Price List prices it in, with the date the Price List was published. It covers every model Bedrock's model list or the `bedrock-mantle` endpoint's model list names in any region, so models offered only outside us-east-1, and mantle model ids such as `google.gemma-4-31b`, are priced too. It uses the standard (regional) rate where AWS lists one, so estimates lean high against the cheaper global rate. It leaves out batch, provisioned, prompt-cache, and long-context rates, so a heavy long-context user is estimated low.
+
+Prices differ by region: against us-east-1, a model typically costs the same in us-west-2, about 20% more in Frankfurt, Tokyo, and Mumbai, and about 55% more in London, up to 70% more in São Paulo. The guard prices each call at its model's price in the region the call was made from, which is also how AWS bills a cross-region inference call. A call through a global inference profile is priced at that region's price, about 10% above what AWS charges for it. A model with no price in the call's region is priced at its highest price in any region.
 
 The enterprise's shared table in Jennah (`guardrail.prices`, published with `guardrail prices publish`, see [operating](operating.md#shared-ai-prices)) is merged in tighten-only, input and output separately:
 
-- a model in both tables costs the higher of the two prices;
-- a model only the shared table lists costs at least its provider's highest release price (or the release's highest overall, for a provider the release lacks), so a new model is never priced as cheap by mistake;
+- a model in both tables, in a region, costs the higher of the two prices there;
+- a model only the shared table lists costs at least its provider's highest release price in that region (or in any region, or the release's highest overall, for a provider the release lacks), so a new model is never priced as cheap by mistake;
 - a payer org's own `ai.prices` wins over both.
 
 So when AWS raises a price or adds a model, publishing the shared table applies it to every guard within 5 minutes, with no stack update. When AWS lowers a price, guards keep the higher one, estimating high, until a release with the lower price is installed (or an org approves a lower `ai.prices`). A guard that can't read the shared table keeps the last version it read, or its release's prices, and alerts once.

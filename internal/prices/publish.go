@@ -14,10 +14,11 @@ import (
 	"github.com/alphauslabs/aws-spend-guardrail/internal/packs/ai"
 )
 
-// The AI price chunk's pack and region.
+// The AI price chunks' pack, and the region of the chunk guards of releases
+// before regional prices read.
 const (
 	AIPack   = "ai"
-	AIRegion = "us-east-1"
+	AIRegion = LegacyRegion
 )
 
 // Store is the shared prices dataset, as the publisher reads and writes it.
@@ -67,14 +68,18 @@ type PublishResult struct {
 	Read          bool                   // the latest version was read
 	Latest        *jennah.PriceVersion   // nil when none is published
 	Manual        map[string]ManualPrice // the manual prices published
-	Changes       []Change               // published prices against the latest version's
+	Changes       []Change               // published prices against the latest version's, per model across regions
 	Dropped       []string               // manual prices dropped on request
 	AutoDropped   []string               // manual prices the Price List now covers, dropped by themselves (D8)
-	ListHigher    []SideNote             // manual prices the Price List beats on some side
-	Stale         []StalePrice           // manual prices above the Price List on some side
+	ListHigher    []SideNote             // manual prices the Price List beats on some side, in some region
+	Stale         []StalePrice           // manual prices above the Price List on some side, in some region
 	CarriedStale  []string               // stale models carried forward, not given in this publish
 	BelowFloor    []SideNote             // manual prices below what guards charge
-	Unmatched     []Unmatched            // models with no price, manual ones left out
+	Unmatched     []Unmatched            // models with no price in any region, manual ones left out
+	Unlisted      []string               // regions whose model lists couldn't be read
+	Regions       int                    // regions published
+	FirstRegional bool                   // the latest version had no regional chunks (add-regional-prices D8)
+	ChunksChanged bool                   // some chunk differs from the latest version's
 	ManualChanged bool                   // the manual prices differ from the latest version's
 	Note          string                 // the version note, with automatic drops
 	Version       int64                  // the version written; 0 when none
@@ -83,14 +88,15 @@ type PublishResult struct {
 // Written reports whether a new version was published.
 func (r *PublishResult) Written() bool { return r.Version > 0 }
 
-// Publish compares a built table, with the latest version's manual prices
+// Publish compares a regional build, with the latest version's manual prices
 // carried forward and changed as asked, against the latest version, and
-// publishes it unless nothing changed or o.DryRun is set. The CLI prints the
-// result; a publishing guard alerts from it (add-scheduled-price-publish D3).
-// On error, the result still carries what was read.
-func Publish(ctx context.Context, s Store, built *Table, unmatched []Unmatched, o PublishOptions) (*PublishResult, error) {
-	r := &PublishResult{}
-	var current *Table
+// publishes one chunk per region unless nothing changed or o.DryRun is set
+// (add-regional-prices D2, D7). The CLI prints the result; a publishing guard
+// alerts from it (add-scheduled-price-publish D3). On error, the result still
+// carries what was read.
+func Publish(ctx context.Context, s Store, built *Built, unmatched []Unmatched, o PublishOptions) (*PublishResult, error) {
+	r := &PublishResult{Unlisted: built.Unlisted}
+	current := map[string]*Table{} // the latest version's chunks, by region
 	latest, err := s.LatestPrices(ctx)
 	if err != nil {
 		return r, err
@@ -99,22 +105,31 @@ func Publish(ctx context.Context, s Store, built *Table, unmatched []Unmatched, 
 	next := int64(1)
 	if latest != nil {
 		next = latest.Number + 1
-		doc, err := s.PriceChunkDoc(ctx, latest.Number, AIPack, AIRegion)
-		if err != nil {
-			return r, err
-		}
-		if doc != nil {
-			current = &Table{}
-			if err := json.Unmarshal(doc, current); err != nil {
-				return r, fmt.Errorf("latest AI chunk: %w", err)
+		for _, c := range latest.Chunks {
+			if c.Pack != AIPack {
+				continue
 			}
+			doc, err := s.PriceChunkDoc(ctx, latest.Number, AIPack, c.Region)
+			if err != nil {
+				return r, err
+			}
+			if doc == nil {
+				continue
+			}
+			t := &Table{}
+			if err := json.Unmarshal(doc, t); err != nil {
+				return r, fmt.Errorf("latest AI chunk for %s: %w", c.Region, err)
+			}
+			current[c.Region] = t
 		}
 	}
+	legacy := current[LegacyRegion]
+	chunks := map[string]*Table{} // filled once manual prices are settled
 
 	// Manual prices: the latest version's, then the file's, then the drops.
 	var prev map[string]ManualPrice
-	if current != nil {
-		prev = current.Manual
+	if legacy != nil {
+		prev = legacy.Manual
 	}
 	manual := map[string]ManualPrice{}
 	for id, m := range prev {
@@ -143,44 +158,61 @@ func Publish(ctx context.Context, s Store, built *Table, unmatched []Unmatched, 
 	}
 
 	// A carried-forward manual price the Price List covers at or above, on
-	// both sides, changes no published price: drop it (D8).
+	// both sides, in every region the model is offered in, changes no
+	// published price: drop it (add-scheduled-price-publish D8,
+	// add-regional-prices D7).
 	var auto []string
 	for _, id := range sortedKeys(manual) {
-		m := manual[id]
-		b, listed := built.Models[id]
-		if _, given := o.Manual[id]; given || !listed {
+		if _, given := o.Manual[id]; given {
 			continue
 		}
-		if b.InputPer1K >= m.InputPer1K && b.OutputPer1K >= m.OutputPer1K {
+		if built.coversEverywhere(id, manual[id].Price()) {
 			delete(manual, id)
 			r.AutoDropped = append(r.AutoDropped, id)
-			auto = append(auto, fmt.Sprintf("Manual price for %s dropped: the Price List now prices it at or above it.", id))
+			auto = append(auto, fmt.Sprintf("Manual price for %s dropped: the Price List now prices it at or above it in every region it's offered in.", id))
 		}
 	}
-	r.Note = strings.TrimSpace(o.Note + " " + strings.Join(auto, " "))
+	chunks = chunksFor(built.Table, manual)
+	r.FirstRegional = latest != nil && len(current) <= 1 && len(chunks) > 1
+	note := o.Note
+	if r.FirstRegional {
+		note = strings.TrimSpace(note + " First version with prices per region.")
+	}
+	r.Note = strings.TrimSpace(note + " " + strings.Join(auto, " "))
 	r.ManualChanged = !sameManual(prev, manual)
 	r.Manual = manual
 
-	t := MergeManual(built, manual)
-	r.Changes = Diff(Of(current), Of(t))
+	r.Regions = len(chunks)
+	perRegion := map[string][]Change{}
+	for region, t := range chunks {
+		base := current[region]
+		if base == nil {
+			base = legacy // what guards charged in this region until now
+		}
+		perRegion[region] = Diff(Of(base), Of(t))
+	}
+	for region, t := range current {
+		if _, ok := chunks[region]; !ok {
+			perRegion[region] = Diff(Of(t), nil)
+		}
+	}
+	r.Changes = MergeChanges(perRegion)
 	for _, id := range sortedKeys(manual) {
 		m := manual[id].Price()
-		if b, listed := built.Models[id]; listed {
-			if side := higherSides(b, m); side != "" {
-				r.ListHigher = append(r.ListHigher, SideNote{Model: id, Sides: side, Price: priceOf(b)})
+		lo, hi, listed := built.listRange(id)
+		if listed {
+			if side := higherSides(hi, m); side != "" {
+				r.ListHigher = append(r.ListHigher, SideNote{Model: id, Sides: side, Price: priceOf(hi)})
 			}
-			if higherSides(m, b) != "" {
-				r.Stale = append(r.Stale, StalePrice{Model: id, Manual: priceOf(m), List: priceOf(b)})
+			if higherSides(m, lo) != "" {
+				r.Stale = append(r.Stale, StalePrice{Model: id, Manual: priceOf(m), List: priceOf(lo)})
 				if _, given := o.Manual[id]; !given {
 					r.CarriedStale = append(r.CarriedStale, id)
 				}
 			}
 			continue
 		}
-		if o.Release == nil {
-			continue
-		}
-		if _, inRelease := o.Release.Models[id]; inRelease {
+		if o.Release == nil || releasePrices(o.Release, id) {
 			continue
 		}
 		f := o.Release.Floor(id)
@@ -193,19 +225,132 @@ func Publish(ctx context.Context, s Store, built *Table, unmatched []Unmatched, 
 			r.Unmatched = append(r.Unmatched, u)
 		}
 	}
-	if (len(r.Changes) == 0 && !r.ManualChanged) || o.DryRun {
+	r.ChunksChanged = changedChunks(current, chunks)
+	if !r.ChunksChanged && !r.ManualChanged || o.DryRun {
 		return r, nil
-	}
-	doc, err := json.Marshal(t)
-	if err != nil {
-		return r, err
 	}
 	now := o.Now
 	if now.IsZero() {
 		now = time.Now()
 	}
-	r.Version, err = s.PublishPrices(ctx, []jennah.PriceChunk{{Pack: AIPack, Region: AIRegion, Document: doc, Models: len(t.Models)}}, r.Note, now)
+	regions := make([]string, 0, len(chunks))
+	for region := range chunks {
+		regions = append(regions, region)
+	}
+	sort.Strings(regions)
+	var out []jennah.PriceChunk
+	for _, region := range regions {
+		t := chunks[region]
+		doc, err := json.Marshal(t)
+		if err != nil {
+			return r, err
+		}
+		out = append(out, jennah.PriceChunk{Pack: AIPack, Region: region, Document: doc, Models: len(t.Models)})
+	}
+	r.Version, err = s.PublishPrices(ctx, out, r.Note, now)
 	return r, err
+}
+
+// chunksFor is a version's chunks: each region's built prices with the manual
+// prices merged (add-regional-prices D7), and the us-east-1 chunk as the
+// legacy view with the manual prices recorded (D2).
+func chunksFor(t *Table, manual map[string]ManualPrice) map[string]*Table {
+	merged := map[string]map[string]config.ModelPrice{}
+	for region, models := range t.Regions {
+		merged[region] = MergeManual(&Table{Models: models}, manual).Models
+	}
+	if _, ok := merged[LegacyRegion]; !ok {
+		merged[LegacyRegion] = MergeManual(&Table{Models: map[string]config.ModelPrice{}}, manual).Models
+	}
+	out := map[string]*Table{}
+	for region, models := range merged {
+		c := &Table{Source: t.Source, Published: t.Published, Basis: strings.TrimSuffix(t.Basis, ManualNote), Models: models}
+		if len(manual) > 0 {
+			c.Basis += ManualNote
+		}
+		out[region] = c
+	}
+	l := out[LegacyRegion]
+	l.Models = Legacy(merged)
+	if len(manual) > 0 {
+		l.Manual = make(map[string]ManualPrice, len(manual))
+		for id, m := range manual {
+			l.Manual[id] = m
+		}
+	}
+	return out
+}
+
+// changedChunks reports whether a version's chunks differ from the latest's.
+func changedChunks(current, next map[string]*Table) bool {
+	if len(current) != len(next) {
+		return true
+	}
+	for region, n := range next {
+		c, ok := current[region]
+		if !ok {
+			return true
+		}
+		a, _ := json.Marshal(c)
+		b, _ := json.Marshal(n)
+		if jennah.HashChunk(a) != jennah.HashChunk(b) {
+			return true
+		}
+	}
+	return false
+}
+
+// coversEverywhere reports whether the Price List prices a model at or above
+// m, on both sides, in every region the model is offered in, or, when no
+// model list names it, in every region it's priced in.
+func (b *Built) coversEverywhere(id string, m config.ModelPrice) bool {
+	regions := b.Offered[id]
+	if len(regions) == 0 {
+		regions = map[string]bool{}
+		for region, models := range b.Table.Regions {
+			if _, ok := models[id]; ok {
+				regions[region] = true
+			}
+		}
+	}
+	if len(regions) == 0 {
+		return false
+	}
+	for region := range regions {
+		p, ok := b.Table.Regions[region][id]
+		if !ok || p.InputPer1K < m.InputPer1K || p.OutputPer1K < m.OutputPer1K {
+			return false
+		}
+	}
+	return true
+}
+
+// listRange is a model's lowest and highest Price List price across regions,
+// input and output separately; listed is false when no region prices it.
+func (b *Built) listRange(id string) (lo, hi config.ModelPrice, listed bool) {
+	for _, models := range b.Table.Regions {
+		p, ok := models[id]
+		if !ok {
+			continue
+		}
+		if !listed {
+			lo, hi, listed = p, p, true
+			continue
+		}
+		lo = config.ModelPrice{InputPer1K: min(lo.InputPer1K, p.InputPer1K), OutputPer1K: min(lo.OutputPer1K, p.OutputPer1K)}
+		hi = config.ModelPrice{InputPer1K: max(hi.InputPer1K, p.InputPer1K), OutputPer1K: max(hi.OutputPer1K, p.OutputPer1K)}
+	}
+	return lo, hi, listed
+}
+
+// releasePrices reports whether a release table prices a model in any region.
+func releasePrices(t *ai.Table, id string) bool {
+	for _, models := range t.ByRegion() {
+		if _, ok := models[id]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func priceOf(p config.ModelPrice) PriceOf { return PriceOf{In: p.InputPer1K, Out: p.OutputPer1K} }

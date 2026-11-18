@@ -28,13 +28,11 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/budgets"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	lambdasvc "github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
-	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
@@ -151,7 +149,7 @@ func setup(ctx context.Context) *app {
 			if err != nil {
 				return nil, err
 			}
-			table, unmatched, err := prices.Fetch(ctx, pricing.NewFromConfig(cfg), bedrock.NewFromConfig(cfg))
+			built, unmatched, err := prices.Fetch(ctx, prices.NewSources(cfg))
 			if err != nil {
 				return nil, err
 			}
@@ -159,7 +157,7 @@ func setup(ctx context.Context) *app {
 			if err != nil {
 				return nil, err
 			}
-			return prices.Publish(ctx, j, table, unmatched, prices.PublishOptions{Note: "scheduled publish by guard " + payer, Release: release})
+			return prices.Publish(ctx, j, built, unmatched, prices.PublishOptions{Note: "scheduled publish by guard " + payer, Release: release})
 		}
 		a.g.Keys = append(a.g.Keys, guard.GuardKey{Name: "price publisher", Key: lazyKey{dial}})
 	}

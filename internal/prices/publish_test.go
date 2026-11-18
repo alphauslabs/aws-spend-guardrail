@@ -28,8 +28,39 @@ func pricesStore(t *testing.T) (*jennahtest.Server, *jennah.Client) {
 	return f, c
 }
 
-func built(models map[string]config.ModelPrice) *Table {
-	return &Table{Source: Source, Basis: Basis, Published: "2026-11-16T00:00:00Z", Models: models}
+// built is a build that prices models in us-east-1 only.
+func built(models map[string]config.ModelPrice) *Built {
+	return builtIn(map[string]map[string]config.ModelPrice{LegacyRegion: models}, nil)
+}
+
+// builtIn is a build with prices per region, and the regions each model's
+// list names.
+func builtIn(regions map[string]map[string]config.ModelPrice, offered map[string][]string) *Built {
+	b := &Built{Table: &Table{Source: Source, Basis: Basis, Published: "2026-11-16T00:00:00Z", Models: Legacy(regions), Regions: regions}, Offered: map[string]map[string]bool{}}
+	for id, rs := range offered {
+		b.Offered[id] = map[string]bool{}
+		for _, r := range rs {
+			b.Offered[id][r] = true
+		}
+	}
+	return b
+}
+
+func chunkOf(t *testing.T, c *jennah.Client, region string) *Table {
+	t.Helper()
+	v, err := c.LatestPrices(context.Background())
+	if err != nil || v == nil {
+		t.Fatalf("latest %v %v", v, err)
+	}
+	doc, _ := c.PriceChunkDoc(context.Background(), v.Number, AIPack, region)
+	if doc == nil {
+		return nil
+	}
+	var tb Table
+	if err := json.Unmarshal(doc, &tb); err != nil {
+		t.Fatal(err)
+	}
+	return &tb
 }
 
 func latestOf(t *testing.T, c *jennah.Client) *Table {
@@ -99,7 +130,7 @@ func TestPublishDropsCoveredManualPricesAndReportsStale(t *testing.T) {
 	if strings.Join(r.AutoDropped, ",") != "x.above-one,x.equal" {
 		t.Fatalf("auto-dropped %v", r.AutoDropped)
 	}
-	if !strings.Contains(r.Note, "Manual price for x.equal dropped: the Price List now prices it at or above it.") || !strings.Contains(r.Note, "x.above-one") {
+	if !strings.Contains(r.Note, "Manual price for x.equal dropped: the Price List now prices it at or above it in every region it's offered in.") || !strings.Contains(r.Note, "x.above-one") {
 		t.Fatalf("note %q", r.Note)
 	}
 	if len(r.Stale) != 1 || r.Stale[0].Model != "x.stale" || r.Stale[0].Manual.Out != 15 || r.Stale[0].List.Out != 10 || strings.Join(r.CarriedStale, ",") != "x.stale" {
@@ -117,5 +148,94 @@ func TestPublishDropsCoveredManualPricesAndReportsStale(t *testing.T) {
 	// An operator's own change still needs a note.
 	if _, err := Publish(ctx, c, built(listed), nil, PublishOptions{Drop: []string{"x.stale"}}); !errors.Is(err, ErrNoteNeeded) {
 		t.Fatalf("drop without a note: %v", err)
+	}
+}
+
+// A version holds a chunk per region; the us-east-1 chunk also prices models
+// not offered there at their highest, for guards of earlier releases, which
+// read only it (add-regional-prices D2).
+func TestPublishChunksPerRegion(t *testing.T) {
+	ctx := context.Background()
+	_, c := pricesStore(t)
+	// The latest version is from before regional prices: one chunk.
+	if _, err := Publish(ctx, c, built(map[string]config.ModelPrice{"a.m1": {InputPer1K: 1, OutputPer1K: 2}}), nil, PublishOptions{Note: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	regions := map[string]map[string]config.ModelPrice{
+		"us-east-1": {"a.m1": {InputPer1K: 1, OutputPer1K: 2}},
+		"eu-west-2": {"a.m1": {InputPer1K: 1.5, OutputPer1K: 3}, "d.regional": {InputPer1K: 0.5, OutputPer1K: 1}},
+		"us-west-2": {"a.m1": {InputPer1K: 1, OutputPer1K: 2}, "d.regional": {InputPer1K: 0.4, OutputPer1K: 1.2}},
+	}
+	r, err := Publish(ctx, c, builtIn(regions, nil), nil, PublishOptions{})
+	if err != nil || !r.Written() || r.Regions != 3 || !r.FirstRegional || !strings.Contains(r.Note, "First version with prices per region.") {
+		t.Fatalf("publish: %+v %v", r, err)
+	}
+	// Changes are against the us-east-1 prices guards used everywhere.
+	var raised, added *Change
+	for i, ch := range r.Changes {
+		switch {
+		case ch.Model == "a.m1" && ch.Kind == "raised":
+			raised = &r.Changes[i]
+		case ch.Model == "d.regional" && ch.Kind == "added":
+			added = &r.Changes[i]
+		}
+	}
+	if raised == nil || raised.Region != "eu-west-2" || raised.Regions != 1 || added == nil || added.Regions != 3 {
+		t.Fatalf("changes %+v", r.Changes)
+	}
+	if eu := chunkOf(t, c, "eu-west-2"); eu == nil || eu.Models["a.m1"].InputPer1K != 1.5 || len(eu.Regions) != 0 {
+		t.Fatalf("eu-west-2 chunk %+v", eu)
+	}
+	// What a v0.2.4 guard reads: us-east-1 prices, and the regional-only
+	// model at its highest, input and output separately.
+	legacy := chunkOf(t, c, "us-east-1")
+	if legacy.Models["a.m1"].InputPer1K != 1 || legacy.Models["d.regional"] != (config.ModelPrice{InputPer1K: 0.5, OutputPer1K: 1.2}) {
+		t.Fatalf("us-east-1 chunk %+v", legacy.Models)
+	}
+	// The same build again writes nothing.
+	if r, err := Publish(ctx, c, builtIn(regions, nil), nil, PublishOptions{}); err != nil || r.Written() || r.FirstRegional {
+		t.Fatalf("unchanged: %+v %v", r, err)
+	}
+}
+
+// A manual price applies in every region, and is dropped by itself only once
+// the Price List covers it in every region the model is offered in
+// (add-regional-prices D7).
+func TestManualPricesAcrossRegions(t *testing.T) {
+	ctx := context.Background()
+	_, c := pricesStore(t)
+	offered := map[string][]string{"z.glm": {"us-east-1", "eu-central-1"}}
+	start := map[string]map[string]config.ModelPrice{
+		"us-east-1":    {"a.m1": {InputPer1K: 1, OutputPer1K: 1}},
+		"eu-central-1": {"a.m1": {InputPer1K: 1.2, OutputPer1K: 1.2}},
+	}
+	manual := map[string]config.ModelPrice{"z.glm": {InputPer1K: 0.001, OutputPer1K: 0.004}}
+	if _, err := Publish(ctx, c, builtIn(start, offered), nil, PublishOptions{Manual: manual, Note: "price GLM by hand"}); err != nil {
+		t.Fatal(err)
+	}
+	if eu := chunkOf(t, c, "eu-central-1"); eu.Models["z.glm"] != manual["z.glm"] {
+		t.Fatalf("manual price in eu-central-1: %+v", eu.Models)
+	}
+	// The Price List covers it in us-east-1 only, and higher in input: the
+	// manual price is kept, and us-east-1 takes the higher input.
+	some := map[string]map[string]config.ModelPrice{
+		"us-east-1":    {"a.m1": {InputPer1K: 1, OutputPer1K: 1}, "z.glm": {InputPer1K: 0.0012, OutputPer1K: 0.004}},
+		"eu-central-1": {"a.m1": {InputPer1K: 1.2, OutputPer1K: 1.2}},
+	}
+	r, err := Publish(ctx, c, builtIn(some, offered), nil, PublishOptions{})
+	if err != nil || len(r.AutoDropped) != 0 || r.Manual["z.glm"].InputPer1K != 0.001 {
+		t.Fatalf("kept: %+v %v", r, err)
+	}
+	if us, eu := chunkOf(t, c, "us-east-1"), chunkOf(t, c, "eu-central-1"); us.Models["z.glm"].InputPer1K != 0.0012 || eu.Models["z.glm"].InputPer1K != 0.001 {
+		t.Fatalf("us %+v eu %+v", us.Models["z.glm"], eu.Models["z.glm"])
+	}
+	// Covered in both offered regions: dropped by itself.
+	all := map[string]map[string]config.ModelPrice{
+		"us-east-1":    some["us-east-1"],
+		"eu-central-1": {"a.m1": {InputPer1K: 1.2, OutputPer1K: 1.2}, "z.glm": {InputPer1K: 0.0013, OutputPer1K: 0.005}},
+	}
+	r, err = Publish(ctx, c, builtIn(all, offered), nil, PublishOptions{})
+	if err != nil || strings.Join(r.AutoDropped, ",") != "z.glm" || len(r.Manual) != 0 {
+		t.Fatalf("dropped: %+v %v", r, err)
 	}
 }

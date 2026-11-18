@@ -12,12 +12,14 @@ import (
 
 	"github.com/alphauslabs/aws-spend-guardrail/config"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/packs/ai"
 	"github.com/alphauslabs/aws-spend-guardrail/schema"
 )
 
 type fakePrices struct {
 	latest  *jennah.PriceVersion
-	docs    map[int64][]byte
+	docs    map[int64][]byte  // us-east-1's chunk per version
+	rdocs   map[string][]byte // "<version>/<region>": other regions' chunks
 	err     error
 	fetches int
 }
@@ -28,6 +30,12 @@ func (f *fakePrices) LatestPrices(context.Context) (*jennah.PriceVersion, error)
 
 func (f *fakePrices) PriceChunkDoc(_ context.Context, v int64, pack, region string) ([]byte, error) {
 	f.fetches++
+	if d, ok := f.rdocs[fmt.Sprintf("%d/%s", v, region)]; ok {
+		return d, nil
+	}
+	if region != ai.DefaultRegion {
+		return nil, nil
+	}
 	return f.docs[v], nil
 }
 
@@ -85,7 +93,7 @@ func (f *fakePrices) publish(t *testing.T, v int64, models map[string]config.Mod
 		f.docs[v] = append([]byte(nil), doc[:len(doc)-1]...)
 	}
 	f.latest = &jennah.PriceVersion{Number: v, Layout: schema.PricesLayoutVersion, Chunks: []jennah.ChunkRef{
-		{Pack: aiPricePack, Region: aiPriceRegion, SHA256: jennah.HashChunk(doc), Models: len(models)},
+		{Pack: aiPricePack, Region: ai.DefaultRegion, SHA256: jennah.HashChunk(doc), Models: len(models)},
 	}}
 }
 
@@ -127,8 +135,8 @@ func TestSharedPricesFetchedOnceAndApplied(t *testing.T) {
 	if d.Version != 12 || len(d.Chunks) != 1 || d.Chunks[0].Raised != 1 || d.Chunks[0].Added != 1 {
 		t.Fatalf("prices_applied %+v", d)
 	}
-	if shared, v := h.g.sharedAIPrices(context.Background()); v != 12 || shared[opus].InputPer1K != release.InputPer1K*2 {
-		t.Fatalf("held %d %+v", v, shared[opus])
+	if shared, v := h.g.sharedAIPrices(context.Background()); v != 12 || shared[ai.DefaultRegion][opus].InputPer1K != release.InputPer1K*2 {
+		t.Fatalf("held %d %+v", v, shared[ai.DefaultRegion][opus])
 	}
 	// The same content under a newer version: no fetch, version recorded.
 	src.latest.Number = 13
@@ -212,4 +220,63 @@ func TestCutoffNamesPriceVersion(t *testing.T) {
 		}
 	}
 	t.Fatalf("no cutoff event: %v", h.events.kinds())
+}
+
+// publishRegions makes version v with a chunk per region.
+func (f *fakePrices) publishRegions(t *testing.T, v int64, regions map[string]map[string]config.ModelPrice) {
+	t.Helper()
+	if f.rdocs == nil {
+		f.rdocs = map[string][]byte{}
+	}
+	f.latest = &jennah.PriceVersion{Number: v, Layout: schema.PricesLayoutVersion}
+	for _, r := range sortedRegions(regions) {
+		doc, err := json.Marshal(map[string]any{"source": "test", "models": regions[r]})
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.rdocs[fmt.Sprintf("%d/%s", v, r)] = asStored(t, doc)
+		f.latest.Chunks = append(f.latest.Chunks, jennah.ChunkRef{Pack: aiPricePack, Region: r, SHA256: jennah.HashChunk(doc), Models: len(regions[r])})
+	}
+}
+
+func sortedRegions(m map[string]map[string]config.ModelPrice) []string {
+	out := make([]string, 0, len(m))
+	for r := range m {
+		out = append(out, r)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// A guard holds every region's chunk, fetches only the ones that changed, and
+// drops a region no longer published (add-regional-prices D3).
+func TestSharedPricesPerRegion(t *testing.T) {
+	h := newHarness(t)
+	_, src := withPrices(t, h)
+	m := func(in float64) map[string]config.ModelPrice {
+		return map[string]config.ModelPrice{opus: {InputPer1K: in, OutputPer1K: in * 5}}
+	}
+	src.publishRegions(t, 20, map[string]map[string]config.ModelPrice{"us-east-1": m(0.01), "eu-west-2": m(0.02), "ap-northeast-1": m(0.03)})
+	h.pull()
+	if src.fetches != 3 {
+		t.Fatalf("first pull: %d fetches, want 3", src.fetches)
+	}
+	shared, v := h.g.sharedAIPrices(context.Background())
+	if v != 20 || len(shared) != 3 || shared["eu-west-2"][opus].InputPer1K != 0.02 {
+		t.Fatalf("held %d %+v", v, shared)
+	}
+	h.pull()
+	if src.fetches != 3 {
+		t.Fatalf("unchanged chunks were fetched again: %d", src.fetches)
+	}
+	// Only eu-west-2 changes; ap-northeast-1 is no longer published.
+	src.publishRegions(t, 21, map[string]map[string]config.ModelPrice{"us-east-1": m(0.01), "eu-west-2": m(0.025)})
+	h.pull()
+	if src.fetches != 4 {
+		t.Fatalf("one changed chunk: %d fetches, want 4", src.fetches)
+	}
+	shared, v = h.g.sharedAIPrices(context.Background())
+	if v != 21 || len(shared) != 2 || shared["eu-west-2"][opus].InputPer1K != 0.025 || shared["ap-northeast-1"] != nil {
+		t.Fatalf("held %d %+v", v, shared)
+	}
 }

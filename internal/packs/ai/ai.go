@@ -16,12 +16,29 @@ import (
 //go:embed prices.json
 var pricesJSON []byte
 
-// Table is the shipped price table.
+// Table is a price table: the release's, or one region's shared chunk.
 type Table struct {
-	Source    string                       `json:"source"`
-	Published string                       `json:"published"`
-	Basis     string                       `json:"basis"`
-	Models    map[string]config.ModelPrice `json:"models"`
+	Source    string `json:"source"`
+	Published string `json:"published"`
+	Basis     string `json:"basis"`
+	// Models are a chunk's prices. In the release's table they are the
+	// us-east-1 prices plus models not offered there at their highest, as
+	// published for guards of earlier releases (add-regional-prices D2).
+	Models map[string]config.ModelPrice `json:"models"`
+	// Regions are the release's prices per region (add-regional-prices D1).
+	// A table without them is us-east-1's.
+	Regions map[string]map[string]config.ModelPrice `json:"regions,omitempty"`
+}
+
+// DefaultRegion is the region a table without regions prices.
+const DefaultRegion = "us-east-1"
+
+// ByRegion returns the table's prices per region.
+func (t *Table) ByRegion() map[string]map[string]config.ModelPrice {
+	if len(t.Regions) > 0 {
+		return t.Regions
+	}
+	return map[string]map[string]config.ModelPrice{DefaultRegion: t.Models}
 }
 
 // Prices returns the price table shipped with this release.
@@ -76,13 +93,22 @@ func callerMatches(caller string, allowed []string) bool {
 
 // Pack prices and checks Bedrock calls against one config.
 type Pack struct {
-	table   map[string]config.ModelPrice // the release's table
-	shared  map[string]config.ModelPrice // the enterprise's shared table, if any
-	floors  map[string]config.ModelPrice // per provider: the release's highest prices
-	ceiling config.ModelPrice            // the release's highest prices overall
+	release map[string]map[string]config.ModelPrice // per region: the release's prices
+	shared  map[string]map[string]config.ModelPrice // per region: the enterprise's shared prices
+	// inRelease lists every model the release prices in some region.
+	inRelease map[string]bool
+	// floors are per region and provider, and per provider in floorsAny: the
+	// release's highest prices (add-shared-prices D3, add-regional-prices D4).
+	floors    map[string]map[string]config.ModelPrice
+	floorsAny map[string]config.ModelPrice
+	ceiling   config.ModelPrice // the release's highest prices overall
+	// highest is each model's highest in-region price across regions, the
+	// price where its call's region has none (add-regional-prices D4).
+	highest map[string]config.ModelPrice
 	// unknown is what a call to an unpriced model is counted at under
 	// ai.unknown_models count: the highest input and output prices known from
-	// the release, shared, and override tables (add-unknown-model-policy D2).
+	// the release, shared, and override tables in any region
+	// (add-unknown-model-policy D2).
 	unknown config.ModelPrice
 	cfg     *config.ResolvedAI
 	allowed map[string]bool // normalized model allowlist; nil means any priced model
@@ -92,26 +118,52 @@ type Pack struct {
 // table only.
 func New(t *Table, cfg *config.ResolvedAI) *Pack { return NewShared(t, nil, cfg) }
 
-// NewShared returns the AI pack with the enterprise's shared prices merged
-// tighten-only (design D3 of add-shared-prices): a shared price can raise a
-// release price but never lower it, and a model only the shared table lists
-// is priced at no less than its provider's highest release price.
-func NewShared(t *Table, shared map[string]config.ModelPrice, cfg *config.ResolvedAI) *Pack {
+// NewShared returns the AI pack with the enterprise's shared prices, per
+// region, merged tighten-only (design D3 of add-shared-prices): a shared price
+// can raise a release price but never lower it, and a model only the shared
+// tables list is priced at no less than its provider's highest release price.
+func NewShared(t *Table, shared map[string]map[string]config.ModelPrice, cfg *config.ResolvedAI) *Pack {
 	if cfg == nil {
 		cfg = &config.ResolvedAI{}
 	}
-	p := &Pack{table: t.Models, shared: shared, cfg: cfg, floors: map[string]config.ModelPrice{}}
-	for id, v := range t.Models {
-		f := p.floors[provider(id)]
-		f.InputPer1K, f.OutputPer1K = max(f.InputPer1K, v.InputPer1K), max(f.OutputPer1K, v.OutputPer1K)
-		p.floors[provider(id)] = f
-		p.ceiling.InputPer1K, p.ceiling.OutputPer1K = max(p.ceiling.InputPer1K, v.InputPer1K), max(p.ceiling.OutputPer1K, v.OutputPer1K)
+	p := &Pack{release: t.ByRegion(), shared: shared, cfg: cfg, inRelease: map[string]bool{},
+		floors: map[string]map[string]config.ModelPrice{}, floorsAny: map[string]config.ModelPrice{}, highest: map[string]config.ModelPrice{}}
+	for region, models := range p.release {
+		p.floors[region] = map[string]config.ModelPrice{}
+		for id, v := range models {
+			p.inRelease[id] = true
+			p.floors[region][provider(id)] = higher(p.floors[region][provider(id)], v)
+			p.floorsAny[provider(id)] = higher(p.floorsAny[provider(id)], v)
+			p.ceiling = higher(p.ceiling, v)
+		}
+	}
+	regions := map[string]bool{}
+	for r := range p.release {
+		regions[r] = true
+	}
+	for r := range shared {
+		regions[r] = true
+	}
+	for r := range regions {
+		ids := map[string]bool{}
+		for id := range p.release[r] {
+			ids[id] = true
+		}
+		for id := range shared[r] {
+			ids[id] = true
+		}
+		for id := range ids {
+			if v, ok := p.inRegion(id, r); ok {
+				p.highest[id] = higher(p.highest[id], v)
+			}
+		}
 	}
 	p.unknown = p.ceiling
-	for _, m := range []map[string]config.ModelPrice{shared, cfg.Prices} {
-		for _, v := range m {
-			p.unknown.InputPer1K, p.unknown.OutputPer1K = max(p.unknown.InputPer1K, v.InputPer1K), max(p.unknown.OutputPer1K, v.OutputPer1K)
-		}
+	for _, v := range p.highest {
+		p.unknown = higher(p.unknown, v)
+	}
+	for _, v := range cfg.Prices {
+		p.unknown = higher(p.unknown, v)
 	}
 	if cfg.Models != nil {
 		p.allowed = map[string]bool{}
@@ -122,25 +174,40 @@ func NewShared(t *Table, shared map[string]config.ModelPrice, cfg *config.Resolv
 	return p
 }
 
-// Floor is the least a guard of this release charges for a model only the
-// shared table lists (design D3 of add-shared-prices): the highest input and
-// output prices of the model's provider in this table, or of the whole table
-// when the provider has none here. Publishing uses it to warn when a manual
+// higher is the higher of two prices, input and output separately.
+func higher(a, b config.ModelPrice) config.ModelPrice {
+	return config.ModelPrice{InputPer1K: max(a.InputPer1K, b.InputPer1K), OutputPer1K: max(a.OutputPer1K, b.OutputPer1K)}
+}
+
+// Floor is the least a guard of this release charges in us-east-1 for a model
+// only the shared table lists (design D3 of add-shared-prices): the highest
+// input and output prices of the model's provider in us-east-1, else in any
+// region, else of the whole table. Publishing uses it to warn when a manual
 // price is below what guards will use.
 func (t *Table) Floor(id string) config.ModelPrice {
-	var f, all config.ModelPrice
-	found := false
-	for m, v := range t.Models {
-		all.InputPer1K, all.OutputPer1K = max(all.InputPer1K, v.InputPer1K), max(all.OutputPer1K, v.OutputPer1K)
-		if provider(m) == provider(id) {
-			found = true
-			f.InputPer1K, f.OutputPer1K = max(f.InputPer1K, v.InputPer1K), max(f.OutputPer1K, v.OutputPer1K)
+	var inDefault, anyRegion, all config.ModelPrice
+	foundDefault, foundAny := false, false
+	for region, models := range t.ByRegion() {
+		for m, v := range models {
+			all = higher(all, v)
+			if provider(m) != provider(id) {
+				continue
+			}
+			foundAny = true
+			anyRegion = higher(anyRegion, v)
+			if region == DefaultRegion {
+				foundDefault = true
+				inDefault = higher(inDefault, v)
+			}
 		}
 	}
-	if !found {
-		return all
+	switch {
+	case foundDefault:
+		return inDefault
+	case foundAny:
+		return anyRegion
 	}
-	return f
+	return all
 }
 
 // provider is the part of a model id before its first dot.
@@ -151,30 +218,53 @@ func provider(id string) string {
 	return id
 }
 
-// Price returns a model's price: the payer org's config override first (each
-// org approves its own), then the release table merged tighten-only with the
-// shared table.
-func (p *Pack) Price(key string) (config.ModelPrice, bool) {
+// inRegion is a model's price in one region from the release and shared
+// tables, merged tighten-only; a model only the shared tables list is raised
+// to its provider's floor in that region, or in any region.
+func (p *Pack) inRegion(key, region string) (config.ModelPrice, bool) {
+	r, inRelease := p.release[region][key]
+	s, inShared := p.shared[region][key]
+	switch {
+	case inRelease && inShared:
+		return higher(r, s), true
+	case inRelease:
+		return r, true
+	case inShared:
+		if p.inRelease[key] {
+			return s, true // the release prices it elsewhere; this is its regional price
+		}
+		floor, ok := p.floors[region][provider(key)]
+		if !ok {
+			if floor, ok = p.floorsAny[provider(key)]; !ok {
+				floor = p.ceiling
+			}
+		}
+		return higher(s, floor), true
+	}
+	return config.ModelPrice{}, false
+}
+
+// PriceIn returns a model's price for a call made in a region
+// (add-regional-prices D4): the payer org's config override first (each org
+// approves its own), then the release and shared prices in that region, then
+// the model's highest price in any region.
+func (p *Pack) PriceIn(key, region string) (config.ModelPrice, bool) {
 	for k, v := range p.cfg.Prices {
 		if ModelKey(k) == key {
 			return v, true
 		}
 	}
-	r, inRelease := p.table[key]
-	s, inShared := p.shared[key]
-	switch {
-	case inRelease && inShared:
-		return config.ModelPrice{InputPer1K: max(r.InputPer1K, s.InputPer1K), OutputPer1K: max(r.OutputPer1K, s.OutputPer1K)}, true
-	case inRelease:
-		return r, true
-	case inShared:
-		floor, ok := p.floors[provider(key)]
-		if !ok {
-			floor = p.ceiling
-		}
-		return config.ModelPrice{InputPer1K: max(s.InputPer1K, floor.InputPer1K), OutputPer1K: max(s.OutputPer1K, floor.OutputPer1K)}, true
+	if v, ok := p.inRegion(key, region); ok {
+		return v, true
 	}
-	return config.ModelPrice{}, false
+	v, ok := p.highest[key]
+	return v, ok
+}
+
+// Price returns a model's price in us-east-1, or its highest price in any
+// region when it has none there.
+func (p *Pack) Price(key string) (config.ModelPrice, bool) {
+	return p.PriceIn(key, DefaultRegion)
 }
 
 // SharedEffect counts how a shared table changes the release's prices:
@@ -232,7 +322,7 @@ func (p *Pack) Evaluate(r activity.Record) (*activity.Usage, *activity.Hit) {
 		if p.allowed != nil && !p.allowed[key] {
 			return nil, hit("model_not_allowed", fmt.Sprintf("model %s by %s", r.ModelID, r.CallerARN))
 		}
-		if _, ok := p.Price(key); !ok && !p.cfg.CountsUnknown() {
+		if _, ok := p.PriceIn(key, r.Region); !ok && !p.cfg.CountsUnknown() {
 			return nil, hit("unknown_model", fmt.Sprintf("model %s has no price; allowlist and price it in config to allow it", r.ModelID))
 		}
 		if streaming[r.EventName] {
@@ -241,7 +331,7 @@ func (p *Pack) Evaluate(r activity.Record) (*activity.Usage, *activity.Hit) {
 	} else if r.EventType != "AwsServiceEvent" || !streaming[r.EventName] {
 		return nil, nil
 	}
-	price, ok := p.Price(key)
+	price, ok := p.PriceIn(key, r.Region)
 	unpriced := false
 	if !ok {
 		if !p.cfg.CountsUnknown() {

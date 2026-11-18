@@ -14,8 +14,9 @@ import (
 	"github.com/alphauslabs/aws-spend-guardrail/internal/prices"
 )
 
-func table(models map[string]config.ModelPrice) *prices.Table {
-	return &prices.Table{Source: prices.Source, Basis: prices.Basis, Published: "2026-11-11T00:00:00Z", Models: models}
+func table(models map[string]config.ModelPrice) *prices.Built {
+	regions := map[string]map[string]config.ModelPrice{prices.LegacyRegion: models}
+	return &prices.Built{Table: &prices.Table{Source: prices.Source, Basis: prices.Basis, Published: "2026-11-11T00:00:00Z", Models: prices.Legacy(regions), Regions: regions}}
 }
 
 func TestPublishPricesShowsChangesAndHonoursDryRun(t *testing.T) {
@@ -58,7 +59,7 @@ func TestPublishPricesShowsChangesAndHonoursDryRun(t *testing.T) {
 }
 
 // manualSetup publishes version 1 from a build that prices a.m1 and a.m2 only.
-func manualSetup(t *testing.T) (*CLI, *jennahtest.Server, *bytes.Buffer, *bytes.Buffer, *prices.Table) {
+func manualSetup(t *testing.T) (*CLI, *jennahtest.Server, *bytes.Buffer, *bytes.Buffer, *prices.Built) {
 	t.Helper()
 	c, f, out, status := newCLI(t)
 	if err := c.Setup(context.Background()); err != nil {

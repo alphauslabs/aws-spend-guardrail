@@ -41,6 +41,27 @@ func TestPriceTableIsSane(t *testing.T) {
 	if p := tb.Models["amazon.nova-micro-v1:0"]; p.InputPer1K != 0.000035 || p.OutputPer1K != 0.00014 {
 		t.Errorf("nova micro price: %+v", p)
 	}
+	// Prices per region (add-regional-prices D1): every region's prices are
+	// plausible, us-east-1's match the legacy view where both list a model,
+	// and the legacy view prices every model some region prices.
+	if len(tb.Regions) < 10 {
+		t.Fatalf("table: %d regions", len(tb.Regions))
+	}
+	for region, models := range tb.Regions {
+		for id, p := range models {
+			if p.InputPer1K <= 0 || p.OutputPer1K <= 0 || p.InputPer1K > 1 || p.OutputPer1K > 1 {
+				t.Errorf("%s in %s has an implausible price: %+v", id, region, p)
+			}
+			if _, ok := tb.Models[id]; !ok {
+				t.Errorf("%s is priced in %s but missing from the legacy view", id, region)
+			}
+		}
+	}
+	for id, p := range tb.Regions[DefaultRegion] {
+		if tb.Models[id] != p {
+			t.Errorf("%s: legacy %+v, us-east-1 %+v", id, tb.Models[id], p)
+		}
+	}
 }
 
 func TestModelKey(t *testing.T) {
@@ -158,7 +179,7 @@ func TestSharedPricesOnlyTighten(t *testing.T) {
 		"anthropic.claude-new": {InputPer1K: 0.001, OutputPer1K: 0.001},
 		"acme.model-x":         {InputPer1K: 0.0001, OutputPer1K: 0.0001},
 	}
-	p := NewShared(tb, shared, nil)
+	p := NewShared(tb, inUSEast1(shared), nil)
 	cases := map[string]config.ModelPrice{
 		"anthropic.claude-a":   {InputPer1K: 0.004, OutputPer1K: 0.015},      // higher of each
 		"amazon.nova-micro":    {InputPer1K: 0.000035, OutputPer1K: 0.00014}, // lower ignored
@@ -170,7 +191,7 @@ func TestSharedPricesOnlyTighten(t *testing.T) {
 			t.Errorf("%s: %+v, want %+v", id, got, want)
 		}
 	}
-	over := NewShared(tb, shared, &config.ResolvedAI{Prices: map[string]config.ModelPrice{"amazon.nova-micro": {InputPer1K: 0.00001, OutputPer1K: 0.00001}}})
+	over := NewShared(tb, inUSEast1(shared), &config.ResolvedAI{Prices: map[string]config.ModelPrice{"amazon.nova-micro": {InputPer1K: 0.00001, OutputPer1K: 0.00001}}})
 	if got, _ := over.Price("amazon.nova-micro"); got.InputPer1K != 0.00001 {
 		t.Errorf("an org's approved override must win: %+v", got)
 	}
@@ -200,7 +221,7 @@ func TestUnknownPriceIsTheHighestKnown(t *testing.T) {
 	}
 	shared := map[string]config.ModelPrice{"xai.grok-new": {InputPer1K: 0.02, OutputPer1K: 0.01}}
 	over := &config.ResolvedAI{Prices: map[string]config.ModelPrice{"custom.model": {InputPer1K: 0.001, OutputPer1K: 0.09}}}
-	if got := NewShared(tb, shared, over).UnknownPrice(); got != (config.ModelPrice{InputPer1K: 0.02, OutputPer1K: 0.09}) {
+	if got := NewShared(tb, inUSEast1(shared), over).UnknownPrice(); got != (config.ModelPrice{InputPer1K: 0.02, OutputPer1K: 0.09}) {
 		t.Errorf("each side's maximum across all three tables: %+v", got)
 	}
 }
@@ -249,5 +270,69 @@ func TestUnknownModelsCountedOrCutOff(t *testing.T) {
 	}
 	if !p.Priced("us.amazon.nova-micro-v1:0") || p.Priced("xai.grok-9") {
 		t.Error("Priced")
+	}
+}
+
+// inUSEast1 is one region's shared prices, as a guard holds them.
+func inUSEast1(m map[string]config.ModelPrice) map[string]map[string]config.ModelPrice {
+	return map[string]map[string]config.ModelPrice{DefaultRegion: m}
+}
+
+// Each call is priced at its region's price (add-regional-prices D4).
+func TestCallsPricedAtTheirRegion(t *testing.T) {
+	tb := &Table{Regions: map[string]map[string]config.ModelPrice{
+		"us-east-1": {"amazon.m1": {InputPer1K: 0.004, OutputPer1K: 0.01}, "anthropic.a": {InputPer1K: 0.003, OutputPer1K: 0.015}},
+		"eu-west-2": {"amazon.m1": {InputPer1K: 0.0062, OutputPer1K: 0.0155}},
+	}}
+	at := func(p *Pack, model, region string) config.ModelPrice {
+		t.Helper()
+		r := call("Converse", model, 1000, 1000)
+		r.Region = region
+		u, h := p.Evaluate(r)
+		if h != nil || u == nil {
+			t.Fatalf("%s in %s: %+v %+v", model, region, u, h)
+		}
+		return config.ModelPrice{InputPer1K: u.USD} // input and output are equal token counts; compare sums
+	}
+	p := New(tb, nil)
+	if got := at(p, "amazon.m1", "eu-west-2"); got.InputPer1K != 0.0062+0.0155 {
+		t.Errorf("a call in London: %v", got.InputPer1K)
+	}
+	if got := at(p, "amazon.m1", "us-east-1"); got.InputPer1K != 0.004+0.01 {
+		t.Errorf("a call in us-east-1: %v", got.InputPer1K)
+	}
+	// No price in the call's region: the model's highest, side by side.
+	if got, _ := p.PriceIn("amazon.m1", "ap-southeast-7"); got != (config.ModelPrice{InputPer1K: 0.0062, OutputPer1K: 0.0155}) {
+		t.Errorf("no regional price: %+v", got)
+	}
+	// A global inference profile is priced at the call region's price.
+	if got := at(p, "global.amazon.m1", "eu-west-2"); got.InputPer1K != 0.0062+0.0155 {
+		t.Errorf("a global profile in London: %v", got.InputPer1K)
+	}
+	// An override applies in every region.
+	over := New(tb, &config.ResolvedAI{Prices: map[string]config.ModelPrice{"amazon.m1": {InputPer1K: 0.001, OutputPer1K: 0.001}}})
+	for _, region := range []string{"us-east-1", "eu-west-2", "sa-east-1"} {
+		if got, _ := over.PriceIn("amazon.m1", region); got.InputPer1K != 0.001 {
+			t.Errorf("override in %s: %+v", region, got)
+		}
+	}
+	// Shared prices tighten per region; a shared-only model is floored at its
+	// provider's highest release price in that region, or in any region.
+	shared := map[string]map[string]config.ModelPrice{
+		"eu-west-2": {"amazon.m1": {InputPer1K: 0.007, OutputPer1K: 0.01}, "amazon.new": {InputPer1K: 0.001, OutputPer1K: 0.001}},
+		"sa-east-1": {"anthropic.new": {InputPer1K: 0.0001, OutputPer1K: 0.0001}},
+	}
+	sp := NewShared(tb, shared, nil)
+	if got, _ := sp.PriceIn("amazon.m1", "eu-west-2"); got != (config.ModelPrice{InputPer1K: 0.007, OutputPer1K: 0.0155}) {
+		t.Errorf("shared tighten in eu-west-2: %+v", got)
+	}
+	if got, _ := sp.PriceIn("amazon.new", "eu-west-2"); got != (config.ModelPrice{InputPer1K: 0.0062, OutputPer1K: 0.0155}) {
+		t.Errorf("amazon floor in eu-west-2: %+v", got)
+	}
+	if got, _ := sp.PriceIn("anthropic.new", "sa-east-1"); got != (config.ModelPrice{InputPer1K: 0.003, OutputPer1K: 0.015}) {
+		t.Errorf("anthropic floor from another region: %+v", got)
+	}
+	if got := sp.UnknownPrice(); got != (config.ModelPrice{InputPer1K: 0.007, OutputPer1K: 0.0155}) {
+		t.Errorf("unknown price, the highest in any region: %+v", got)
 	}
 }

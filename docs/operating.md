@@ -217,14 +217,16 @@ Turning it on, its caps and rules, and lifting a cutoff are in [AI guard](ai-gua
 
 ## Shared AI prices
 
-The AI guard prices Bedrock calls from the table in its release, merged with the enterprise's shared table in `guardrail.prices`, which every guard reads on its 5-minute pull. Publish it when AWS changes prices, once per enterprise (not per MSP or payer org), with an operator credential that can write that dataset and the AWS credentials of any account that can call the Price List API and `bedrock:ListFoundationModels`:
+The AI guard prices Bedrock calls from the table in its release, merged with the enterprise's shared table in `guardrail.prices`, which every guard reads on its 5-minute pull. Publish it when AWS changes prices, once per enterprise (not per MSP or payer org), with an operator credential that can write that dataset and the AWS credentials of any account that can call the Price List API (`pricing:GetProducts` and `pricing:GetAttributeValues`), `bedrock:ListFoundationModels`, and `bedrock-mantle:ListModels`:
 
 ```
 guardrail prices publish --dry-run
 guardrail prices publish --note "Nova price change, Dec 2026"
 ```
 
-It prints the enterprise it acts on and the models added, raised, lowered, and removed against the latest version, then writes a new version (nothing, if nothing changed). Versions are never edited. Shared prices only tighten: a guard takes the higher of its release's price and the shared one, so a lowered or removed price changes nothing until a release with the lower price is installed, and a payer org's own `ai.prices` still wins. Each guard records the version it starts using as a `prices_applied` event, and every AI cutoff names the price version behind it. A guard that can't read shared prices alerts once and keeps the last version it read, or its release's prices.
+The build reads the Price List for every region, and Bedrock's and the `bedrock-mantle` endpoint's model lists in every region your account can reach, which takes under a minute. It prices each model in each region, and names the regions whose model lists it couldn't read, usually those your account hasn't enabled; those regions are still priced, for the models listed elsewhere. A version holds one chunk of prices per region. Guards before regional prices read only the us-east-1 chunk, which also lists each model not offered in us-east-1 at its highest price, so they keep working, at us-east-1 prices, until upgraded.
+
+It prints the enterprise it acts on and the models added, raised, lowered, and removed against the latest version, per model across regions ("raised (in 12 regions, largest in eu-west-2)"), then writes a new version (nothing, if nothing changed). The first version with prices per region compares each region with the us-east-1 prices guards used everywhere until then, so it lists most models as raised in some regions. Versions are never edited. Shared prices only tighten: a guard takes the higher of its release's price and the shared one, so a lowered or removed price changes nothing until a release with the lower price is installed, and a payer org's own `ai.prices` still wins. Each guard records the version it starts using as a `prices_applied` event, and every AI cutoff names the price version behind it. A guard that can't read shared prices alerts once and keeps the last version it read, or its release's prices.
 
 ### Manual prices
 
@@ -240,9 +242,9 @@ guardrail prices publish --overrides manual.json --note "Grok 4.6 from AWS's pri
 
 Prices are USD per 1,000 input and output tokens, both above zero. Model ids are read like the AI guard reads them, so `us.xai.grok-4.6` and `xai.grok-4.6` are one model. The file is refused, and nothing published, if it has any other field.
 
-- A model the Price List doesn't price is added at the manual price. For one it does price, each of input and output is published at the higher of the two, and the command says where the Price List was higher.
+- A manual price applies in every region. A model the Price List doesn't price in a region is published there at the manual price. Where it does, each of input and output is published at the higher of the two, and the command says where the Price List was higher.
 - Manual prices are kept in the published version and carried into later versions, so a publish without `--overrides` keeps them, and a file only needs the models you add or change.
-- When the Price List starts pricing a manual model at or above its manual price on both input and output, the next publish drops the manual price by itself, since that changes no price guards use, and says so in the version's note; no `--note` is needed. When the manual price is still higher on either side, it is kept and the command suggests dropping it.
+- When the Price List starts pricing a manual model at or above its manual price on both input and output in every region Bedrock offers it in, the next publish drops the manual price by itself, since that changes no price guards use, and says so in the version's note; no `--note` is needed. When the manual price is still higher on either side, it is kept and the command suggests dropping it.
 - `--drop-override MODEL` (repeatable) removes a manual price.
 - Adding, changing, or dropping a manual price needs `--note`, so each one has a reason in the version history. A publish that only carries them forward needs none.
 - For a model its release doesn't list, a guard charges at least the release's highest price for that model's provider (or for any model, if the provider has none in the release). The command warns when a manual price is below that floor, since guards will charge the floor instead.
@@ -266,11 +268,11 @@ Instead of running `prices publish` by hand, one guard per enterprise can publis
 
 3. Update the stack with `PublishSharedPrices=true` and `PricePublisherSecretArn` set to that secret's ARN.
 
-The guard reads the key only when it publishes and when it checks key expiry; its expiry is warned like the reader and writer keys. Its role gains `pricing:GetProducts` and `bedrock:ListFoundationModels`, which read public data, and read access to that one secret. It sends local alerts:
+The guard reads the key only when it publishes and when it checks key expiry; its expiry is warned like the reader and writer keys. Its role gains `pricing:GetProducts`, `pricing:GetAttributeValues`, `bedrock:ListFoundationModels`, and `bedrock-mantle:ListModels` on the account's own mantle projects, which read public data, and read access to that one secret. It sends local alerts:
 
 - once when a scheduled publish fails, and once when it works again;
 - when it publishes a version, listing what changed;
-- when the Price List has no price for a model it didn't report before, so you can add a manual price;
+- when the Price List has no price, in any region, for a model it didn't report before, so you can add a manual price;
 - when a manual price is above the Price List's on input or output, so you can drop it if the Price List is right.
 
 Turn it on in only one payer org; a second publishing guard is harmless, since a publish with nothing changed writes nothing, but it doubles the alerts. Before deleting that payer org's stack, turn it on in another, or publishing stops.

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/alphauslabs/aws-spend-guardrail/internal/prices"
 )
@@ -24,7 +25,7 @@ var ErrNoteNeeded = prices.ErrNoteNeeded
 // forward and changed as asked, differs from the shared one in the
 // enterprise, and publishes it as a new version unless o.DryRun is set. The
 // work is prices.Publish, shared with a publishing guard; this prints it.
-func (c *CLI) PublishPrices(ctx context.Context, enterprise string, built *prices.Table, unmatched []prices.Unmatched, o PublishOptions) error {
+func (c *CLI) PublishPrices(ctx context.Context, enterprise string, built *prices.Built, unmatched []prices.Unmatched, o PublishOptions) error {
 	fmt.Fprintf(c.Out, "enterprise %s, dataset guardrail.prices\n", enterprise)
 	if o.Now.IsZero() {
 		o.Now = c.now()
@@ -45,11 +46,14 @@ func (c *CLI) PublishPrices(ctx context.Context, enterprise string, built *price
 		if _, ok := r.Manual[ch.Model]; ok {
 			mark = " (manual)"
 		}
+		if w := ch.Where(); w != "" {
+			mark += " (" + w + ")"
+		}
 		switch ch.Kind {
 		case "added":
 			fmt.Fprintf(c.Out, "  added    %s: %s%s\n", ch.Model, ch.To, mark)
 		case "removed":
-			fmt.Fprintf(c.Out, "  removed  %s: was %s\n", ch.Model, ch.From)
+			fmt.Fprintf(c.Out, "  removed  %s: was %s%s\n", ch.Model, ch.From, mark)
 		default:
 			fmt.Fprintf(c.Out, "  %-8s %s: %s -> %s%s\n", ch.Kind, ch.Model, ch.From, ch.To, mark)
 		}
@@ -58,7 +62,7 @@ func (c *CLI) PublishPrices(ctx context.Context, enterprise string, built *price
 		fmt.Fprintf(c.Out, "  manual price dropped for %s\n", id)
 	}
 	for _, id := range r.AutoDropped {
-		fmt.Fprintf(c.Out, "  manual price dropped for %s: the Price List now prices it at or above it\n", id)
+		fmt.Fprintf(c.Out, "  manual price dropped for %s: the Price List now prices it at or above it in every region it's offered in\n", id)
 	}
 	for _, n := range r.ListHigher {
 		fmt.Fprintf(c.Out, "  note     %s: the Price List price is higher on %s (%s), so it is published there\n", n.Model, n.Sides, n.Price)
@@ -69,15 +73,26 @@ func (c *CLI) PublishPrices(ctx context.Context, enterprise string, built *price
 	for _, n := range r.BelowFloor {
 		fmt.Fprintf(c.Status, "warning: guards will price %s at no less than %s (its provider's highest price in this release), above its manual price on %s\n", n.Model, n.Price, n.Sides)
 	}
+	if len(r.Unlisted) > 0 {
+		fmt.Fprintf(c.Status, "model lists not read in %s (not enabled for this account, or refused); those regions are priced for the models listed elsewhere\n", strings.Join(r.Unlisted, ", "))
+	}
 	for _, u := range r.Unmatched {
 		fmt.Fprintf(c.Status, "no price found for %s (%s); it trips as unknown unless allowlisted and priced in config, or priced with --overrides\n", u.ID, u.Name)
 	}
 	if err != nil {
 		return err
 	}
-	if len(r.Changes) == 0 && !r.ManualChanged {
+	if !r.ChunksChanged && !r.ManualChanged {
 		fmt.Fprintln(c.Out, "no changes")
 		return nil
+	}
+	if r.Regions == 1 {
+		fmt.Fprintln(c.Out, "1 region priced")
+	} else {
+		fmt.Fprintf(c.Out, "%d regions priced\n", r.Regions)
+	}
+	if r.FirstRegional {
+		fmt.Fprintln(c.Out, "first version with prices per region: changes are against the us-east-1 prices guards used everywhere until now")
 	}
 	if len(r.Changes) > 0 {
 		fmt.Fprintf(c.Out, "%d change(s). Guards apply raised and added prices; lowered prices take effect only through a release.\n", len(r.Changes))

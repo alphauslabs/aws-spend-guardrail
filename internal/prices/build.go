@@ -25,10 +25,16 @@ type Model struct {
 
 // Table is a built price table, in the format the AI pack reads.
 type Table struct {
-	Source    string                       `json:"source"`
-	Published string                       `json:"published"`
-	Basis     string                       `json:"basis"`
-	Models    map[string]config.ModelPrice `json:"models"`
+	Source    string `json:"source"`
+	Published string `json:"published"`
+	Basis     string `json:"basis"`
+	// Models are the us-east-1 prices, plus each model not offered there at its
+	// highest price in any region: what guards of releases before regional
+	// prices read (add-regional-prices D2).
+	Models map[string]config.ModelPrice `json:"models"`
+	// Regions are the prices per region (add-regional-prices D1). A chunk
+	// leaves it out: each chunk is one region's Models.
+	Regions map[string]map[string]config.ModelPrice `json:"regions,omitempty"`
 	// Manual lists the prices set by hand when publishing, as given
 	// (add-manual-price-overrides D3). Guards ignore it; Models already holds
 	// the merged prices.
@@ -39,7 +45,11 @@ type Table struct {
 const Basis = "On-demand standard (regional) input and output token rates, USD per 1,000 tokens. Excludes batch, reserved, flex, priority, long-context, latency-optimized, and prompt-cache rates. Where only a global rate is listed, that rate is used."
 
 // Source names where a table's prices come from.
-const Source = "AWS Price List API, service codes AmazonBedrock and AmazonBedrockFoundationModels, region us-east-1, matched to model ids from bedrock list-foundation-models"
+const Source = "AWS Price List API, service codes AmazonBedrock and AmazonBedrockFoundationModels, every region, matched to model ids from bedrock list-foundation-models and the bedrock-mantle model list in every enabled region"
+
+// LegacyRegion is the region whose chunk guards of releases before regional
+// prices read.
+const LegacyRegion = "us-east-1"
 
 // Unmatched is a text model the Price List gave no price for.
 type Unmatched struct {
@@ -51,7 +61,11 @@ var (
 	stripWords = map[string]bool{"instruct": true, "openai": true, "nvidia": true, "bf16": true, "vl": true, "dense": true, "it": true, "pt": true}
 	parens     = regexp.MustCompile(`\(.*?\)`)
 	nonAlnum   = regexp.MustCompile(`[^a-z0-9]+`)
-	usageModel = regexp.MustCompile(`^USE1-(?:MP:)?(.+?)-(?:input|output)-tokens`)
+	// usageModel is a usage type's model part after its region prefix (USE1-,
+	// APN1-, EUW2-, ...). A marketplace usage type whose part starts with the
+	// prefix again (USE1_input_tokens...) names no model (usageNoModel).
+	usageModel   = regexp.MustCompile(`^[A-Z]+[0-9]*-(?:MP:)?(.+?)-(?:input|output)-tokens`)
+	usageNoModel = regexp.MustCompile(`^[A-Z]+[0-9]*_`)
 	// usageMantle and usageModality are a usage type's model part's -mantle
 	// suffix and a speech or text segment right before the token direction
 	// (design D2 of fix-price-builder-matches).
@@ -60,7 +74,10 @@ var (
 	usageDir      = regexp.MustCompile(`-(input|output)-tokens`)
 	idVersion     = regexp.MustCompile(`-v\d+(:\d+)?$`)
 	idDate        = regexp.MustCompile(`-\d{8}$`)
-	idTrailColon  = regexp.MustCompile(`:\d+$`)
+	// idSnapshot is a dated snapshot's suffix, as in openai.gpt-5.4-2026-03-05
+	// (add-regional-prices D5): the snapshot is priced as its base model.
+	idSnapshot   = regexp.MustCompile(`-\d{4}-\d{2}-\d{2}$`)
+	idTrailColon = regexp.MustCompile(`:\d+$`)
 )
 
 // norm reduces a model name or id to a key both lists can share: lowercase
@@ -85,6 +102,7 @@ func idKey(id string) string {
 	core = idVersion.ReplaceAllString(core, "")
 	core = idTrailColon.ReplaceAllString(core, "")
 	core = idDate.ReplaceAllString(core, "")
+	core = idSnapshot.ReplaceAllString(core, "")
 	return norm(core)
 }
 
@@ -145,7 +163,7 @@ func Build(priceItems []string, models []Model) (*Table, []Unmatched, error) {
 				bags[b] = append(bags[b], n)
 			}
 		}
-		if m := usageModel.FindStringSubmatch(usage); m != nil && !strings.HasPrefix(m[1], "USE1_") {
+		if m := usageModel.FindStringSubmatch(usage); m != nil && !usageNoModel.MatchString(m[1]) {
 			core := m[1]
 			if i := strings.Index(core, "."); i >= 0 {
 				core = core[i+1:]
@@ -311,4 +329,116 @@ func contains(list []string, s string) bool {
 
 func sortChanges(c []Change) {
 	sort.Slice(c, func(i, j int) bool { return c[i].Model < c[j].Model })
+}
+
+// Built is a build across regions (add-regional-prices D1, D5).
+type Built struct {
+	// Table holds the prices per region in Regions, and in Models the legacy
+	// view: us-east-1, plus models not offered there at their highest.
+	Table *Table
+	// Offered maps each model to the regions whose model lists name it.
+	Offered map[string]map[string]bool
+	// Unlisted are the regions whose model lists couldn't be read; they are
+	// priced from the Price List for the models listed elsewhere.
+	Unlisted []string
+}
+
+// BuildRegions prices every model a region's model list names, in every
+// region the Price List has entries for (add-regional-prices D5): items are
+// the Price List entries per region, listed the models per region. A model is
+// unmatched when no region prices it.
+func BuildRegions(items map[string][]string, listed map[string][]Model, unlisted []string) (*Built, []Unmatched, error) {
+	b := &Built{Offered: map[string]map[string]bool{}, Unlisted: append([]string(nil), unlisted...)}
+	sort.Strings(b.Unlisted)
+	var union []Model
+	seen := map[string]bool{}
+	regions := make([]string, 0, len(listed))
+	for r := range listed {
+		regions = append(regions, r)
+	}
+	sort.Strings(regions)
+	for _, r := range regions {
+		for _, m := range listed[r] {
+			if b.Offered[m.ID] == nil {
+				b.Offered[m.ID] = map[string]bool{}
+			}
+			b.Offered[m.ID][r] = true
+			if !seen[m.ID] {
+				seen[m.ID] = true
+				union = append(union, m)
+			}
+		}
+	}
+	t := &Table{Source: Source, Basis: Basis, Models: map[string]config.ModelPrice{}, Regions: map[string]map[string]config.ModelPrice{}}
+	priced := map[string]bool{}
+	missName := map[string]string{}
+	for r, its := range items {
+		rt, miss, err := Build(its, union)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", r, err)
+		}
+		if rt.Published > t.Published {
+			t.Published = rt.Published
+		}
+		for _, u := range miss {
+			missName[u.ID] = u.Name
+		}
+		if len(rt.Models) == 0 {
+			continue
+		}
+		t.Regions[r] = rt.Models
+		for id := range rt.Models {
+			priced[id] = true
+		}
+	}
+	t.Models = Legacy(t.Regions)
+	var miss []Unmatched
+	for id, name := range missName {
+		if !priced[id] {
+			miss = append(miss, Unmatched{ID: id, Name: name})
+		}
+	}
+	sort.Slice(miss, func(i, j int) bool { return miss[i].ID < miss[j].ID })
+	b.Table = t
+	return b, miss, nil
+}
+
+// Legacy is the price view guards of releases before regional prices read
+// (add-regional-prices D2): the us-east-1 prices, plus each model not priced
+// there at its highest price in any region, input and output separately.
+func Legacy(regions map[string]map[string]config.ModelPrice) map[string]config.ModelPrice {
+	out := map[string]config.ModelPrice{}
+	for id, p := range regions[LegacyRegion] {
+		out[id] = p
+	}
+	for _, hi := range Highest(regions) {
+		if _, ok := out[hi.ID]; !ok {
+			out[hi.ID] = hi.Price
+		}
+	}
+	return out
+}
+
+// ModelHigh is a model's highest price across regions.
+type ModelHigh struct {
+	ID    string
+	Price config.ModelPrice
+}
+
+// Highest returns each model's highest input and output price across regions,
+// sorted by model.
+func Highest(regions map[string]map[string]config.ModelPrice) []ModelHigh {
+	hi := map[string]config.ModelPrice{}
+	for _, models := range regions {
+		for id, p := range models {
+			h := hi[id]
+			hi[id] = config.ModelPrice{InputPer1K: max(h.InputPer1K, p.InputPer1K), OutputPer1K: max(h.OutputPer1K, p.OutputPer1K)}
+		}
+	}
+	out := make([]ModelHigh, 0, len(hi))
+	for id, p := range hi {
+		out = append(out, ModelHigh{ID: id, Price: p})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }

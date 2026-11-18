@@ -76,6 +76,13 @@ func writeFixtureState(t *testing.T, db *fakeDDB) {
 	must(act.PutMeta(ctx, "prices.status", map[string]string{}))
 	// Since v0.2.2: unpriced models already reported.
 	must(act.PutMeta(ctx, "unpriced.ai", map[string]any{"moonshotai.kimi-k3.1": map[string]string{"account": "444455556666", "at": "2026-11-16T00:00:00Z"}}))
+	// Since add-regional-prices: shared prices held per region, and the
+	// index of the regions held.
+	for region, in := range map[string]float64{"us-east-1": 0.0008, "eu-west-2": 0.00124} {
+		must(act.PutMeta(ctx, "prices.ai."+region, map[string]any{"version": 20, "sha256": "fixture-" + region,
+			"doc": map[string]any{"source": "fixture", "models": map[string]any{"amazon.nova-pro-v1:0": map[string]float64{"input_per_1k": in, "output_per_1k": in * 4}}}}))
+	}
+	must(act.PutMeta(ctx, "prices.ai.regions", map[string]any{"regions": []string{"eu-west-2", "us-east-1"}}))
 }
 
 func dumpFixture(db *fakeDDB) []fixtureItem {
@@ -178,6 +185,21 @@ func TestFixtures(t *testing.T) {
 			}
 			if _, err := act.Totals(ctx, "ai", "444455556666", time.Date(2026, 11, 16, 0, 30, 0, 0, time.UTC)); err != nil {
 				t.Fatalf("totals: %v", err)
+			}
+			// Shared prices held per region, in fixtures that have them, parse as
+			// chunks (add-regional-prices D3).
+			for _, region := range []string{"us-east-1", "eu-west-2"} {
+				var held struct {
+					Doc struct {
+						Models map[string]struct {
+							In float64 `json:"input_per_1k"`
+						} `json:"models"`
+					} `json:"doc"`
+				}
+				ok, err := act.GetMeta(ctx, "prices.ai."+region, &held)
+				if err != nil || (ok && held.Doc.Models["amazon.nova-pro-v1:0"].In == 0) {
+					t.Fatalf("held prices for %s: %+v %v", region, held, err)
+				}
 			}
 		})
 	}

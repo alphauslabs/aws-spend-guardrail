@@ -87,10 +87,15 @@ func TestGuardRoleGrantsCalls(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, want := range []string{"organizations:DescribeOrganization", "organizations:AttachPolicy", "dynamodb:UpdateItem", "dynamodb:GetItem", "pricing:GetProducts", "bedrock:ListFoundationModels"} {
+	for _, want := range []string{"organizations:DescribeOrganization", "organizations:AttachPolicy", "dynamodb:UpdateItem", "dynamodb:GetItem", "pricing:GetProducts", "pricing:GetAttributeValues", "bedrock:ListFoundationModels"} {
 		if calls[want] == "" {
 			t.Fatalf("expected to find the guard's call %s, found %v", want, calls)
 		}
+	}
+	// The mantle model list is a signed HTTP request, not an SDK call
+	// (internal/prices/sources.go), so it is checked by name.
+	if !strings.Contains(grants, "bedrock-mantle:ListModels") {
+		t.Error("internal/prices/sources.go lists mantle models, which needs bedrock-mantle:ListModels in template.yaml")
 	}
 	for action, path := range calls {
 		if !strings.Contains(grants, action) {

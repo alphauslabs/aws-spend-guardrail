@@ -43,7 +43,7 @@ func newPublishKit(t *testing.T) *publishKit {
 		for id, p := range k.build {
 			models[id] = p
 		}
-		t := &prices.Table{Source: prices.Source, Basis: prices.Basis, Published: "2026-11-16T00:00:00Z", Models: models}
+		t := builtOf(models)
 		return prices.Publish(ctx, k.j, t, k.unmatched, prices.PublishOptions{Note: "scheduled publish by guard 123456789012", Now: k.h.now})
 	}
 	return k
@@ -67,7 +67,7 @@ func (k *publishKit) latest() int64 {
 func TestScheduledPublishWritesOnlyChanges(t *testing.T) {
 	k := newPublishKit(t)
 	k.run()
-	if k.latest() != 1 || countAlerts(k.h, "shared prices version 1 published") != 1 || !k.h.alerts.has("a.m1 added: in 1 / out 2 per 1k") {
+	if k.latest() != 1 || countAlerts(k.h, "shared prices version 1 published") != 1 || !k.h.alerts.has("a.m1 added (in us-east-1): in 1 / out 2 per 1k") {
 		t.Fatalf("first run: version %d, alerts %v", k.latest(), k.h.alerts.list)
 	}
 	v, _ := k.j.LatestPrices(context.Background())
@@ -81,7 +81,7 @@ func TestScheduledPublishWritesOnlyChanges(t *testing.T) {
 	}
 	k.build["a.m1"] = config.ModelPrice{InputPer1K: 1, OutputPer1K: 3}
 	k.run()
-	if k.latest() != 2 || !k.h.alerts.has("a.m1 raised: in 1 / out 3 per 1k, was in 1 / out 2 per 1k") {
+	if k.latest() != 2 || !k.h.alerts.has("a.m1 raised (in us-east-1): in 1 / out 3 per 1k, was in 1 / out 2 per 1k") {
 		t.Fatalf("a rise: version %d, alerts %v", k.latest(), k.h.alerts.list)
 	}
 }
@@ -89,7 +89,7 @@ func TestScheduledPublishWritesOnlyChanges(t *testing.T) {
 func TestScheduledPublishKeepsManualPrices(t *testing.T) {
 	k := newPublishKit(t)
 	ctx := context.Background()
-	built := &prices.Table{Source: prices.Source, Basis: prices.Basis, Models: map[string]config.ModelPrice{"a.m1": {InputPer1K: 1, OutputPer1K: 2}}}
+	built := builtOf(map[string]config.ModelPrice{"a.m1": {InputPer1K: 1, OutputPer1K: 2}})
 	if _, err := prices.Publish(ctx, k.j, built, nil, prices.PublishOptions{Manual: map[string]config.ModelPrice{"x.grok": {InputPer1K: 3, OutputPer1K: 15}}, Note: "by hand"}); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestScheduledPublishReportsUnpricedModelsOnce(t *testing.T) {
 func TestScheduledPublishReportsStaleManualPricesOnce(t *testing.T) {
 	k := newPublishKit(t)
 	ctx := context.Background()
-	built := &prices.Table{Source: prices.Source, Basis: prices.Basis, Models: map[string]config.ModelPrice{"a.m1": {InputPer1K: 1, OutputPer1K: 2}}}
+	built := builtOf(map[string]config.ModelPrice{"a.m1": {InputPer1K: 1, OutputPer1K: 2}})
 	if _, err := prices.Publish(ctx, k.j, built, nil, prices.PublishOptions{Manual: map[string]config.ModelPrice{"x.grok": {InputPer1K: 3, OutputPer1K: 15}}, Note: "by hand"}); err != nil {
 		t.Fatal(err)
 	}
@@ -168,4 +168,10 @@ func TestNoPublisherNoPublish(t *testing.T) {
 	if err := h.g.PublishSharedPrices(context.Background()); err != nil || len(h.alerts.list) != 0 {
 		t.Fatalf("%v %v", err, h.alerts.list)
 	}
+}
+
+// builtOf is a build pricing models in us-east-1 only.
+func builtOf(models map[string]config.ModelPrice) *prices.Built {
+	regions := map[string]map[string]config.ModelPrice{prices.LegacyRegion: models}
+	return &prices.Built{Table: &prices.Table{Source: prices.Source, Basis: prices.Basis, Published: "2026-11-16T00:00:00Z", Models: prices.Legacy(regions), Regions: regions}}
 }

@@ -839,9 +839,17 @@ Resources:
         Statement:
           - Sid: ReadPriceList
             Effect: Allow
-            # Neither action has resource-level permissions.
-            Action: [pricing:GetProducts, bedrock:ListFoundationModels]
+            # None of these actions has resource-level permissions. The
+            # publish reads the Price List and Bedrock's model list in every
+            # region (add-regional-prices D5).
+            Action: [pricing:GetProducts, pricing:GetAttributeValues, bedrock:ListFoundationModels]
             Resource: "*"
+          - Sid: ListMantleModels
+            Effect: Allow
+            # The bedrock-mantle model list, per region; its resource is a
+            # mantle project.
+            Action: bedrock-mantle:ListModels
+            Resource: !Sub arn:${AWS::Partition}:bedrock-mantle:*:${AWS::AccountId}:project/*
           - Sid: PricePublisherKey
             Effect: Allow
             Action: secretsmanager:GetSecretValue
@@ -885,7 +893,9 @@ Resources:
         S3Key: !Ref FunctionPackageKey
       Role: !GetAtt GuardRole.Arn
       MemorySize: 256
-      Timeout: 120
+      # The scheduled price publish reads every region (about 35 seconds
+      # measured); the minute tasks finish in well under a second.
+      Timeout: 300
       # One invocation at a time: a pull, a notification, and an outbox batch
       # never run concurrently against the same state.
       ReservedConcurrentExecutions: 1
@@ -915,7 +925,7 @@ Resources:
           GUARD_VERSION: !Ref GuardVersion
           # Bump with MinTemplateRevision (internal/guard/deployment.go) when the
           # code needs something older templates lack (add-guard-upgrades D2).
-          TEMPLATE_REVISION: "3"
+          TEMPLATE_REVISION: "4"
 
   NotifySubscription:
     Type: AWS::SNS::Subscription

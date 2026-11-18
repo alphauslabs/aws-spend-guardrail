@@ -65,9 +65,9 @@ The region is the trail record's `awsRegion`, which for a cross-region inference
 
 The builder:
 
-1. Lists regions: `ec2:DescribeRegions` for those the account has enabled, plus every region the Price List has Bedrock entries for.
-2. Reads the Price List per region (`regionCode` filter, both service codes), as today for us-east-1, with up to 8 regions at a time. All regions together are about 40,000 entries, or 400 pages of 100.
-3. In each enabled region, calls `ListFoundationModels` and the mantle endpoint's `GET /v1/models` (SigV4, service `bedrock-mantle`), also up to 8 regions at a time. A region whose list fails is named in the output and skipped.
+1. Lists the regions the Price List has Bedrock entries for (`GetAttributeValues` for `regionCode`), minus other partitions (`us-gov-`, `eusc-`).
+2. Reads the Price List per region (`regionCode` filter, both service codes), as today for us-east-1, two regions at a time with adaptive retries: the Price List API throttles beyond that.
+3. In each of those regions, calls `ListFoundationModels` and the mantle endpoint's `GET /v1/models` (SigV4, service `bedrock-mantle`), up to 8 regions at a time. A region whose list fails, including one the account hasn't enabled, is named in the output and priced as step 5 says; a region with no mantle endpoint (its host doesn't resolve) is not a failure. Trying every region avoids a dependency and a permission for listing enabled regions.
 4. Prices each listed model in each region from that region's entries, with the existing matching, plus: a mantle id matches usage types named by it (the existing `-mantle` handling, keyed by the full id); a dated snapshot `<base>-YYYY-MM-DD` takes its base model's price; `moonshotai.<x>` takes `moonshot.<x>`'s price when it has none of its own.
 5. In regions it couldn't list, prices the models it listed elsewhere when that region's entries price them.
 
@@ -75,9 +75,9 @@ A model listed but without a price anywhere is reported as unpriced, once, as to
 
 ### D6: Time and permissions
 
-Before choosing, task 1.1 measures a full build from the e2e payer. The expectation is one to two minutes with D5's concurrent reads. The function's timeout goes from 120 to 300 seconds regardless, as the scheduled publish shares it and the Price List grows; the minute ticks are unaffected.
+Measured from the e2e payer on 2026-11-17 (task 1.1): the Price List has Bedrock entries for 36 regions, 23,035 in all (264 pages). Read one region at a time it took 49 seconds; two at a time, 27 seconds; four at a time, 37 seconds (throttled); eight at a time failed for 20 regions after 3 retries. The model lists of the 18 enabled regions took 5 seconds at 8 at a time; mantle answered in 14 of them, and in the other 4 its host doesn't resolve. A full build is about 35 seconds. In the first full run through `guardrail prices build`, the Bedrock endpoint of me-central-1, which the payer hasn't enabled, never accepted a connection, and the build took 2 minutes; each region's model lists now have 15 seconds, and the build takes 43 seconds. It priced 109 models (86 before) in 34 regions; the 16 regions it couldn't list are exactly those the payer hasn't enabled. The function's timeout goes from 120 to 300 seconds, as the scheduled publish shares it and the Price List grows; the minute ticks are unaffected.
 
-The publishing role gains `ec2:DescribeRegions` and the mantle model-list permission (its IAM action name is confirmed in task 1.1), both without resource-level permissions, in the existing price-publishing policy. Template revision 4.
+The publishing role gains `bedrock-mantle:ListModels`, whose resource is a mantle project, limited to the account's projects (`arn:${AWS::Partition}:bedrock-mantle:*:${AWS::AccountId}:project/*`), in the existing price-publishing policy. Template revision 4.
 
 ### D7: Manual prices across regions
 
