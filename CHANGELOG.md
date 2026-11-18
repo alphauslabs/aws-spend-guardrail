@@ -4,6 +4,8 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+## [v0.2.8] - 2026-11-18
+
 ### Upgrade
 1. Update the stack with this release's template and package (template revision 7), as in [upgrading](docs/upgrade.md). A guard of this release on an older template keeps running but alerts that its template is older than it needs.
 2. Update the `guardrail` CLI.
