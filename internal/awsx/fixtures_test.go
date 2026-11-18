@@ -47,7 +47,7 @@ func writeFixtureState(t *testing.T, db *fakeDDB) {
 	at := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
 	doc, err := config.Parse([]byte(`{"payer_account_id": "123456789012",
 		"scopes": [{"account_id": "111122223333", "ceiling_usd": 100, "mode": "enforce"}],
-		"ai": {"unknown_models": "count", "scopes": [{"account_id": "444455556666", "hourly_usd": 1, "mode": "enforce"}]}}`), config.Options{})
+		"ai": {"unknown_models": "count", "scopes": [{"account_id": "444455556666", "hourly_usd": 1, "mode": "enforce", "blocked": ["agents"]}]}}`), config.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,13 +83,15 @@ func writeFixtureState(t *testing.T, db *fakeDDB) {
 			"doc": map[string]any{"source": "fixture", "models": map[string]any{"amazon.nova-pro-v1:0": map[string]float64{"input_per_1k": in, "output_per_1k": in * 4}}}}))
 	}
 	must(act.PutMeta(ctx, "prices.ai.regions", map[string]any{"regions": []string{"eu-west-2", "us-east-1"}}))
-	// Since add-mantle-usage: what the mantle reader counted, and its read
-	// status. A mantle_unlinked report is left out until v0.2.7: the fake
-	// DynamoDB of v0.2.5 and earlier ignores begins_with, so their fixture
-	// test would count it as an unprotected account in the rollback check.
+	// Since add-mantle-usage: what the mantle reader counted, its read status,
+	// and (from v0.2.7, once the previous release's fake applies begins_with)
+	// an account reported as not sharing mantle usage.
 	must(act.PutMeta(ctx, "mantle.us-east-1", map[string]any{"counted": map[string]any{
 		"2026-11-16T00:29:00Z|444455556666|openai.gpt-oss-20b": map[string]int64{"calls": 2, "in": 140, "out": 117}}}))
 	must(act.PutMeta(ctx, "mantle.status", map[string]any{"failing": map[string]string{"eu-west-2": "no CloudWatch observability sink"}}))
+	must(st.MarkReported(ctx, schema.KindMantleUnlinked, "444455556666@us-east-1", at))
+	// Since add-ai-blocked: what the guard last wrote to the block policy.
+	must(st.SetMeta(ctx, "ai.blocked", map[string]any{"hash": "fixture", "attached": true, "sets": map[string][]string{"444455556666": {"agents"}}}))
 }
 
 func dumpFixture(db *fakeDDB) []fixtureItem {

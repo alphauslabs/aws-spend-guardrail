@@ -4,6 +4,8 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+## [v0.2.7] - 2026-11-18
+
 ### Upgrade
 1. Update the stack with this release's template and package (template revision 6), as in [upgrading](docs/upgrade.md). A guard of this release on an older template keeps running but alerts that its template is older than it needs.
 2. Optional: block what the AI guard can't count with `blocked` in `ai.defaults` or an AI scope (see [blocking](docs/ai-guard.md#blocking-what-the-guard-cant-count)).
