@@ -64,14 +64,15 @@ const (
 	KindRecipientUnconfirmed = "alert_recipient_unconfirmed" // a recipient hasn't confirmed its subscription; once a day
 
 	// Fast packs (the AI pack first). Each carries the pack name in its detail.
-	KindCutoff        = "cutoff"        // a pack attached its deny policy to an account
-	KindWouldCutoff   = "would_cutoff"  // dry-run: a pack would have cut off an account
-	KindCutoffLift    = "cutoff_lifted" // a cutoff was lifted
-	KindTrailStall    = "trail_stalled" // no new trail file, or the trail can't be read
-	KindTrailResume   = "trail_resumed"
-	KindUsage         = "usage_summary"  // one account and model's usage for an hour
-	KindPricesApplied = "prices_applied" // the guard started using a shared price version
-	KindUnpricedModel = "unpriced_model" // a model with no price was first counted at the highest known price
+	KindCutoff         = "cutoff"        // a pack attached its deny policy to an account
+	KindWouldCutoff    = "would_cutoff"  // dry-run: a pack would have cut off an account
+	KindCutoffLift     = "cutoff_lifted" // a cutoff was lifted
+	KindTrailStall     = "trail_stalled" // no new trail file, or the trail can't be read
+	KindTrailResume    = "trail_resumed"
+	KindUsage          = "usage_summary"   // one account and model's usage for an hour
+	KindPricesApplied  = "prices_applied"  // the guard started using a shared price version
+	KindUnpricedModel  = "unpriced_model"  // a model with no price was first counted at the highest known price
+	KindMantleUnlinked = "mantle_unlinked" // an active account doesn't share its mantle usage with the payer in a watched region
 )
 
 // ValidateMSPID checks that an MSP id can form dataset ids under Jennah's id

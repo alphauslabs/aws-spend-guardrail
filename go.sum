@@ -24,6 +24,8 @@ github.com/aws/aws-sdk-go-v2/service/budgets v1.53.8 h1:qLfC7yg8YhSXF2OoQHEGTdns
 github.com/aws/aws-sdk-go-v2/service/budgets v1.53.8/go.mod h1:7YR1/y0px6OgXtENJuaCVv+WamYx2GDulZK52NkA7dM=
 github.com/aws/aws-sdk-go-v2/service/cloudtrail v1.65.12 h1:2yBz7HCWfWtClZWfAGQ/mgg/Og4E7eANGSyztVPEOZA=
 github.com/aws/aws-sdk-go-v2/service/cloudtrail v1.65.12/go.mod h1:COhJ8ZNL5xyfDjuhZ1gaG55xjbQ2v4RGL6/Vnff/Fq0=
+github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.76.0 h1:y04O7jqZa6HM0JkoPhSI4gZoYtK2lmXV7sk+2gTvy4w=
+github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.76.0/go.mod h1:lunO76NgN61cnlgsoB/67nAMsexF0YfXXtF5v4Fnb40=
 github.com/aws/aws-sdk-go-v2/service/costexplorer v1.74.9 h1:VcaFYDUGtfA5hPpGrWYnrlFcngwHMTdUh2z7yKefkyc=
 github.com/aws/aws-sdk-go-v2/service/costexplorer v1.74.9/go.mod h1:FxJj3LoSxba3ra/jSWGYbppH1I1fcmnVZCHwcWfcfv4=
 github.com/aws/aws-sdk-go-v2/service/dynamodb v1.73.2 h1:PG5/cBXyERZPH9qRqW7a1A93+XZDgDLtR2I7GLBdtbc=
@@ -40,6 +42,8 @@ github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.12 h1:H0IaQayT3TLiG
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.12/go.mod h1:YuJJNxaOjnknLIrscBmkLhIpnmg9LzHd25sQRKUboGU=
 github.com/aws/aws-sdk-go-v2/service/lambda v1.114.3 h1:K0waQ/l0mZ/qjTFsIfbifurYEVb5eUEo/jCjh/7cUIE=
 github.com/aws/aws-sdk-go-v2/service/lambda v1.114.3/go.mod h1:nrKEzey36x3k1cR+3SQ3eMdjsGIjSo74GPopn3YTHdQ=
+github.com/aws/aws-sdk-go-v2/service/oam v1.32.5 h1:jpY3X1f2aRZCpqy9yvxtpL8UMEoOY969YxD6jYjL4+8=
+github.com/aws/aws-sdk-go-v2/service/oam v1.32.5/go.mod h1:OqkpCZA8z+AmMxyLKdn4oUOxmVs+ogo2CKgX1JRvvz0=
 github.com/aws/aws-sdk-go-v2/service/organizations v1.62.7 h1:mdXT609J8fIZ20xmq1IDiuup4cfotpshKI5y8HPqbf4=
 github.com/aws/aws-sdk-go-v2/service/organizations v1.62.7/go.mod h1:zavQOntqMOUBMiwPZ0nQ50TZhea5o4/X9dzG4to4y0A=
 github.com/aws/aws-sdk-go-v2/service/pricing v1.51.6 h1:T3+nJAQ0rJmlUC+X9zUhTJU92FqcFkIBwQtnFVIcHJI=

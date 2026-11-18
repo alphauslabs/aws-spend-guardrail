@@ -155,6 +155,9 @@ func (g *Guard) Daily(ctx context.Context) error {
 		if err := g.coverage(ctx, st.Effective, st.AppliedVersion); err != nil {
 			errs = append(errs, err)
 		}
+		if err := g.mantleCoverage(ctx, st.Effective, st.AppliedVersion); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	keys := g.checkKeys(ctx, st)
 	if keys != nil {

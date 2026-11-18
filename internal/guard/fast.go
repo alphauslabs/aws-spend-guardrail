@@ -16,6 +16,11 @@ type FastPath struct {
 	Prices *ai.Table
 	// AIPolicyID is the AI deny SCP the stack created.
 	AIPolicyID string
+	// MantleRegions are the regions whose mantle usage is read; MantleLinks
+	// reports a region's sink and the accounts linked to it, for the daily
+	// check (add-mantle-usage D6).
+	MantleRegions []string
+	MantleLinks   func(ctx context.Context, region string) (sink string, linked map[string]bool, err error)
 }
 
 // Trail runs one tick of the fast path on the config in force. With no AI

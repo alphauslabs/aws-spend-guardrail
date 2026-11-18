@@ -27,6 +27,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/budgets"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
+	"github.com/aws/aws-sdk-go-v2/service/oam"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
@@ -42,7 +43,7 @@ Usage:
   guardrail validate [--payer ACCOUNT] FILE
   guardrail diff     --msp ID --payer ACCOUNT FILE
   guardrail publish  --msp ID --payer ACCOUNT [--note TEXT] FILE
-  guardrail preflight --msp ID [--ai --trail-bucket BUCKET [--trail-prefix P] [--trail-kms-key ARN]] FILE
+  guardrail preflight --msp ID [--ai --trail-bucket BUCKET [--trail-prefix P] [--trail-kms-key ARN] [--mantle-regions R1,R2]] FILE
                      (run with AWS credentials for the payer account)
   guardrail install-link --msp ID --payer ACCOUNT --bucket BUCKET --prefix guard/VERSION
                      [--version V] [--reader-secret-arn ARN] [--writer-secret-arn ARN]
@@ -99,6 +100,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	trailBucket := fs.String("trail-bucket", "", "bucket the organization trail writes to (preflight --ai)")
 	trailPrefix := fs.String("trail-prefix", "", "the trail's S3 key prefix, if any (preflight --ai)")
 	trailKMS := fs.String("trail-kms-key", "", "KMS key the trail encrypts with, if any (preflight --ai)")
+	mantleRegions := fs.String("mantle-regions", "", "regions whose bedrock-mantle usage the guard counts, comma-separated, as in the stack's MantleRegions (preflight --ai)")
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
@@ -133,7 +135,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if *trailBucket == "" {
 			return errors.New("--trail-bucket is required with --ai")
 		}
-		return preflightAI(ctx, awsx.TrailCheck{Bucket: *trailBucket, Prefix: *trailPrefix, KMSKeyARN: *trailKMS}, stdout)
+		if err := preflightAI(ctx, awsx.TrailCheck{Bucket: *trailBucket, Prefix: *trailPrefix, KMSKeyARN: *trailKMS}, stdout); err != nil {
+			return err
+		}
+		return preflightMantle(ctx, raw, *mantleRegions, stdout)
 	case "setup", "pull", "diff", "publish":
 	default:
 		return fmt.Errorf("unknown command %q\n\n%s", cmd, usage)
@@ -454,4 +459,63 @@ func versionsCmd(ctx context.Context, args []string, stdout, stderr io.Writer) e
 	}
 	c := &cli.CLI{J: j, MSP: *msp, Payer: *payer, Out: stdout, Status: stderr}
 	return c.Versions(ctx, *latest, latestErr, *asJSON)
+}
+
+// preflightMantle reports, per region whose mantle usage the guard will
+// count, whether this account has an observability sink, and which active
+// accounts aren't linked to it (add-mantle-usage D6).
+func preflightMantle(ctx context.Context, raw []byte, regions string, stdout io.Writer) error {
+	var list []string
+	for _, r := range strings.Split(regions, ",") {
+		if r = strings.TrimSpace(r); r != "" {
+			list = append(list, r)
+		}
+	}
+	if len(list) == 0 {
+		fmt.Fprintln(stdout, "mantle: no regions given (--mantle-regions); bedrock-mantle usage won't be counted")
+		return nil
+	}
+	doc, err := config.Parse(raw, config.Options{})
+	if err != nil {
+		return err
+	}
+	eff := doc.Resolve()
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-east-1"))
+	if err != nil {
+		return err
+	}
+	accounts, err := (&awsx.Org{API: organizations.NewFromConfig(cfg)}).ListAccounts(ctx)
+	if err != nil {
+		return err
+	}
+	var problems []string
+	for _, region := range list {
+		sink, linked, err := awsx.MantleLinks(ctx, oam.NewFromConfig(cfg, func(o *oam.Options) { o.Region = region }))
+		if err != nil {
+			return fmt.Errorf("mantle in %s: %w", region, err)
+		}
+		if sink == "" {
+			problems = append(problems, fmt.Sprintf("%s: no CloudWatch observability sink in this account; create one and link member accounts to it (see docs/ai-guard.md)", region))
+			continue
+		}
+		var missing []string
+		active := 0
+		for _, a := range accounts {
+			if a.State != "ACTIVE" || eff.Excluded(a.ID) {
+				continue
+			}
+			active++
+			if !linked[a.ID] {
+				missing = append(missing, a.ID)
+			}
+		}
+		fmt.Fprintf(stdout, "mantle %s: sink %s, %d of %d active accounts linked\n", region, sink, active-len(missing), active)
+		if len(missing) > 0 {
+			problems = append(problems, fmt.Sprintf("%s: not linked: %s", region, strings.Join(missing, ", ")))
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("mantle usage can't be counted everywhere:\n  - %s", strings.Join(problems, "\n  - "))
+	}
+	return nil
 }

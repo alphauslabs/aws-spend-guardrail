@@ -18,7 +18,7 @@ Metadata:
       - Label: { default: Account coverage }
         Parameters: [ReactToAccountEvents]
       - Label: { default: AI guard (optional) }
-        Parameters: [EnableAIGuard, TrailBucket, TrailPrefix, TrailKmsKeyArn]
+        Parameters: [EnableAIGuard, TrailBucket, TrailPrefix, TrailKmsKeyArn, MantleRegions]
       - Label: { default: Shared price publishing (optional; one payer org per enterprise) }
         Parameters: [PublishSharedPrices, PricePublisherSecretArn]
 
@@ -99,6 +99,11 @@ Parameters:
     Default: ""
     AllowedPattern: "^(arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+)?$"
     Description: KMS key the trail encrypts its files with, if any. A key in another account must also allow this stack's guard role to decrypt (see docs/ai-guard.md).
+  MantleRegions:
+    Type: String
+    Default: ""
+    AllowedPattern: "^([a-z]{2}(-[a-z]+)+-[0-9](,[a-z]{2}(-[a-z]+)+-[0-9])*)?$"
+    Description: Regions whose bedrock-mantle usage the AI guard counts, comma-separated (for example us-east-1,us-west-2). Each needs a CloudWatch observability sink in this account that member accounts link their metrics to (see docs/ai-guard.md). Empty, mantle usage is not counted.
   PublishSharedPrices:
     Type: String
     Default: "false"
@@ -809,6 +814,18 @@ Resources:
             Effect: Allow
             Action: organizations:DescribeOrganization
             Resource: "*"
+          - Sid: ReadMantleUsage
+            Effect: Allow
+            # Mantle usage shared through the observability sink, and the
+            # sink's links (add-mantle-usage D5, D6). None of these actions
+            # has resource-level permissions except ListAttachedLinks, whose
+            # resource is the account's own sinks.
+            Action: [cloudwatch:GetMetricData, cloudwatch:ListMetrics, oam:ListSinks]
+            Resource: "*"
+          - Sid: ListMantleLinks
+            Effect: Allow
+            Action: oam:ListAttachedLinks
+            Resource: !Sub arn:${AWS::Partition}:oam:*:${AWS::AccountId}:sink/*
           - Sid: AICutoff
             Effect: Allow
             Action: [organizations:AttachPolicy, organizations:DetachPolicy]
@@ -914,6 +931,7 @@ Resources:
           ALERT_EMAIL: !Ref AlertEmail
           AI_POLICY_ID: !If [AIGuard, !GetAtt AIDenyPolicy.Id, ""]
           TRAIL_BUCKET: !If [AIGuard, !Ref TrailBucket, ""]
+          MANTLE_REGIONS: !If [AIGuard, !Ref MantleRegions, ""]
           PRICE_PUBLISHER_SECRET_ARN: !If [PricePublishing, !Ref PricePublisherSecretArn, ""]
           TRAIL_PREFIX: !Ref TrailPrefix
           OUTBOX_QUEUE_URL: !Ref OutboxQueue
@@ -925,7 +943,7 @@ Resources:
           GUARD_VERSION: !Ref GuardVersion
           # Bump with MinTemplateRevision (internal/guard/deployment.go) when the
           # code needs something older templates lack (add-guard-upgrades D2).
-          TEMPLATE_REVISION: "4"
+          TEMPLATE_REVISION: "5"
 
   NotifySubscription:
     Type: AWS::SNS::Subscription

@@ -4,6 +4,21 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Upgrade
+1. Update the stack with this release's template and package (template revision 5), as in [upgrading](docs/upgrade.md). A guard of this release on an older template keeps running but alerts that its template is older than it needs.
+2. Optional, to count `bedrock-mantle` calls: in each region you use mantle in, create a CloudWatch observability sink in the payer account and link the member accounts to it, then set `MantleRegions` (see [mantle calls](docs/ai-guard.md#mantle-calls)). Without it, mantle calls are not counted, as before.
+
+Rolling back to v0.2.5 is supported; it stops counting mantle calls, and the sink and links go unused.
+
+### Added
+- The AI guard counts calls through the `bedrock-mantle` endpoint (OpenAI Chat Completions and Responses, and Anthropic Messages), which CloudTrail records without token counts. It reads each linked account's mantle inferences and tokens per model and minute from CloudWatch, through a cross-account observability sink in the payer account, once a minute in each region in the new `MantleRegions` stack parameter, and prices and caps them like other calls, at the region's price. A mantle cutoff typically lands within 2 minutes. See `docs/ai-guard.md`.
+- An alert when a listed region's mantle usage can't be read, and when it can again; a daily `mantle_unlinked` event and alert, once per account, for active accounts not linked in a listed region.
+- `guardrail preflight --ai --mantle-regions` shows each region's sink and the accounts not linked yet.
+
+### Security-relevant
+- With the AI guard on, the guard's role gains `cloudwatch:GetMetricData`, `cloudwatch:ListMetrics`, and `oam:ListSinks` (no resource-level permissions), and `oam:ListAttachedLinks` on the account's own sinks. It reads only metrics that member accounts chose to share through the sink.
+- New stack parameter `MantleRegions`. The template revision is now 5.
+
 ## [v0.2.5] - 2026-11-18
 
 ### Upgrade

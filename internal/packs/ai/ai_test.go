@@ -336,3 +336,59 @@ func TestCallsPricedAtTheirRegion(t *testing.T) {
 		t.Errorf("unknown price, the highest in any region: %+v", got)
 	}
 }
+
+// mantle is a minute's mantle usage of one account and model, read from
+// metrics (add-mantle-usage D1).
+func mantle(model, region string, calls, in, out int64) activity.Record {
+	return activity.Record{EventTime: at, EventSource: activity.MantleSource, EventName: "CreateInference", EventType: "MetricDatapoint",
+		EventCategory: activity.CategoryMetric, Region: region, Account: acct, ModelID: model, Calls: calls, InputTokens: in, OutputTokens: out}
+}
+
+func TestMantleUsage(t *testing.T) {
+	tb := &Table{Regions: map[string]map[string]config.ModelPrice{
+		"us-east-1": {"openai.gpt-oss-20b": {InputPer1K: 0.00007, OutputPer1K: 0.0003}, "openai.gpt-oss-20b-1:0": {InputPer1K: 0.00007, OutputPer1K: 0.0003}},
+		"eu-west-2": {"openai.gpt-oss-20b": {InputPer1K: 0.0001, OutputPer1K: 0.0004}},
+	}}
+	p := New(tb, nil)
+	r := mantle("openai.gpt-oss-20b", "eu-west-2", 2, 140, 117)
+	if !p.Wants(r) {
+		t.Fatal("the pack must want mantle usage")
+	}
+	u, h := p.Evaluate(r)
+	want := 140.0/1000*0.0001 + 117.0/1000*0.0004
+	if h != nil || u == nil || u.Calls != 2 || u.In != 140 || u.Out != 117 || math.Abs(u.USD-want) > 1e-12 || u.Region != "eu-west-2" {
+		t.Fatalf("priced at its eu-west-2 price as 2 calls: %+v %+v", u, h)
+	}
+	// Mantle usage from another source is not ours.
+	other := r
+	other.EventSource = "other.amazonaws.com"
+	if p.Wants(other) {
+		t.Error("only mantle metric records")
+	}
+	// An allowlist naming the runtime id allows the mantle id.
+	allow := New(tb, &config.ResolvedAI{Models: []string{"openai.gpt-oss-20b-1:0"}})
+	if u, h := allow.Evaluate(mantle("openai.gpt-oss-20b", "us-east-1", 1, 10, 10)); h != nil || u == nil {
+		t.Fatalf("allowlisted by its runtime id: %+v %+v", u, h)
+	}
+	// A model off the allowlist trips, naming mantle.
+	strict := New(tb, &config.ResolvedAI{Models: []string{"anthropic.claude-haiku-5-5"}})
+	if _, h := strict.Evaluate(mantle("openai.gpt-6-sol", "us-east-1", 1, 10, 10)); h == nil || h.Rule != "model_not_allowed" || !strings.Contains(h.Detail, "through mantle") {
+		t.Fatalf("off the allowlist: %+v", h)
+	}
+	// A region off the region allowlist trips.
+	if _, h := New(tb, &config.ResolvedAI{Regions: []string{"us-east-1"}}).Evaluate(mantle("openai.gpt-oss-20b", "eu-west-2", 1, 10, 10)); h == nil || h.Rule != "region_not_allowed" {
+		t.Fatalf("region: %+v", h)
+	}
+	// An unpriced model follows the unknown-model policy.
+	if _, h := p.Evaluate(mantle("acme.new-model", "us-east-1", 1, 10, 10)); h == nil || h.Rule != "unknown_model" || !strings.Contains(h.Detail, "through mantle") {
+		t.Fatalf("unknown under cutoff: %+v", h)
+	}
+	count := New(tb, &config.ResolvedAI{UnknownModels: config.UnknownCount})
+	if u, h := count.Evaluate(mantle("acme.new-model", "us-east-1", 1, 1000, 0)); h != nil || u == nil || !u.Unpriced || u.USD != count.UnknownPrice().InputPer1K {
+		t.Fatalf("unknown under count: %+v %+v", u, h)
+	}
+	// Calls without tokens yet: nothing to price until the tokens arrive.
+	if u, h := count.Evaluate(mantle("acme.new-model", "us-east-1", 1, 0, 0)); h != nil || u != nil {
+		t.Fatalf("tokens not read yet: %+v %+v", u, h)
+	}
+}

@@ -29,9 +29,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/budgets"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	lambdasvc "github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/oam"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
@@ -317,14 +319,28 @@ func fastPath(ctx context.Context, cfg aws.Config, orgs *organizations.Client, p
 		return nil, err
 	}
 	store := &awsx.ActivityStore{API: dynamodb.NewFromConfig(cfg), Table: env("STATE_TABLE")}
+	// Mantle usage, read from metrics shared with this account, per listed
+	// region (add-mantle-usage D2, D5).
+	mantleRegions := splitRegions(os.Getenv("MANTLE_REGIONS"))
+	var metrics []*activity.MetricsReader
+	for _, r := range mantleRegions {
+		cw := cloudwatch.NewFromConfig(cfg, func(o *cloudwatch.Options) { o.Region = r })
+		sinks := oam.NewFromConfig(cfg, func(o *oam.Options) { o.Region = r })
+		metrics = append(metrics, &activity.MetricsReader{Region: r, Source: &awsx.MantleMetrics{API: cw, Sinks: sinks}, Store: store})
+	}
 	return &guard.FastPath{
 		Engine: &activity.Engine{
 			Reader:   &activity.Reader{Bucket: &awsx.TrailBucket{API: s3c, Name: bucket}, Store: store, Base: base},
+			Metrics:  metrics,
 			Store:    store,
 			Policies: &awsx.PackPolicies{API: orgs},
 		},
-		Prices:     prices,
-		AIPolicyID: policyID,
+		Prices:        prices,
+		AIPolicyID:    policyID,
+		MantleRegions: mantleRegions,
+		MantleLinks: func(ctx context.Context, region string) (string, map[string]bool, error) {
+			return awsx.MantleLinks(ctx, oam.NewFromConfig(cfg, func(o *oam.Options) { o.Region = region }))
+		},
 	}, nil
 }
 
@@ -356,4 +372,15 @@ func (k lazyKey) CallingKey(ctx context.Context) (jennah.KeyInfo, error) {
 		return jennah.KeyInfo{}, err
 	}
 	return j.CallingKey(ctx)
+}
+
+// splitRegions reads a comma-separated region list, ignoring blanks.
+func splitRegions(s string) []string {
+	var out []string
+	for _, r := range strings.Split(s, ",") {
+		if r = strings.TrimSpace(r); r != "" {
+			out = append(out, r)
+		}
+	}
+	return out
 }

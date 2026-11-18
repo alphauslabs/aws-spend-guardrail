@@ -32,12 +32,19 @@ type Record struct {
 	InputTokens  int64
 	OutputTokens int64
 	BearerToken  bool // additionalEventData.callWithBearerToken
+	// Calls is how many calls the record stands for: 1 for a trail record,
+	// and a minute's growth in inferences for mantle usage read from metrics
+	// (add-mantle-usage D1).
+	Calls int64
 }
 
 // The CloudTrail event categories the guard tells apart.
 const (
 	CategoryManagement = "Management"
 	CategoryData       = "Data"
+	// CategoryMetric marks usage read from metrics, not the trail
+	// (add-mantle-usage D1).
+	CategoryMetric = "Metric"
 )
 
 type rawRecord struct {
@@ -115,6 +122,7 @@ func ParseFile(gz []byte) ([]Record, error) {
 			InputTokens:   r.AdditionalEventData.InputTokens,
 			OutputTokens:  r.AdditionalEventData.OutputTokens,
 			BearerToken:   r.AdditionalEventData.CallWithBearerToken,
+			Calls:         1,
 		}
 		if rec.EventCategory == "" {
 			rec.EventCategory = CategoryManagement // management records always carried one; old fixtures don't

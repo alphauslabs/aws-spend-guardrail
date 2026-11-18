@@ -57,9 +57,12 @@ var (
 	streaming    = map[string]bool{"InvokeModelWithResponseStream": true, "ConverseStream": true}
 	loggingCalls = map[string]bool{"PutModelInvocationLoggingConfiguration": true, "DeleteModelInvocationLoggingConfiguration": true}
 
-	geoPrefix  = regexp.MustCompile(`^(us|eu|apac|ap|jp|au|ca|global|us-gov)\.`)
-	ctxSuffix  = regexp.MustCompile(`:[0-9]+k$`)
-	assumedArn = regexp.MustCompile(`^arn:(aws[a-z-]*):sts::([0-9]{12}):assumed-role/([^/]+)/`)
+	// versionSuffix is a model id's version: -v1:0, -1:0, or
+	// -20251001-v1:0 (add-mantle-usage D4).
+	versionSuffix = regexp.MustCompile(`-(\d{8}-)?v?\d+:\d+$`)
+	geoPrefix     = regexp.MustCompile(`^(us|eu|apac|ap|jp|au|ca|global|us-gov)\.`)
+	ctxSuffix     = regexp.MustCompile(`:[0-9]+k$`)
+	assumedArn    = regexp.MustCompile(`^arn:(aws[a-z-]*):sts::([0-9]{12}):assumed-role/([^/]+)/`)
 )
 
 // ModelKey reduces a model id, inference profile id, or ARN to the model id
@@ -112,6 +115,9 @@ type Pack struct {
 	unknown config.ModelPrice
 	cfg     *config.ResolvedAI
 	allowed map[string]bool // normalized model allowlist; nil means any priced model
+	// allowedBase is the allowlist without version suffixes, which mantle
+	// model ids lack (add-mantle-usage D4).
+	allowedBase map[string]bool
 }
 
 // New returns the AI pack for a config in force, pricing from the release
@@ -166,9 +172,10 @@ func NewShared(t *Table, shared map[string]map[string]config.ModelPrice, cfg *co
 		p.unknown = higher(p.unknown, v)
 	}
 	if cfg.Models != nil {
-		p.allowed = map[string]bool{}
+		p.allowed, p.allowedBase = map[string]bool{}, map[string]bool{}
 		for _, m := range cfg.Models {
 			p.allowed[ModelKey(m)] = true
+			p.allowedBase[versionSuffix.ReplaceAllString(ModelKey(m), "")] = true
 		}
 	}
 	return p
@@ -290,6 +297,9 @@ func SharedEffect(release, shared map[string]config.ModelPrice) (raised, added, 
 // and the guard requires management events, so the management copy is always
 // there (fix-data-event-double-count D1).
 func (p *Pack) Wants(r activity.Record) bool {
+	if r.EventCategory == activity.CategoryMetric {
+		return r.EventSource == activity.MantleSource // mantle usage read from metrics (add-mantle-usage D1)
+	}
 	if r.EventCategory == activity.CategoryData {
 		return false
 	}
@@ -311,6 +321,9 @@ func (p *Pack) Evaluate(r activity.Record) (*activity.Usage, *activity.Hit) {
 		return nil, nil // refused calls cost nothing
 	}
 	key := ModelKey(r.ModelID)
+	if r.EventCategory == activity.CategoryMetric {
+		return p.evaluateMantle(r, key, hit)
+	}
 	if r.EventType == "AwsApiCall" {
 		// Tripwires look at the call itself, once, not its completion record.
 		if r.BearerToken && !callerMatches(r.CallerARN, p.cfg.APIKeyCallers) {
@@ -348,6 +361,32 @@ func (p *Pack) Evaluate(r activity.Record) (*activity.Usage, *activity.Hit) {
 	usd := float64(r.InputTokens)/1000*price.InputPer1K + float64(r.OutputTokens)/1000*price.OutputPer1K
 	return &activity.Usage{Account: r.Account, Time: r.EventTime, Model: key, Caller: r.CallerARN, Region: r.Region,
 		Calls: 1, In: r.InputTokens, Out: r.OutputTokens, USD: usd, Unpriced: unpriced}, nil
+}
+
+// evaluateMantle prices a minute's mantle usage of one account and model, read
+// from metrics, or fires a tripwire (add-mantle-usage D1, D4). The usage names
+// no caller, so the API-key tripwire doesn't apply.
+func (p *Pack) evaluateMantle(r activity.Record, key string, hit func(rule, detail string) *activity.Hit) (*activity.Usage, *activity.Hit) {
+	if p.cfg.Regions != nil && !contains(p.cfg.Regions, r.Region) {
+		return nil, hit("region_not_allowed", fmt.Sprintf("Bedrock use through mantle in %s", r.Region))
+	}
+	if p.allowed != nil && !p.allowed[key] && !p.allowedBase[key] {
+		return nil, hit("model_not_allowed", fmt.Sprintf("model %s through mantle in %s", r.ModelID, r.Region))
+	}
+	price, ok := p.PriceIn(key, r.Region)
+	unpriced := false
+	if !ok {
+		if !p.cfg.CountsUnknown() {
+			return nil, hit("unknown_model", fmt.Sprintf("model %s through mantle in %s has no price; allowlist and price it in config to allow it", r.ModelID, r.Region))
+		}
+		if r.InputTokens == 0 && r.OutputTokens == 0 {
+			return nil, nil // the tokens come with a later read of the same minute
+		}
+		price, unpriced = p.unknown, true
+	}
+	usd := float64(r.InputTokens)/1000*price.InputPer1K + float64(r.OutputTokens)/1000*price.OutputPer1K
+	return &activity.Usage{Account: r.Account, Time: r.EventTime, Model: key, Region: r.Region,
+		Calls: r.Calls, In: r.InputTokens, Out: r.OutputTokens, USD: usd, Unpriced: unpriced}, nil
 }
 
 // Priced reports whether a model has a price, from config, the release, or

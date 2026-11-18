@@ -116,7 +116,9 @@ type Policies interface {
 
 // Engine runs the fast path once per tick.
 type Engine struct {
-	Reader   *Reader
+	Reader *Reader
+	// Metrics read mantle usage, one reader per region (add-mantle-usage D1).
+	Metrics  []*MetricsReader
 	Store    Store
 	Policies Policies
 	// Emit records an inbox event; Alert publishes a local alert. Neither
@@ -161,6 +163,7 @@ func (e *Engine) Tick(ctx context.Context, runs []PackRun) error {
 	if readErr != nil {
 		errs = append(errs, readErr)
 	}
+	read := e.readMetrics(ctx, now, &records)
 
 	var usageErr error
 	unpriced := map[string]map[string]Usage{} // per pack: the first counted call of each unpriced model
@@ -214,6 +217,11 @@ func (e *Engine) Tick(ctx context.Context, runs []PackRun) error {
 		}
 		if err := e.Reader.Commit(ctx); err != nil {
 			errs = append(errs, err)
+		}
+		for _, m := range read {
+			if err := m.Commit(ctx); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
 	e.trackCounting(ctx, now, usageErr)

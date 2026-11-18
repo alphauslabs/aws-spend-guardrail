@@ -109,6 +109,12 @@ func (g *Guard) coverage(ctx context.Context, eff *config.Resolved, version int6
 // so they're reported again if they lapse later. It returns the details of
 // the accounts reported now.
 func (g *Guard) reportOnce(ctx context.Context, kind string, current []string, version int64, detail func(string) map[string]any) ([]map[string]any, error) {
+	return g.reportOnceScoped(ctx, kind, current, version, func(id string) string { return "account:" + id }, detail)
+}
+
+// reportOnceScoped is reportOnce for ids that aren't account ids, such as
+// "<account>@<region>"; scope gives each id's event scope.
+func (g *Guard) reportOnceScoped(ctx context.Context, kind string, current []string, version int64, scope func(string) string, detail func(string) map[string]any) ([]map[string]any, error) {
 	reported, err := g.State.Reported(ctx, kind)
 	if err != nil {
 		return nil, fmt.Errorf("read reported %s: %w", kind, err)
@@ -124,7 +130,7 @@ func (g *Guard) reportOnce(ctx context.Context, kind string, current []string, v
 			continue
 		}
 		d := detail(id)
-		g.emit(ctx, kind, kind+":"+id+":"+day, "account:"+id, version, d)
+		g.emit(ctx, kind, kind+":"+id+":"+day, scope(id), version, d)
 		if err := g.State.MarkReported(ctx, kind, id, now); err != nil {
 			errs = append(errs, err)
 			continue

@@ -58,7 +58,7 @@ The model allowlist still matches up to a version suffix: an allowlist entry who
 
 `MantleRegions` is a comma-delimited stack parameter, empty by default. It's passed to the function as `MANTLE_REGIONS`. The guard's role gains `cloudwatch:GetMetricData` and `cloudwatch:ListMetrics` (no resource-level permissions) and `oam:ListAttachedLinks` and `oam:ListSinks`. These are added only when the AI guard is on. Template revision 5 (add-regional-prices took 4).
 
-A region whose query fails (no sink, access denied, throttled beyond retries) is skipped for the tick; on the first failure the guard alerts "mantle spend in <region> is not watched" with the error, and alerts again on the first success, tracked in meta `mantle.status`. The minutes it missed are read on recovery if still inside the 15-minute window.
+A region whose read fails (access denied, as before a new link takes effect, or throttled beyond retries) is skipped for the tick. A region without a sink doesn't fail the search: it returns no series, as if nobody used mantle (found in the live check on 2026-11-18). So each read first lists the region's sinks (`oam:ListSinks`, free) and treats none as a failed read. A failed region is skipped; on the first failure the guard alerts "mantle spend in <region> is not watched" with the error, and alerts again on the first success, tracked in meta `mantle.status`. The minutes it missed are read on recovery if still inside the 15-minute window.
 
 A region listed but with no mantle usage returns no series and is not an error.
 
