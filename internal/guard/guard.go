@@ -257,6 +257,9 @@ type Guard struct {
 	Keys []GuardKey
 	// Fast is the trail-reading fast path. Nil disables it.
 	Fast *FastPath
+	// Blocks is the AI block policy (add-ai-blocked); nil when the AI guard is
+	// off or the stack's template has none.
+	Blocks BlockPolicy
 	// Prices reads the enterprise's shared prices. Nil: release prices only.
 	Prices PriceSource
 	// Spend reads actual cost from Cost Explorer for lift decisions and the

@@ -16,7 +16,23 @@ type AICaps struct {
 	DailyUSD   float64 `json:"daily_usd,omitempty"`
 	MonthlyUSD float64 `json:"monthly_usd,omitempty"`
 	Mode       string  `json:"mode,omitempty"`
+	// Blocked lists the kinds of Bedrock use the guard can't count that are
+	// denied (add-ai-blocked D1). Nil inherits the defaults' list; an empty
+	// list blocks nothing. A pointer keeps an explicit [] when re-encoded.
+	Blocked *[]string `json:"blocked,omitempty"`
 }
+
+// Kinds of Bedrock use the guard can't count, which ai.*.blocked can deny
+// (add-ai-blocked).
+const (
+	BlockAgents               = "agents"
+	BlockKnowledgeBases       = "knowledge_bases"
+	BlockBidirectionalStreams = "bidirectional_streams"
+	BlockAsyncInvoke          = "async_invoke"
+)
+
+// BlockKinds are the values ai.*.blocked accepts.
+var BlockKinds = []string{BlockAgents, BlockKnowledgeBases, BlockBidirectionalStreams, BlockAsyncInvoke}
 
 // AIScope is the AI caps for one account or OU.
 type AIScope struct {
@@ -69,6 +85,15 @@ type ResolvedAIScope struct {
 	DailyUSD   float64 `json:"daily_usd"`
 	MonthlyUSD float64 `json:"monthly_usd"`
 	Mode       string  `json:"mode"`
+	// Blocked is the scope's blocked kinds, sorted, after inheriting the
+	// defaults; nil or empty blocks nothing (add-ai-blocked D1).
+	Blocked []string `json:"blocked,omitempty"`
+}
+
+// Blocks reports whether the scope denies a kind: only in enforce mode
+// (add-ai-blocked D2).
+func (s ResolvedAIScope) Blocks(kind string) bool {
+	return s.Mode == ModeEnforce && contains(s.Blocked, kind)
 }
 
 // ResolvedAI is the AI section as the guard applies it: sorted, defaults
@@ -160,12 +185,21 @@ func (a *AISection) resolve() *ResolvedAI {
 		if mode == "" {
 			mode = ModeDryRun
 		}
+		blocked := def.Blocked
+		if s.Blocked != nil {
+			blocked = s.Blocked
+		}
+		var bl []string
+		if blocked != nil && len(*blocked) > 0 {
+			bl = sortedCopy(*blocked)
+		}
 		r.Scopes = append(r.Scopes, ResolvedAIScope{
 			Target:     s.Target(),
 			HourlyUSD:  pick(s.HourlyUSD, def.HourlyUSD),
 			DailyUSD:   pick(s.DailyUSD, def.DailyUSD),
 			MonthlyUSD: pick(s.MonthlyUSD, def.MonthlyUSD),
 			Mode:       mode,
+			Blocked:    bl,
 		})
 	}
 	sort.Slice(r.Scopes, func(i, j int) bool { return r.Scopes[i].Target.String() < r.Scopes[j].Target.String() })
@@ -180,7 +214,7 @@ var (
 	regionRe   = regexp.MustCompile(`^[a-z]{2}(-[a-z]+)+-[0-9]$`)
 	iamCallRe  = regexp.MustCompile(`^arn:aws[a-z-]*:(iam|sts)::[0-9]{12}:[A-Za-z0-9+=,.@_/-]+$`)
 	aiFields   = []string{"defaults", "scopes", "models", "regions", "api_key_callers", "prices", "lifts", "unknown_models"}
-	capFields  = []string{"hourly_usd", "daily_usd", "monthly_usd", "mode"}
+	capFields  = []string{"hourly_usd", "daily_usd", "monthly_usd", "mode", "blocked"}
 	aiScopeFld = append([]string{"account_id", "ou_id"}, capFields...)
 )
 
@@ -265,6 +299,29 @@ func (c *checker) caps(parent string, o map[string]json.RawMessage) {
 	if raw, ok := o["mode"]; ok {
 		if s, ok := c.str(join(parent, "mode"), raw); ok && !contains(enums["mode"], s) {
 			c.add(join(parent, "mode"), fmt.Sprintf("must be one of %s, got %q", strings.Join(enums["mode"], ", "), s))
+		}
+	}
+	if raw, ok := o["blocked"]; ok {
+		f := join(parent, "blocked")
+		var list []json.RawMessage
+		if err := json.Unmarshal(raw, &list); err != nil || isNull(raw) {
+			c.add(f, "must be an array of strings")
+			return
+		}
+		seen := map[string]bool{}
+		for i, v := range list {
+			fi := fmt.Sprintf("%s[%d]", f, i)
+			s, ok := c.str(fi, v)
+			if !ok {
+				continue
+			}
+			if !contains(BlockKinds, s) {
+				c.add(fi, fmt.Sprintf("must be one of %s, got %q", strings.Join(BlockKinds, ", "), s))
+			}
+			if seen[s] {
+				c.add(fi, "is listed twice")
+			}
+			seen[s] = true
 		}
 	}
 }

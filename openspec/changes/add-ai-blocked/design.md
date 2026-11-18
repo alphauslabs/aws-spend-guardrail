@@ -11,6 +11,8 @@ Facts that shape the design (Service Authorization Reference for `bedrock`, read
 - `StartAsyncInvoke` is authorized as `bedrock:InvokeModel` (with `CallWithBearerToken` and `TagResource`), and `async-invoke` is one of `InvokeModel`'s resource types.
 - SCPs don't apply to the management account; one SCP is at most 5,120 characters; a root, OU, or account takes at most 10 SCPs (`docs/aws-facts.md`).
 
+Confirmed in the test organization on 2026-11-18 (task 1.1), with a test SCP holding design D3's four statements, limited to e2enormal by `aws:PrincipalAccount` and attached to the root (967 characters for one account and all four kinds): e2enormal's `InvokeInlineAgent`, `RetrieveAndGenerate`, `Retrieve`, `StartAsyncInvoke` (refused as `bedrock:InvokeModel` on `async-invoke/*`), and Nova 2 Sonic bidirectional stream (refused as `bedrock:InvokeModel` on the model) were each refused "with an explicit deny in a service control policy", while `InvokeModel` on the same embedding model as the async call, and `Converse`, worked. In another member account the same calls got past the SCP and failed on the service's own checks.
+
 ## Goals / Non-Goals
 
 **Goals:**
@@ -74,7 +76,7 @@ The guard role gains, in the AI guard policy: `organizations:UpdatePolicy` and `
 ## Risks / Trade-offs
 
 - **A mistake at the root affects every member account.** Every deny statement carries an account condition, built from a non-empty list; a test asserts no statement is generated without one, and that the placeholder denies nothing.
-- **Deleting the stack while the policy is attached fails** (AWS refuses to delete an attached policy). The uninstall notes say to clear `blocked`, or detach the policy, first.
+- **AWS refuses to delete an attached policy.** On stack deletion, the existing teardown step, which runs before the AI policies are deleted, also detaches the block policy, so deleting the stack needs nothing first.
 - **The root's 10-SCP limit.** If the root is full, attaching fails; the guard alerts once and blocks nothing until a slot is free. Preflight reports the root's free slots.
-- **Async invoke denial depends on `async-invoke` resource evaluation.** The live check confirms `StartAsyncInvoke` is refused and a plain `InvokeModel` on the same model isn't, before the design is relied on; if not, async invokes would need a model-based deny like streams.
-- **Rollback** to v0.2.6: its template has no `AIBlockPolicy`; a stack update removes it, which fails while attached. The upgrade notes say to clear `blocked` before rolling back.
+- **Async invoke denial depends on `async-invoke` resource evaluation.** Confirmed by task 1.1 (below).
+- **Rollback** to v0.2.6: its template has no `AIBlockPolicy`, so the update tries to delete it, which AWS refuses while it is attached; the policy would stay attached with no guard to update it. The upgrade notes say to clear `blocked` (approved, so the guard detaches the policy) before rolling back.

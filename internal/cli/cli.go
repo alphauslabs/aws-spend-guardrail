@@ -287,6 +287,7 @@ func (c *CLI) diff(ctx context.Context, raw []byte) (*config.Document, []config.
 		baseResolved = base.Resolve()
 	}
 	changes := config.Diff(baseResolved, doc.Resolve())
+	defer c.noteDryRunBlocked(doc.Resolve())
 	if baseVersion == 0 {
 		fmt.Fprintln(c.Out, "compared with: nothing published yet")
 	} else {
@@ -378,4 +379,17 @@ func canonical(raw []byte) ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(v)
+}
+
+// noteDryRunBlocked says when a dry-run AI scope sets blocked, which blocks
+// nothing until the scope is in enforce mode (add-ai-blocked D2).
+func (c *CLI) noteDryRunBlocked(r *config.Resolved) {
+	if r == nil || r.AI == nil {
+		return
+	}
+	for _, s := range r.AI.Scopes {
+		if len(s.Blocked) > 0 && s.Mode != config.ModeEnforce {
+			fmt.Fprintf(c.Out, "note: the AI scope %s blocks %s only in enforce mode; in dry-run it blocks nothing\n", s.Target, strings.Join(s.Blocked, ", "))
+		}
+	}
 }

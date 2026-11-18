@@ -67,6 +67,7 @@ The guard writes to the payer org's inbox:
 - `trail_stalled` and `trail_resumed`;
 - `usage_summary` once an hour per account and model: calls, input and output tokens, and estimated USD;
 - `unpriced_model` the first time it counts a call to a model with no price (`ai.unknown_models` `count`), with the model, account, caller, region, and the prices used;
+- `ai_blocked` when what the block policy denies changes, with the accounts and kinds added and removed;
 - `mantle_unlinked` once for each active account that doesn't share its mantle usage in a watched region (see [Mantle calls](#mantle-calls)), with the account, its name, and the region;
 - `prices_applied` when it starts using a new shared price version, with how many models it raised, added, or listed lower (ignored).
 
@@ -77,6 +78,30 @@ Raw trail records and prompts never leave your AWS account.
 ## When the trail stops
 
 If no new trail file arrives for 30 minutes, or the guard can't read the trail (for example after a bucket or KMS key policy changes), it alerts that AI spend is not being watched, and alerts again when files resume. Totals are kept.
+
+## Blocking what the guard can't count
+
+The guard can't count Bedrock agents and flows, knowledge-base retrieval, bidirectional streams (Nova Sonic), or async invokes: CloudTrail records them without token counts, and they publish no usage it can read. If an account doesn't need them, block them with `blocked` in `ai.defaults` or an AI scope (see [config](config.md#ai)), so a leaked credential or runaway job can't spend through them:
+
+```json
+"ai": {
+  "defaults": { "mode": "enforce", "blocked": ["agents", "knowledge_bases", "bidirectional_streams", "async_invoke"] },
+  "scopes": [{ "account_id": "111122223333", "blocked": ["bidirectional_streams"] }]
+}
+```
+
+A scope's list replaces the defaults', so the account above may use agents, knowledge bases, and async invokes. Only `enforce` scopes block; `guardrail diff` notes a dry-run scope that sets `blocked`. Blocking applies on the guard's next pull. Allowing again is a loosening: it waits for approval and the delay, and the approval says the use won't be counted toward caps.
+
+| Kind | Denied |
+|---|---|
+| `agents` | `bedrock:InvokeAgent`, `InvokeInlineAgent`, `InvokeFlow` |
+| `knowledge_bases` | `bedrock:Retrieve`, `RetrieveAndGenerate` (and its streaming form), `AgenticRetrieveStream` |
+| `async_invoke` | `StartAsyncInvoke`, as `bedrock:InvokeModel` on `async-invoke` resources; plain calls to the same model still work |
+| `bidirectional_streams` | `bedrock:InvokeModel` and `InvokeModelWithResponseStream` on the Nova Sonic models, since AWS authorizes a stream only as a call to its model; this also blocks any other use of those models |
+
+The guard keeps one service control policy, `guardrail-ai-blocked-<msp id>`, that lists the blocked accounts per kind, and attaches it to the organization root while anything is blocked; it detaches it when nothing is, and when the stack is deleted. Each change is an `ai_blocked` event. The daily run restores the policy if it was changed by hand. The root takes at most 10 SCPs (`guardrail preflight` shows its free slots when the config blocks anything), and one SCP holds at most 5,120 characters, about 250 to 300 blocked accounts; beyond that the guard keeps the last policy it could write and alerts once.
+
+Before rolling the stack back to a release without this (v0.2.6 or earlier), allow everything again and let the guard detach the policy: the older template can't remove an attached policy, which would stay in force with no guard updating it.
 
 ## Mantle calls
 

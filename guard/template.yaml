@@ -153,6 +153,26 @@ Resources:
   # new AI spend commitment, through bedrock-runtime or bedrock-mantle, and
   # Bedrock API keys; never reads, lists, or cleanup (widen-ai-cutoff D1). An
   # explicit list, so its effect is reviewable; guard/main_test.go pins it.
+  # The AI block policy (add-ai-blocked): what the config's ai.*.blocked
+  # denies. The guard rewrites its content to list the blocked accounts per
+  # kind, and attaches it to the organization root only while something is
+  # blocked. Created denying nothing; a stack update leaves the guard's
+  # content alone, since this placeholder doesn't change.
+  AIBlockPolicy:
+    Type: AWS::Organizations::Policy
+    Condition: AIGuard
+    Properties:
+      Name: !Sub guardrail-ai-blocked-${MSPId}
+      Description: aws-spend-guardrail AI blocks. Written and attached by the guard from the config's ai blocked lists.
+      Type: SERVICE_CONTROL_POLICY
+      Content:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: GuardrailAIBlockedNothing
+            Effect: Allow
+            Action: "*"
+            Resource: "*"
+
   AIDenyPolicy:
     Type: AWS::Organizations::Policy
     Condition: AIGuard
@@ -826,6 +846,21 @@ Resources:
             Effect: Allow
             Action: oam:ListAttachedLinks
             Resource: !Sub arn:${AWS::Partition}:oam:*:${AWS::AccountId}:sink/*
+          - Sid: AIBlockPolicy
+            Effect: Allow
+            Action: [organizations:UpdatePolicy, organizations:DescribePolicy, organizations:ListTargetsForPolicy]
+            Resource: !GetAtt AIBlockPolicy.Arn
+          - Sid: AIBlockAtRoot
+            Effect: Allow
+            Action: [organizations:AttachPolicy, organizations:DetachPolicy]
+            Resource:
+              - !GetAtt AIBlockPolicy.Arn
+              - !Sub arn:${AWS::Partition}:organizations::${AWS::AccountId}:root/o-*/r-*
+          - Sid: FindRoot
+            Effect: Allow
+            # No resource-level permissions.
+            Action: organizations:ListRoots
+            Resource: "*"
           - Sid: AICutoff
             Effect: Allow
             Action: [organizations:AttachPolicy, organizations:DetachPolicy]
@@ -930,6 +965,7 @@ Resources:
           ALERT_TOPIC_ARN: !Ref AlertTopic
           ALERT_EMAIL: !Ref AlertEmail
           AI_POLICY_ID: !If [AIGuard, !GetAtt AIDenyPolicy.Id, ""]
+          AI_BLOCK_POLICY_ID: !If [AIGuard, !GetAtt AIBlockPolicy.Id, ""]
           TRAIL_BUCKET: !If [AIGuard, !Ref TrailBucket, ""]
           MANTLE_REGIONS: !If [AIGuard, !Ref MantleRegions, ""]
           PRICE_PUBLISHER_SECRET_ARN: !If [PricePublishing, !Ref PricePublisherSecretArn, ""]
@@ -943,7 +979,7 @@ Resources:
           GUARD_VERSION: !Ref GuardVersion
           # Bump with MinTemplateRevision (internal/guard/deployment.go) when the
           # code needs something older templates lack (add-guard-upgrades D2).
-          TEMPLATE_REVISION: "5"
+          TEMPLATE_REVISION: "6"
 
   NotifySubscription:
     Type: AWS::SNS::Subscription
@@ -1050,6 +1086,7 @@ Resources:
       # References, not DependsOn, so these exist only with the AI guard on:
       # the teardown runs (and detaches AI cutoffs) before they are deleted.
       AIPolicy: !If [AIGuard, !Ref AIDenyPolicy, ""]
+      AIBlockPolicy: !If [AIGuard, !Ref AIBlockPolicy, ""]
       AIPermissions: !If [AIGuard, !Ref AIGuardPolicy, ""]
 
 Outputs:

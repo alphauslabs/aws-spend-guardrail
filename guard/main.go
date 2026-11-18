@@ -163,6 +163,9 @@ func setup(ctx context.Context) *app {
 		}
 		a.g.Keys = append(a.g.Keys, guard.GuardKey{Name: "price publisher", Key: lazyKey{dial}})
 	}
+	if id := os.Getenv("AI_BLOCK_POLICY_ID"); id != "" && os.Getenv("AI_POLICY_ID") != "" {
+		a.g.Blocks = &awsx.OrgBlockPolicy{API: orgs, PolicyID: id}
+	}
 	if policy := os.Getenv("AI_POLICY_ID"); policy != "" {
 		fast, err := fastPath(ctx, cfg, orgs, policy)
 		if err != nil {

@@ -63,7 +63,7 @@ The optional `ai` section configures the [AI guard](ai-guard.md). It has no effe
   "defaults": { "monthly_usd": 2000, "mode": "dry-run" },
   "scopes": [
     { "account_id": "111122223333", "hourly_usd": 20, "daily_usd": 200, "mode": "enforce" },
-    { "ou_id": "ou-ab12-cd34ef56", "monthly_usd": 500 }
+    { "ou_id": "ou-ab12-cd34ef56", "monthly_usd": 500, "blocked": ["agents", "async_invoke"] }
   ],
   "models": ["amazon.nova-micro-v1:0", "anthropic.claude-haiku-5-5"],
   "regions": ["us-east-1", "us-west-2"],
@@ -77,7 +77,8 @@ The optional `ai` section configures the [AI guard](ai-guard.md). It has no effe
 | Field | Description |
 |---|---|
 | `defaults` | Caps and `mode` every AI scope takes unless it sets its own. `mode` here also applies to accounts no AI scope covers, for the rules in [AI guard](ai-guard.md#caps-and-rules). Default `dry-run`. |
-| `scopes` | Accounts and OUs with caps: `hourly_usd`, `daily_usd`, and `monthly_usd` of estimated spend (0 or absent means no cap), and `mode`. An account scope beats an OU scope. |
+| `scopes` | Accounts and OUs with caps: `hourly_usd`, `daily_usd`, and `monthly_usd` of estimated spend (0 or absent means no cap), `mode`, and `blocked`. An account scope beats an OU scope. |
+| `blocked` | In `defaults` or a scope: kinds of Bedrock use the guard can't count, denied in the scope's accounts while the scope is in `enforce` mode: `agents` (agents and flows), `knowledge_bases`, `bidirectional_streams` (Nova Sonic), and `async_invoke`. A scope's list replaces the defaults'; `[]` blocks nothing; absent everywhere, nothing is blocked. See [AI guard](ai-guard.md#blocking-what-the-guard-cant-count). |
 | `models` | Models allowed, by model id, inference profile id, or ARN. Absent: any model the price table knows. An empty list allows none. |
 | `regions` | Regions allowed for Bedrock calls. Absent: any region. |
 | `api_key_callers` | IAM users or roles that may use Bedrock API keys. Absent: nobody. A role covers its sessions. |
@@ -102,8 +103,8 @@ The guard compares each new version with the config in force, field by field:
 | Any change of `period` | loosening |
 | Account added to or removed from `excluded_accounts` | notice: applies at once, no approval, since it changes what's reported, not what's protected |
 | Address added to or removed from `alert_emails` | needs approval, like a loosening: removing one can silence freeze alerts, and adding one can send them to someone outside the MSP. This holds in a first version too. |
-| AI: a lower cap, a scope added, a model, region, or API-key caller removed, a higher price, `dry-run` to `enforce`, `unknown_models` `count` to `cutoff` | tightening |
-| AI: a higher or removed cap, a scope removed, a model, region, or API-key caller added, a lower, new, or removed price, `enforce` to `dry-run`, a lift added, `unknown_models` `cutoff` to `count` (also in a first version) | loosening |
+| AI: a lower cap, a scope added, a model, region, or API-key caller removed, a higher price, `dry-run` to `enforce`, `unknown_models` `count` to `cutoff`, a kind added to a scope's `blocked` | tightening |
+| AI: a higher or removed cap, a scope removed, a model, region, or API-key caller added, a lower, new, or removed price, `enforce` to `dry-run`, a lift added, `unknown_models` `cutoff` to `count` (also in a first version), a kind removed from a scope's `blocked` | loosening |
 
 - A version that only tightens applies on the guard's next pull, within about 5 minutes.
 - A version that loosens anything applies its tightening parts at once. For the rest, the guard raises one Jennah approval to the approvers set in the stack. The loosening applies only once the approval is approved **and** the stack's delay has passed since the guard first saw the version. The approval shows the version's note (`guardrail publish --note`) as the reason given, so write why the change is needed there: approvers decide from it.

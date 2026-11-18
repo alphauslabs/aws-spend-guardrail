@@ -73,6 +73,7 @@ const (
 	KindPricesApplied  = "prices_applied"  // the guard started using a shared price version
 	KindUnpricedModel  = "unpriced_model"  // a model with no price was first counted at the highest known price
 	KindMantleUnlinked = "mantle_unlinked" // an active account doesn't share its mantle usage with the payer in a watched region
+	KindAIBlocked      = "ai_blocked"      // what the AI block policy denies changed (add-ai-blocked)
 )
 
 // ValidateMSPID checks that an MSP id can form dataset ids under Jennah's id

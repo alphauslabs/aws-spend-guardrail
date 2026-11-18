@@ -35,6 +35,7 @@ func (g *Guard) Pull(ctx context.Context) error {
 	if st.Effective == nil {
 		return syncErr // nothing configured yet
 	}
+	g.reconcileBlocked(ctx, st.Effective, st.AppliedVersion)
 	return errors.Join(syncErr, g.Reconcile(ctx, st.Effective))
 }
 

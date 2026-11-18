@@ -80,6 +80,11 @@ func (c Change) Sentence() string {
 			return "Count calls to models with no price at the highest known price instead of cutting off the account."
 		}
 		return "Cut off an account that calls a model with no price, instead of counting the call."
+	case FieldAIBlocked:
+		if c.To != "" {
+			return fmt.Sprintf("Block %s on %s.", blockedText(c.To), t)
+		}
+		return fmt.Sprintf("Allow %s on %s; the guard can't count that use, so it isn't counted toward the AI caps.", blockedText(c.From), t)
 	case FieldAILift:
 		if c.To != "" {
 			return fmt.Sprintf("Lift the AI cutoff %s.", c.To)
@@ -175,4 +180,19 @@ func splitPrice(s string) (model, price string) {
 		return model, rest
 	}
 	return model, fmt.Sprintf("%s USD input and %s USD output per 1,000 tokens", Decimal(in), Decimal(out))
+}
+
+// blockedText names a blocked kind in a sentence (add-ai-blocked).
+func blockedText(kind string) string {
+	switch kind {
+	case BlockAgents:
+		return "Bedrock agents and flows"
+	case BlockKnowledgeBases:
+		return "Bedrock knowledge-base retrieval"
+	case BlockBidirectionalStreams:
+		return "Bedrock bidirectional streams (Nova Sonic)"
+	case BlockAsyncInvoke:
+		return "Bedrock async invokes"
+	}
+	return kind
 }

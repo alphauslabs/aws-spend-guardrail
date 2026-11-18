@@ -4,6 +4,20 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Upgrade
+1. Update the stack with this release's template and package (template revision 6), as in [upgrading](docs/upgrade.md). A guard of this release on an older template keeps running but alerts that its template is older than it needs.
+2. Optional: block what the AI guard can't count with `blocked` in `ai.defaults` or an AI scope (see [blocking](docs/ai-guard.md#blocking-what-the-guard-cant-count)).
+
+Rolling back to v0.2.6 is supported once nothing is blocked: allow everything again and let the guard detach the block policy first, since the older template can't remove an attached policy.
+
+### Added
+- `blocked` in `ai.defaults` and each AI scope: `agents`, `knowledge_bases`, `bidirectional_streams`, and `async_invoke`, the Bedrock use the AI guard can't count, denied in the scope's accounts while it is in enforce mode. A scope's list replaces the defaults'. Blocking applies at once; allowing is a loosening and needs approval. The guard keeps one service control policy listing the blocked accounts per kind, attached to the organization root only while anything is blocked. See `docs/ai-guard.md`.
+- `ai_blocked` events; `guardrail diff` notes a dry-run scope that sets `blocked`; `guardrail preflight` shows the root's free SCP slots when the config blocks anything.
+
+### Security-relevant
+- A new SCP, `guardrail-ai-blocked-<msp id>`, created by the stack denying nothing, which the guard rewrites to deny the blocked kinds for the listed accounts only, and attaches to the organization root while anything is blocked. Every deny is limited to listed accounts; SCPs never apply to the management account.
+- With the AI guard on, the guard's role gains `organizations:UpdatePolicy`, `DescribePolicy`, and `ListTargetsForPolicy` on that policy, `organizations:AttachPolicy` and `DetachPolicy` on it and the organization root, and `organizations:ListRoots`. The template revision is now 6.
+
 ## [v0.2.6] - 2026-11-18
 
 ### Upgrade

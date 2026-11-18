@@ -185,3 +185,33 @@ func TestAICutoffActions(t *testing.T) {
 		t.Fatalf("the AI cutoff policy is %d characters; service control policies allow 5,120", len(policy))
 	}
 }
+
+// The stack creates the AI block policy with the guard's placeholder, which
+// denies nothing; otherwise the daily check would "restore" a policy the
+// stack just wrote (add-ai-blocked D3).
+func TestAIBlockPolicyPlaceholder(t *testing.T) {
+	raw, err := os.ReadFile("template.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := string(raw)
+	start := strings.Index(tpl, "\n  AIBlockPolicy:\n")
+	end := strings.Index(tpl, "\n  AIDenyPolicy:\n")
+	if start < 0 || end < start {
+		t.Fatal("can't find AIBlockPolicy before AIDenyPolicy in template.yaml")
+	}
+	block := tpl[start:end]
+	for _, want := range []string{"Sid: GuardrailAIBlockedNothing", "Effect: Allow", `Action: "*"`, `Resource: "*"`} {
+		if !strings.Contains(block, want) {
+			t.Errorf("AIBlockPolicy lacks %q", want)
+		}
+	}
+	if strings.Contains(block, "Deny") {
+		t.Error("the placeholder must deny nothing")
+	}
+	for _, want := range []string{`"Sid":"GuardrailAIBlockedNothing"`, `"Effect":"Allow"`, `"Action":"*"`, `"Resource":"*"`} {
+		if !strings.Contains(guard.BlockPlaceholder, want) {
+			t.Errorf("guard.BlockPlaceholder lacks %s", want)
+		}
+	}
+}

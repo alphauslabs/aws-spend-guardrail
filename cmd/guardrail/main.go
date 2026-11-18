@@ -217,6 +217,27 @@ func preflight(ctx context.Context, raw []byte, msp string, stdout io.Writer) er
 		}
 		fmt.Fprintf(stdout, "%-30s %d of %d SCPs  %s\n", r.Target, r.Attached, awsx.MaxSCPsPerTarget, state)
 	}
+	// The AI block policy goes on the organization root (add-ai-blocked D3).
+	if blocksAny(doc.Resolve()) {
+		orgs := organizations.NewFromConfig(cfg)
+		roots, err := orgs.ListRoots(ctx, &organizations.ListRootsInput{})
+		if err != nil {
+			return fmt.Errorf("find the organization root: %w", err)
+		}
+		if len(roots.Roots) > 0 {
+			root := config.Target{Kind: "root", ID: aws.ToString(roots.Roots[0].Id)}
+			rr, err := awsx.CheckSCPSlots(ctx, orgs, []config.Target{root}, map[string]bool{"guardrail-ai-blocked-" + msp: true})
+			if err != nil {
+				return err
+			}
+			state := "ok"
+			if rr[0].Full {
+				state = "NO FREE SLOT: the AI block policy cannot be attached"
+				full++
+			}
+			fmt.Fprintf(stdout, "%-30s %d of %d SCPs  %s (for ai blocked)\n", "root "+root.ID, rr[0].Attached, awsx.MaxSCPsPerTarget, state)
+		}
+	}
 	outside, err := awsx.BudgetActionsOutside(ctx, budgets.NewFromConfig(cfg), doc.PayerAccountID, guard.BudgetPrefix)
 	if err != nil {
 		return err
@@ -518,4 +539,19 @@ func preflightMantle(ctx context.Context, raw []byte, regions string, stdout io.
 		return fmt.Errorf("mantle usage can't be counted everywhere:\n  - %s", strings.Join(problems, "\n  - "))
 	}
 	return nil
+}
+
+// blocksAny reports whether any AI scope blocks something in enforce mode.
+func blocksAny(r *config.Resolved) bool {
+	if r == nil || r.AI == nil {
+		return false
+	}
+	for _, s := range r.AI.Scopes {
+		for _, k := range s.Blocked {
+			if s.Blocks(k) {
+				return true
+			}
+		}
+	}
+	return false
 }

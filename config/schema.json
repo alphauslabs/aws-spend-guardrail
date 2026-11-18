@@ -85,7 +85,12 @@
         "hourly_usd": { "description": "Cap on estimated AI spend over the last hour, in USD. 0 or absent: no cap.", "type": "number", "minimum": 0 },
         "daily_usd": { "description": "Cap on estimated AI spend in the current UTC day, in USD. 0 or absent: no cap.", "type": "number", "minimum": 0 },
         "monthly_usd": { "description": "Cap on estimated AI spend in the current calendar month, in USD. 0 or absent: no cap.", "type": "number", "minimum": 0 },
-        "mode": { "$ref": "#/$defs/settings/properties/mode" }
+        "mode": { "$ref": "#/$defs/settings/properties/mode" },
+        "blocked": {
+          "description": "Kinds of Bedrock use the guard can't count, denied in this scope's accounts while it is in enforce mode: agents (and flows), knowledge_bases, bidirectional_streams (Nova Sonic), and async_invoke. A scope's list replaces the defaults'; [] blocks nothing. Adding a kind applies at once; removing one is a loosening and needs approval.",
+          "type": "array", "uniqueItems": true,
+          "items": { "type": "string", "enum": ["agents", "knowledge_bases", "bidirectional_streams", "async_invoke"] }
+        }
       }
     },
     "ai_scope": {
@@ -101,7 +106,8 @@
         "hourly_usd": { "$ref": "#/$defs/ai_caps/properties/hourly_usd" },
         "daily_usd": { "$ref": "#/$defs/ai_caps/properties/daily_usd" },
         "monthly_usd": { "$ref": "#/$defs/ai_caps/properties/monthly_usd" },
-        "mode": { "$ref": "#/$defs/settings/properties/mode" }
+        "mode": { "$ref": "#/$defs/settings/properties/mode" },
+        "blocked": { "$ref": "#/$defs/ai_caps/properties/blocked" }
       }
     },
     "account_id": {

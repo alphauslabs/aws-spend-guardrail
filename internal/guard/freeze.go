@@ -159,6 +159,9 @@ func (g *Guard) Daily(ctx context.Context) error {
 			errs = append(errs, err)
 		}
 	}
+	if err := g.checkBlocked(ctx); err != nil {
+		errs = append(errs, err)
+	}
 	keys := g.checkKeys(ctx, st)
 	if keys != nil {
 		if err := g.State.Save(ctx, st); err != nil {

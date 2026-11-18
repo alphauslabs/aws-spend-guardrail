@@ -17,6 +17,7 @@ const (
 	FieldAIPrice     = "ai.prices"
 	FieldAILift      = "ai.lifts"
 	FieldAIUnknown   = "ai.unknown_models"
+	FieldAIBlocked   = "ai.blocked"
 	allowlistAnyText = "any"
 )
 
@@ -52,6 +53,18 @@ func aiChanges(applied, desired *ResolvedAI) []Change {
 		}
 		if as.Mode != ds.Mode {
 			add(ds.Target, "ai.mode", as.Mode, ds.Mode, dirLower(ds.Mode == ModeEnforce))
+		}
+		// A kind blocked is a tightening; one allowed again lets uncounted
+		// use through, a loosening (add-ai-blocked D6).
+		for _, k := range ds.Blocked {
+			if !contains(as.Blocked, k) {
+				add(ds.Target, FieldAIBlocked, "", k, Tightening)
+			}
+		}
+		for _, k := range as.Blocked {
+			if !contains(ds.Blocked, k) {
+				add(ds.Target, FieldAIBlocked, k, "", Loosening)
+			}
 		}
 	}
 	for _, as := range a.Scopes {
@@ -178,6 +191,7 @@ func stricterAI(applied, desired *ResolvedAI) *ResolvedAI {
 		if ds.Mode == ModeEnforce {
 			m.Mode = ModeEnforce
 		}
+		m.Blocked = unionSorted(as.Blocked, ds.Blocked) // allowing waits for approval
 		out.Scopes = append(out.Scopes, m)
 	}
 	for _, as := range a.Scopes {
@@ -303,4 +317,24 @@ func priceText(p ModelPrice) string {
 // 0.00006, not 6e-05, since people read these in emails and approvals.
 func Decimal(v float64) string {
 	return strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+// unionSorted is the sorted union of two lists; nil when both are empty.
+func unionSorted(a, b []string) []string {
+	set := map[string]bool{}
+	for _, v := range a {
+		set[v] = true
+	}
+	for _, v := range b {
+		set[v] = true
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(set))
+	for v := range set {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
 }

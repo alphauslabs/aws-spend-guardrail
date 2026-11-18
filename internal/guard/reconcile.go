@@ -240,6 +240,12 @@ func (g *Guard) Teardown(ctx context.Context) error {
 	if err := g.teardownAI(ctx); err != nil {
 		errs = append(errs, err)
 	}
+	// AWS refuses to delete an attached policy (add-ai-blocked).
+	if g.Blocks != nil {
+		if err := g.Blocks.DetachFromRoot(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("detach the AI block policy: %w", err))
+		}
+	}
 	return errors.Join(errs...)
 }
 
