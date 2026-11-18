@@ -11,19 +11,19 @@
 ## 2. AI pack
 
 - [ ] 2.1 `Wants` accepts mantle metric records; `Evaluate` prices them, applies the model and region allowlists and unknown-model policy, skips the API-key tripwire, and says "through mantle" in hit details
-- [ ] 2.2 Match mantle model ids to table models that differ only by a version suffix, taking the highest price, for pricing and for the allowlist (design D4)
-- [ ] 2.3 Tests: `openai.gpt-oss-20b` priced as `openai.gpt-oss-20b-1:0`; a model off the allowlist cuts off with the mantle detail; an unpriced model follows the unknown-model policy; 2 inferences count as 2 calls
+- [ ] 2.2 Price mantle records with `PriceIn(model, region)`; match allowlist entries to mantle ids up to a version suffix (design D4)
+- [ ] 2.3 Tests: `openai.gpt-oss-20b` priced at its own price in the record's region; allowlisting `openai.gpt-oss-20b-1:0` allows it; a model off the allowlist cuts off with the mantle detail; an unpriced model follows the unknown-model policy; 2 inferences count as 2 calls
 
 ## 3. Stack, guard, and CLI
 
-- [ ] 3.1 Template: `MantleRegions` parameter, `MANTLE_REGIONS` env, `cloudwatch:GetMetricData`, `cloudwatch:ListMetrics`, `oam:ListSinks`, and `oam:ListAttachedLinks` for the guard's role when the AI guard is on; `TEMPLATE_REVISION` and `MinTemplateRevision` to 4; template tests and cfn-lint pass
+- [ ] 3.1 Template: `MantleRegions` parameter, `MANTLE_REGIONS` env, `cloudwatch:GetMetricData`, `cloudwatch:ListMetrics`, `oam:ListSinks`, and `oam:ListAttachedLinks` for the guard's role when the AI guard is on; `TEMPLATE_REVISION` and `MinTemplateRevision` to 5; template tests and cfn-lint pass
 - [ ] 3.2 `guard/main.go`: build a `MetricsReader` per listed region when the AI guard is on, sharing the activity store
 - [ ] 3.3 Daily task: for each listed region, compare the sink's attached links with the organization's active accounts (minus excluded accounts and the payer), and report each unlinked account once with a `mantle_unlinked` event and alert, tracked like `unprotected_account` (design D6); add the event kind to the inbox contract and alert text checks
 - [ ] 3.4 `guardrail preflight --ai`: per listed region (from a new `--mantle-regions` flag), report whether a sink exists and how many active accounts are linked, naming the unlinked ones
 
 ## 4. Docs and build
 
-- [ ] 4.1 Docs: `ai-guard.md` (how mantle is counted, setup with a sink and the organization-wide link template, delay, cost formula from design D7, and what's not covered), `install.md` (the parameter), `aws-facts.md` (the 2026-11-17 mantle facts), `upgrade.md`; CHANGELOG with Upgrade (update the stack with the new template, revision 4; optional setup for mantle), Security-relevant (the role's new CloudWatch and OAM read permissions; a new parameter), and rollback note; docs style (no em-dashes, Oxford comma)
+- [ ] 4.1 Docs: `ai-guard.md` (how mantle is counted, setup with a sink and the organization-wide link template, delay, cost formula from design D7, and what's not covered), `install.md` (the parameter), `aws-facts.md` (the 2026-11-17 mantle facts), `upgrade.md`; CHANGELOG with Upgrade (update the stack with the new template, revision 5; optional setup for mantle), Security-relevant (the role's new CloudWatch and OAM read permissions; a new parameter), and rollback note; docs style (no em-dashes, Oxford comma)
 - [ ] 4.2 Run `goimports`, `make`, `go vet ./...`, `go test ./...`, and cfn-lint; verify all pass
 
 ## 5. Live check

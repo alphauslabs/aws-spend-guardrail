@@ -48,13 +48,15 @@ The reader keeps, in the activity store's meta (`mantle.<region>`), the values i
 
 15 minutes covers the observed 24-second delay with a wide margin. A datapoint that first appears later than that is lost; docs say so.
 
-### D4: Mantle model ids match the price table up to a version suffix
+### D4: Mantle usage is priced by its own id, at its region's price; allowlists match up to a version suffix
 
-`ai.ModelKey` is unchanged. When a mantle record's model has no exact price, the pack looks for table models (release, shared, and overrides) whose id with a trailing version suffix removed (`-v<N>:<N>`, `-<N>:<N>`, `-<YYYYMMDD>-v<N>:<N>`) equals the mantle id, and uses the highest price among them (tighten-only, as elsewhere). Overrides and allowlists can name the mantle id directly. The same match applies when checking the model allowlist, so allowlisting `openai.gpt-oss-20b-1:0` allows mantle's `openai.gpt-oss-20b`.
+add-regional-prices prices mantle model ids under their own ids, per region: the price builder reads each region's mantle model list and the Price List's mantle usage types, so `openai.gpt-oss-20b`, `google.gemma-4-31b`, and dated snapshots have prices. Mantle usage is priced with `PriceIn(model, region)`, the region it was read from, like a trail record.
+
+The model allowlist still matches up to a version suffix: an allowlist entry whose id with a trailing version suffix removed (`-v<N>:<N>`, `-<N>:<N>`, `-<YYYYMMDD>-v<N>:<N>`) equals the mantle id allows it, so allowlisting `openai.gpt-oss-20b-1:0` allows mantle's `openai.gpt-oss-20b`. Overrides and allowlists can also name the mantle id directly.
 
 ### D5: Region list as a stack parameter; access alerts like a stalled trail
 
-`MantleRegions` is a comma-delimited stack parameter, empty by default. It's passed to the function as `MANTLE_REGIONS`. The guard's role gains `cloudwatch:GetMetricData` and `cloudwatch:ListMetrics` (no resource-level permissions) and `oam:ListAttachedLinks` and `oam:ListSinks`. These are added only when the AI guard is on. Template revision 4.
+`MantleRegions` is a comma-delimited stack parameter, empty by default. It's passed to the function as `MANTLE_REGIONS`. The guard's role gains `cloudwatch:GetMetricData` and `cloudwatch:ListMetrics` (no resource-level permissions) and `oam:ListAttachedLinks` and `oam:ListSinks`. These are added only when the AI guard is on. Template revision 5 (add-regional-prices took 4).
 
 A region whose query fails (no sink, access denied, throttled beyond retries) is skipped for the tick; on the first failure the guard alerts "mantle spend in <region> is not watched" with the error, and alerts again on the first success, tracked in meta `mantle.status`. The minutes it missed are read on recovery if still inside the 15-minute window.
 
