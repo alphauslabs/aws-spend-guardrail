@@ -4,6 +4,17 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Upgrade
+1. Update the `guardrail` CLI. The stack and the guard are unchanged; updating them is optional.
+
+Rolling back to v0.2.7 is supported.
+
+### Fixed
+- `guardrail diff` and `publish` compare a document with what the guard will compare it with, instead of the version the inbox last reported applied. Right after a tightening version was applied, before its report reached the inbox, they compared with the version before it, so undoing part of it showed as a tightening while the guard treated it as a loosening needing approval. While a loosening waits, they now compare with the applied version plus the waiting version's tightening parts, as the guard does. The "compared with" line says which.
+
+### Security-relevant
+None.
+
 ## [v0.2.7] - 2026-11-18
 
 ### Upgrade

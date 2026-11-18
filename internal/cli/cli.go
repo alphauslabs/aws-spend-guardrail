@@ -274,7 +274,7 @@ func (c *CLI) diff(ctx context.Context, raw []byte) (*config.Document, []config.
 	if err := c.check(); err != nil {
 		return nil, nil, err
 	}
-	base, baseVersion, err := c.baseline(ctx)
+	baseResolved, compared, err := c.baseline(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -282,17 +282,9 @@ func (c *CLI) diff(ctx context.Context, raw []byte) (*config.Document, []config.
 	if err != nil {
 		return nil, nil, err
 	}
-	var baseResolved *config.Resolved
-	if base != nil {
-		baseResolved = base.Resolve()
-	}
 	changes := config.Diff(baseResolved, doc.Resolve())
 	defer c.noteDryRunBlocked(doc.Resolve())
-	if baseVersion == 0 {
-		fmt.Fprintln(c.Out, "compared with: nothing published yet")
-	} else {
-		fmt.Fprintf(c.Out, "compared with: version %d\n", baseVersion)
-	}
+	fmt.Fprintf(c.Out, "compared with: %s\n", compared)
 	if len(changes) == 0 {
 		fmt.Fprintln(c.Out, "no differences")
 		return doc, nil, nil
@@ -308,28 +300,50 @@ func (c *CLI) diff(ctx context.Context, raw []byte) (*config.Document, []config.
 	return doc, changes, nil
 }
 
-// baseline is the applied version, or the newest one when the guard hasn't
-// reported an applied version.
-func (c *CLI) baseline(ctx context.Context) (*config.Document, int64, error) {
+// baseline is what the guard compares a new version with once it has read the
+// newest published version (fix-diff-baseline D1): the applied version A, or
+// the newest version N when it only tightens A, or their stricter merge while
+// N's loosening waits. It also returns how to say so (D2).
+func (c *CLI) baseline(ctx context.Context) (*config.Resolved, string, error) {
 	ds := schema.ConfigDatasetID(c.MSP, c.Payer)
+	newest, err := c.J.LatestVersion(ctx, ds)
+	if err != nil {
+		return nil, "", err
+	}
+	if newest == nil {
+		return nil, "nothing published yet", nil
+	}
+	parse := func(v *jennah.Version) *config.Resolved {
+		doc, err := config.Parse(v.Document, config.Options{PayerAccountID: c.Payer})
+		if err != nil {
+			return nil
+		}
+		return doc.Resolve()
+	}
 	applied, err := c.appliedVersion(ctx)
-	if err != nil {
-		applied = 0
+	if err != nil || applied == 0 {
+		return parse(newest), fmt.Sprintf("version %d (no applied version reported yet)", newest.Number), nil
 	}
-	var v *jennah.Version
-	if applied > 0 {
-		v, err = c.J.GetVersion(ctx, ds, applied)
-	} else {
-		v, err = c.J.LatestVersion(ctx, ds)
+	n := parse(newest)
+	if newest.Number <= applied || n == nil {
+		// The newest is the applied version, or one the guard rejects.
+		av := newest
+		if newest.Number != applied {
+			if av, err = c.J.GetVersion(ctx, ds, applied); err != nil || av == nil {
+				return nil, "", err
+			}
+		}
+		return parse(av), fmt.Sprintf("version %d", applied), nil
 	}
-	if err != nil || v == nil {
-		return nil, 0, err
+	av, err := c.J.GetVersion(ctx, ds, applied)
+	if err != nil || av == nil {
+		return nil, "", err
 	}
-	doc, err := config.Parse(v.Document, config.Options{})
-	if err != nil {
-		return nil, v.Number, nil // an invalid baseline compares as nothing
+	a := parse(av)
+	if !config.HasLoosening(config.Diff(a, n)) {
+		return n, fmt.Sprintf("version %d (published after the applied version %d; it only tightens, so the guard applies it on its next pull)", newest.Number, applied), nil
 	}
-	return doc, v.Number, nil
+	return config.Stricter(a, n), fmt.Sprintf("version %d with the tightening parts of version %d, whose loosening waits for approval", applied, newest.Number), nil
 }
 
 // Publish validates a document, shows its classified diff, and writes it as
