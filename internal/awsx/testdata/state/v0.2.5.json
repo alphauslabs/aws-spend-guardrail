@@ -1,0 +1,122 @@
+[
+  {
+    "S": {
+      "doc": "{\"doc\":{\"models\":{\"amazon.nova-pro-v1:0\":{\"input_per_1k\":0.00124,\"output_per_1k\":0.00496}},\"source\":\"fixture\"},\"sha256\":\"fixture-eu-west-2\",\"version\":20}",
+      "pk": "activity",
+      "sk": "prices.ai.eu-west-2"
+    }
+  },
+  {
+    "S": {
+      "doc": "{\"regions\":[\"eu-west-2\",\"us-east-1\"]}",
+      "pk": "activity",
+      "sk": "prices.ai.regions"
+    }
+  },
+  {
+    "S": {
+      "doc": "{\"doc\":{\"models\":{\"amazon.nova-pro-v1:0\":{\"input_per_1k\":0.0008,\"output_per_1k\":0.0032}},\"source\":\"fixture\"},\"sha256\":\"fixture-us-east-1\",\"version\":20}",
+      "pk": "activity",
+      "sk": "prices.ai.us-east-1"
+    }
+  },
+  {
+    "S": {
+      "doc": "{}",
+      "pk": "activity",
+      "sk": "prices.status"
+    }
+  },
+  {
+    "S": {
+      "doc": "{\"moonshotai.kimi-k3.1\":{\"account\":\"444455556666\",\"at\":\"2026-11-16T00:00:00Z\"}}",
+      "pk": "activity",
+      "sk": "unpriced.ai"
+    }
+  },
+  {
+    "S": {
+      "doc": "{\"id\":\"ai:444455556666:20261116T0000\",\"pack\":\"ai\",\"account\":\"444455556666\",\"at\":\"2026-11-16T00:00:00Z\",\"rule\":\"hourly_cap\",\"cap_usd\":1,\"detail\":\"estimated hour 1.20 USD, cap 1.00 USD\",\"attached\":true}",
+      "pk": "cutoff#ai",
+      "sk": "444455556666"
+    }
+  },
+  {
+    "S": {
+      "doc": "{\"target\":{\"kind\":\"account\",\"id\":\"111122223333\"},\"since\":\"2026-11-16T00:00:00Z\",\"period_start\":\"2026-11-16T00:00:00Z\",\"policy_id\":\"p-b\",\"threshold_usd\":90,\"how\":\"budget action\"}",
+      "pk": "frozen",
+      "sk": "account:111122223333"
+    }
+  },
+  {
+    "S": {
+      "doc": "\"2026-11-16T00:00:00Z\"",
+      "pk": "reported",
+      "sk": "unprotected_account#777788889999"
+    }
+  },
+  {
+    "S": {
+      "doc": "{\"applied_version\":6,\"effective\":{\"payer_account_id\":\"123456789012\",\"scopes\":[{\"target\":{\"kind\":\"account\",\"id\":\"111122223333\"},\"ceiling_usd\":100,\"period\":\"monthly\",\"threshold_pct\":100,\"freeze_style\":\"B\",\"mode\":\"enforce\",\"month_end\":\"stay_frozen\"}],\"ai\":{\"mode\":\"dry-run\",\"scopes\":[{\"target\":{\"kind\":\"account\",\"id\":\"444455556666\"},\"hourly_usd\":1,\"daily_usd\":0,\"monthly_usd\":0,\"mode\":\"enforce\"}],\"models\":null,\"regions\":null,\"unknown_models\":\"count\"}},\"effective_version\":7,\"pending\":{\"version\":7,\"approval_id\":\"apr_fixture\",\"first_seen\":\"2026-11-16T00:00:00Z\",\"desired\":{\"payer_account_id\":\"123456789012\",\"scopes\":[{\"target\":{\"kind\":\"account\",\"id\":\"111122223333\"},\"ceiling_usd\":200,\"period\":\"monthly\",\"threshold_pct\":100,\"freeze_style\":\"B\",\"mode\":\"enforce\",\"month_end\":\"stay_frozen\"}],\"ai\":{\"mode\":\"dry-run\",\"scopes\":[{\"target\":{\"kind\":\"account\",\"id\":\"444455556666\"},\"hourly_usd\":1,\"daily_usd\":0,\"monthly_usd\":0,\"mode\":\"enforce\"}],\"models\":null,\"regions\":null,\"unknown_models\":\"count\"}},\"note\":\"raise the ceiling\"},\"failing_since\":\"0001-01-01T00:00:00Z\",\"last_failure_alert\":\"0001-01-01T00:00:00Z\",\"install_id\":1794787200,\"install_checked\":true}",
+      "pk": "state",
+      "sk": "config"
+    }
+  },
+  {
+    "S": {
+      "doc": "\"digest\"",
+      "pk": "state",
+      "sk": "heartbeat_digest"
+    }
+  },
+  {
+    "S": {
+      "doc": "{\"unpriced\":[\"xai.grok-5\"]}",
+      "pk": "state",
+      "sk": "meta#prices.publish"
+    }
+  },
+  {
+    "S": {
+      "pk": "usage#ai#444455556666",
+      "sk": "M#202611"
+    },
+    "N": {
+      "expires": "1798243200",
+      "usd": "1.2"
+    }
+  },
+  {
+    "S": {
+      "pk": "usage#ai#444455556666",
+      "sk": "d#20261116"
+    },
+    "N": {
+      "expires": "1798243200",
+      "usd": "1.2"
+    }
+  },
+  {
+    "S": {
+      "pk": "usage#ai#444455556666",
+      "sk": "m#202611160000"
+    },
+    "N": {
+      "expires": "1798243200",
+      "usd": "1.2"
+    }
+  },
+  {
+    "S": {
+      "pk": "usageh#ai#2026111600",
+      "sk": "444455556666#amazon.nova-micro-v1:0"
+    },
+    "N": {
+      "calls": "1",
+      "expires": "1798243200",
+      "in": "10",
+      "out": "20",
+      "usd": "1.2"
+    }
+  }
+]

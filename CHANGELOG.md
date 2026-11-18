@@ -4,6 +4,8 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+## [v0.2.5] - 2026-11-18
+
 ### Upgrade
 1. Update the stack with this release's template and package (template revision 4), as in [upgrading](docs/upgrade.md). A guard of this release on an older template keeps running but alerts that its template is older than it needs.
 2. If a payer org publishes shared prices on a schedule (`PublishSharedPrices=true`), the update gives its role the new read permissions; its next daily publish writes the first version with prices per region. To publish by hand, update the `guardrail` CLI and give its AWS credentials `pricing:GetAttributeValues` and `bedrock-mantle:ListModels` as well.
