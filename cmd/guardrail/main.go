@@ -339,7 +339,7 @@ func preflightAI(ctx context.Context, c awsx.TrailCheck, stdout io.Writer) error
 	mgmt := aws.ToString(org.Organization.MasterAccountId)
 	now := time.Now().UTC()
 	for _, day := range []time.Time{now, now.Add(-24 * time.Hour)} {
-		objs, err := bucket.List(ctx, awsx.RecentTrailDay(base, mgmt, "us-east-1", day), "")
+		objs, err := bucket.List(ctx, awsx.RecentTrailDay(base, mgmt, "us-east-1", day), "", 0)
 		if err != nil {
 			return fmt.Errorf("list trail files: %w", err)
 		}

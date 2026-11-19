@@ -14,6 +14,8 @@ From a call to a cutoff is typically 2 to 6 minutes. Nothing on this path waits 
 
 The guard moves past a trail file only once the spend of its calls is stored. If it can't store it (for example, its role lost write access to its state table), it alerts once (`guardrail: AI spend not counted`), reads the same files again on every run, and alerts again when storing works (`guardrail: AI spend counted again`). No call is lost; a call may be counted twice after a partial failure, which can only cut off sooner.
 
+A run reads at most 400 trail files. When there are more (a first run on a busy organization, or a burst in one account), the guard catches up over the next runs, counting each call at the time it was made. It shares each run's 400 files evenly among the accounts and regions with new files, and starts each run where the last one stopped, so one account's backlog doesn't hold up another's new calls. An account and region with no file in the last 24 hours is checked every 10 minutes instead of every minute, so its first new calls can take up to 10 minutes longer to be read.
+
 ## What a cutoff blocks
 
 The cutoff is a service control policy, `guardrail-ai-cutoff-<msp id>`, attached to one account at a time, never an OU. It denies every way to start paid Bedrock or AgentCore work:

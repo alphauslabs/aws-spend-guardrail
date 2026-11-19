@@ -171,9 +171,14 @@ func (f *fakeS3) GetObject(_ context.Context, in *s3.GetObjectInput, _ ...func(*
 func TestTrailBucketPages(t *testing.T) {
 	f := &fakeS3{pages: [][]string{{"a", "b"}, {"c"}}, dirs: []string{"AWSLogs/o-x/111122223333/"}}
 	b := &TrailBucket{API: f, Name: "trail"}
-	objs, err := b.List(context.Background(), "p/", "after")
+	objs, err := b.List(context.Background(), "p/", "after", 0)
 	if err != nil || len(objs) != 3 || aws.ToString(f.asked[0].StartAfter) != "after" {
 		t.Fatalf("objs %v err %v", objs, err)
+	}
+	// A limit stops paging once it's reached; the page is returned whole.
+	objs, err = (&TrailBucket{API: &fakeS3{pages: [][]string{{"a", "b"}, {"c"}}}, Name: "trail"}).List(context.Background(), "p/", "", 1)
+	if err != nil || len(objs) != 2 {
+		t.Fatalf("limited: objs %v err %v", objs, err)
 	}
 	dirs, _ := b.Dirs(context.Background(), "AWSLogs/o-x/")
 	if len(dirs) != 1 {

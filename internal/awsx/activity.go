@@ -229,8 +229,9 @@ type TrailBucket struct {
 	Name string
 }
 
-// List returns the keys under prefix after startAfter, in order.
-func (b *TrailBucket) List(ctx context.Context, prefix, startAfter string) ([]activity.Object, error) {
+// List returns the keys under prefix after startAfter, in order. With limit
+// above 0 it stops paging once it holds at least limit keys.
+func (b *TrailBucket) List(ctx context.Context, prefix, startAfter string, limit int) ([]activity.Object, error) {
 	in := &s3.ListObjectsV2Input{Bucket: aws.String(b.Name), Prefix: aws.String(prefix)}
 	if startAfter != "" {
 		in.StartAfter = aws.String(startAfter)
@@ -244,7 +245,7 @@ func (b *TrailBucket) List(ctx context.Context, prefix, startAfter string) ([]ac
 		for _, o := range page.Contents {
 			out = append(out, activity.Object{Key: aws.ToString(o.Key), LastModified: aws.ToTime(o.LastModified)})
 		}
-		if !aws.ToBool(page.IsTruncated) {
+		if !aws.ToBool(page.IsTruncated) || (limit > 0 && len(out) >= limit) {
 			return out, nil
 		}
 		in.ContinuationToken = page.NextContinuationToken

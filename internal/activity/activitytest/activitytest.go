@@ -137,6 +137,8 @@ type Bucket struct {
 	Objects map[string]activity.Object
 	Bodies  map[string][]byte
 	Gets    int
+	// Lists counts List calls; Listed counts the keys they returned.
+	Lists, Listed int
 	// Deny makes every read fail with an access error.
 	Deny bool
 }
@@ -153,7 +155,9 @@ func (b *Bucket) Put(key string, body []byte, t time.Time) {
 	b.Bodies[key] = body
 }
 
-func (b *Bucket) List(_ context.Context, prefix, after string) ([]activity.Object, error) {
+// List returns the keys under prefix after after, in order, stopping at limit
+// keys when limit is above 0.
+func (b *Bucket) List(_ context.Context, prefix, after string, limit int) ([]activity.Object, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.Deny {
@@ -166,6 +170,11 @@ func (b *Bucket) List(_ context.Context, prefix, after string) ([]activity.Objec
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	b.Lists++
+	b.Listed += len(out)
 	return out, nil
 }
 
