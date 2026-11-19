@@ -252,6 +252,14 @@ Prices are USD per 1,000 input and output tokens, both above zero. Model ids are
 
 Shared prices still only tighten: a manual price can add a model or raise a price, never lower what a guard charges.
 
+To price a model the Price List doesn't have yet, step by step:
+
+1. Find the models: `guardrail prices publish --dry-run` (or `guardrail prices build -o FILE`) lists each as "no price found for <id> (<name>)", and a guard that publishes on a schedule alerts on new ones. Only models priced per token need a manual price; rerank models (priced per query) and video models such as Pegasus (priced per second) can't be counted by tokens. A model id that `aws bedrock get-foundation-model --model-identifier <id>` doesn't find in your regions needs nothing until it is offered there.
+2. Find its price on AWS: the model's card in the Bedrock user guide (its Pricing section) or the [Bedrock pricing page](https://aws.amazon.com/bedrock/pricing/). Take the Standard tier, short-context row, and of In-Region, Geo CRIS, and Global CRIS, the highest: Global CRIS is usually about 10% cheaper, and a manual price applies to every call. Other tiers (Flex, Priority, Ultrafast), long-context rates, and cache prices aren't used; the Price List build leaves them out too.
+3. Convert USD per 1 million tokens to USD per 1,000 by dividing by 1,000: $8.80 input and $44.00 output become `0.0088` and `0.044`.
+4. Write the file, run `guardrail prices publish --overrides manual.json --dry-run`, and check the added lines and any floor warning. Then publish with `--note` naming the source and date, for example `--note "GPT-6.2 Astra and Sol from their Bedrock model cards, Nov 2026"`.
+5. Nothing to do later: once the Price List prices the model at or above the manual price everywhere, a publish drops the manual price by itself. If it lands lower, the publish (and the scheduled guard's alert) suggests `--drop-override`.
+
 ### Publishing on a schedule
 
 Instead of running `prices publish` by hand, one guard per enterprise can publish every day at 00:45 UTC. It does what `guardrail prices publish` does with no `--overrides`: builds from the Price List, carries manual prices forward, and writes a version only when something changed, with the note "scheduled publish by guard <payer id>". To turn it on, in one payer org of the enterprise:
