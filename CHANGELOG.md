@@ -4,6 +4,9 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Changed
+- `guardrail prices publish`'s warning that guards will charge a provider's floor above a manual price now says how to charge the manual price in a payer org: approve it in that org's `ai.prices`. See [manual prices](docs/operating.md#manual-prices).
+
 ## [v0.2.10] - 2026-11-19
 
 ### Upgrade

@@ -71,7 +71,7 @@ func (c *CLI) PublishPrices(ctx context.Context, enterprise string, built *price
 		fmt.Fprintf(c.Out, "  note     %s: the Price List now prices it; drop the manual price with --drop-override %s if it is no longer needed\n", id, id)
 	}
 	for _, n := range r.BelowFloor {
-		fmt.Fprintf(c.Status, "warning: guards will price %s at no less than %s (its provider's highest price in this release), above its manual price on %s\n", n.Model, n.Price, n.Sides)
+		fmt.Fprintf(c.Status, "warning: guards will price %s at no less than %s (its provider's highest price in this release), above its manual price on %s; to charge the manual price in a payer org, approve it in that org's ai.prices\n", n.Model, n.Price, n.Sides)
 	}
 	if len(r.Unlisted) > 0 {
 		fmt.Fprintf(c.Status, "model lists not read in %s (not enabled for this account, or refused); those regions are priced for the models listed elsewhere\n", strings.Join(r.Unlisted, ", "))
