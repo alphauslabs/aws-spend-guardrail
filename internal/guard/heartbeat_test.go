@@ -236,3 +236,67 @@ func TestHeartbeatAIStatus(t *testing.T) {
 		t.Fatalf("mantle without watched regions: %v", ai)
 	}
 }
+
+func TestHeartbeatNamesTheAccountsItMentions(t *testing.T) {
+	h := newHarness(t)
+	names := map[string]string{
+		"111122223333": "prod",
+		"999988887777": "sandbox",
+		"555566667777": "orphan",
+		"444455556666": "not mentioned",
+	}
+	h.g.Names = func(context.Context) map[string]string { return names }
+	h.publish(`{"payer_account_id":"123456789012","excluded_accounts":["999988887777"],"scopes":[{"account_id":"111122223333","ceiling_usd":50000}]}`)
+	h.pull()
+	if err := h.state.MarkReported(context.Background(), schema.KindUnprotected, "555566667777", h.now); err != nil {
+		t.Fatal(err)
+	}
+	h.g.heartbeatIfChanged(context.Background())
+	got, _ := h.lastHeartbeat()["account_names"].(map[string]any)
+	want := map[string]any{"111122223333": "prod", "999988887777": "sandbox", "555566667777": "orphan"}
+	if len(got) != len(want) {
+		t.Fatalf("account_names %v, want %v", got, want)
+	}
+	for id, n := range want {
+		if got[id] != n {
+			t.Fatalf("account_names %v, want %v", got, want)
+		}
+	}
+
+	// A rename alone writes no heartbeat.
+	n := len(h.heartbeats())
+	names["111122223333"] = "production"
+	h.g.heartbeatIfChanged(context.Background())
+	if len(h.heartbeats()) != n {
+		t.Fatal("a rename alone wrote a heartbeat")
+	}
+
+	// With no names known, the next heartbeat is written with ids only.
+	h.g.Names = func(context.Context) map[string]string { return nil }
+	h.publish(`{"payer_account_id":"123456789012","excluded_accounts":["999988887777"],"scopes":[{"account_id":"111122223333","ceiling_usd":40000}]}`)
+	h.pull()
+	hb := h.lastHeartbeat()
+	if len(h.heartbeats()) != n+1 {
+		t.Fatal("want a heartbeat for the new version")
+	}
+	if _, ok := hb["account_names"]; ok {
+		t.Fatalf("account_names without names: %v", hb["account_names"])
+	}
+}
+
+func TestHeartbeatNamesAIAccounts(t *testing.T) {
+	h, _ := blockedHarness(t)
+	h.g.Fast.MantleRegions = []string{"us-east-1"}
+	h.g.Names = func(context.Context) map[string]string {
+		return map[string]string{"444455556666": "blocked one", "777788889999": "unlinked one"}
+	}
+	if err := h.state.MarkReported(context.Background(), schema.KindMantleUnlinked, "777788889999@us-east-1", h.now); err != nil {
+		t.Fatal(err)
+	}
+	h.publish(blockedConfig + `{"ou_id":"ou-ab12-cd34ef56"}]}}`)
+	h.pull()
+	got, _ := h.lastHeartbeat()["account_names"].(map[string]any)
+	if got["444455556666"] != "blocked one" || got["777788889999"] != "unlinked one" {
+		t.Fatalf("account_names %v", got)
+	}
+}

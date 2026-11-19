@@ -247,10 +247,76 @@ func (g *Guard) addSpend(ctx context.Context, snap map[string]any) {
 	}
 }
 
+// addAccountNames adds `account_names`, id to name, for the accounts the
+// snapshot mentions (add-heartbeat-account-names D1). Like spend it comes after
+// the digest, so a rename or a failed listing is never a change (D2). With no
+// names known the field is left out, so "couldn't list" isn't "no names".
+func (g *Guard) addAccountNames(ctx context.Context, snap map[string]any) {
+	if g.Names == nil {
+		return
+	}
+	all := g.Names(ctx)
+	if len(all) == 0 {
+		return
+	}
+	names := map[string]string{}
+	for _, id := range mentionedAccounts(snap) {
+		if n := all[id]; n != "" {
+			names[id] = n
+		}
+	}
+	if len(names) > 0 {
+		snap["account_names"] = names
+	}
+}
+
+// mentionedAccounts lists the account ids a snapshot carries: account scope
+// targets, excluded and unprotected accounts, and the AI section's cutoffs,
+// blocks, and accounts not linked for mantle.
+func mentionedAccounts(snap map[string]any) []string {
+	var ids []string
+	scopes, _ := snap["scopes"].([]map[string]any)
+	for _, s := range scopes {
+		if t, _ := s["target"].(string); strings.HasPrefix(t, "account:") {
+			ids = append(ids, strings.TrimPrefix(t, "account:"))
+		}
+	}
+	excluded, _ := snap["excluded"].([]string)
+	ids = append(ids, excluded...)
+	unprotected, _ := snap["unprotected"].([]map[string]any)
+	for _, u := range unprotected {
+		if a, _ := u["account"].(string); a != "" {
+			ids = append(ids, a)
+		}
+	}
+	if ai, ok := snap["ai"].(map[string]any); ok {
+		cutoffs, _ := ai["cutoffs"].([]map[string]any)
+		for _, c := range cutoffs {
+			if a, _ := c["account"].(string); a != "" {
+				ids = append(ids, a)
+			}
+		}
+		if b, ok := ai["blocked"].(map[string]any); ok {
+			accounts, _ := b["accounts"].(map[string][]string)
+			for a := range accounts {
+				ids = append(ids, a)
+			}
+		}
+		if m, ok := ai["mantle"].(map[string]any); ok {
+			unlinked, _ := m["unlinked"].(map[string][]string)
+			for _, accts := range unlinked {
+				ids = append(ids, accts...)
+			}
+		}
+	}
+	return ids
+}
+
 // heartbeatDetail is a heartbeat's full detail: the fields every heartbeat
 // carried before add-heartbeat-state, the snapshot, and why it was written.
 func (g *Guard) heartbeatDetail(ctx context.Context, st *State, snap map[string]any, reason string, keys any) map[string]any {
 	g.addSpend(ctx, snap)
+	g.addAccountNames(ctx, snap)
 	hb := map[string]any{
 		"applied_version":   st.AppliedVersion,
 		"effective_version": st.EffectiveVersion,

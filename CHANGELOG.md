@@ -4,6 +4,19 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+## [v0.2.10] - 2026-11-19
+
+### Upgrade
+1. Update the stack with this release's package, as in [upgrading](docs/upgrade.md). The template is unchanged (revision 7).
+
+Rolling back to v0.2.9 is supported; its heartbeats leave out the account names.
+
+### Added
+- Each heartbeat carries `account_names`: the organization's name for each account its state mentions, as the alerts name them. A rename alone doesn't write a heartbeat, and a heartbeat is still written with ids only when the accounts can't be listed. The layout version stays 1. See [the guard's state](docs/operating.md#the-guards-state).
+
+### Security-relevant
+None.
+
 ## [v0.2.9] - 2026-11-19
 
 ### Upgrade
