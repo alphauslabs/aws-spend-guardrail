@@ -251,6 +251,37 @@ func (p *Pack) inRegion(key, region string) (config.ModelPrice, bool) {
 	return config.ModelPrice{}, false
 }
 
+// KnownPrice is a model's price from the release and shared tables, without
+// the provider floor or the config's ai.prices: in each region that lists
+// it, merged tighten-only, then the lowest input and the lowest output across
+// those regions (add-price-override-check D1). ok is false when no table
+// lists the model.
+func (p *Pack) KnownPrice(key string) (config.ModelPrice, bool) {
+	var low config.ModelPrice
+	found := false
+	regions := map[string]bool{}
+	for r := range p.release {
+		regions[r] = true
+	}
+	for r := range p.shared {
+		regions[r] = true
+	}
+	for r := range regions {
+		rel, inRelease := p.release[r][key]
+		sh, inShared := p.shared[r][key]
+		if !inRelease && !inShared {
+			continue
+		}
+		v := higher(rel, sh)
+		if !found {
+			low, found = v, true
+			continue
+		}
+		low = config.ModelPrice{InputPer1K: min(low.InputPer1K, v.InputPer1K), OutputPer1K: min(low.OutputPer1K, v.OutputPer1K)}
+	}
+	return low, found
+}
+
 // PriceIn returns a model's price for a call made in a region
 // (add-regional-prices D4): the payer org's config override first (each org
 // approves its own), then the release and shared prices in that region, then

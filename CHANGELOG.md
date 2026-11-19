@@ -4,6 +4,9 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Added
+- With the AI guard on, the daily run reports a payer org's `ai.prices` entry that has fallen below the model's release and shared price, without the provider floor, in every region that prices it: one alert (`guardrail: config price below the known price`) and one `price_override_low` event per entry and known price. The entry still applies; the report says to raise or remove it. See [prices](docs/ai-guard.md#prices).
+
 ### Fixed
 - When the AI guard is behind on the organization trail, an account or region with a backlog no longer takes every run's 400 files while the others wait. Each run shares its files evenly among the accounts and regions with new files, and starts where the last run stopped. Before, an account with no recent trail files could miss every 10-minute check while another account had a backlog, so its calls were counted, and its cutoff came, late. A backlog's S3 listing also stops near what a run can read, instead of listing every remaining file each minute. See [how it works](docs/ai-guard.md#how-it-works).
 

@@ -74,6 +74,9 @@ const (
 	KindUnpricedModel  = "unpriced_model"  // a model with no price was first counted at the highest known price
 	KindMantleUnlinked = "mantle_unlinked" // an active account doesn't share its mantle usage with the payer in a watched region
 	KindAIBlocked      = "ai_blocked"      // what the AI block policy denies changed (add-ai-blocked)
+	// KindPriceOverrideLow: a config ai.prices entry is below the model's
+	// release and shared price (add-price-override-check).
+	KindPriceOverrideLow = "price_override_low"
 )
 
 // ValidateMSPID checks that an MSP id can form dataset ids under Jennah's id

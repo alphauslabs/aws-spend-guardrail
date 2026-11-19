@@ -392,3 +392,39 @@ func TestMantleUsage(t *testing.T) {
 		t.Fatalf("tokens not read yet: %+v %+v", u, h)
 	}
 }
+
+// KnownPrice leaves out the floor and the config (add-price-override-check D1).
+func TestKnownPrice(t *testing.T) {
+	tb := &Table{Regions: map[string]map[string]config.ModelPrice{
+		"us-east-1": {"amazon.m1": {InputPer1K: 0.004, OutputPer1K: 0.01}, "openai.big": {InputPer1K: 0.011, OutputPer1K: 0.055}},
+		"eu-west-2": {"amazon.m1": {InputPer1K: 0.0062, OutputPer1K: 0.0155}},
+	}}
+	shared := map[string]map[string]config.ModelPrice{
+		"us-east-1": {"amazon.m1": {InputPer1K: 0.005, OutputPer1K: 0.009}, "openai.new": {InputPer1K: 0.0022, OutputPer1K: 0.011}},
+		"eu-west-2": {"openai.new": {InputPer1K: 0.0024, OutputPer1K: 0.010}},
+	}
+	cfg := &config.ResolvedAI{Prices: map[string]config.ModelPrice{"openai.new": {InputPer1K: 0.0001, OutputPer1K: 0.0001}}}
+	p := NewShared(tb, shared, cfg)
+	cases := []struct {
+		model string
+		want  config.ModelPrice
+		ok    bool
+	}{
+		// Release and shared merged tighten-only, then the lowest per side:
+		// input 0.005 (us-east-1) vs 0.0062, output 0.01 (us-east-1) vs 0.0155.
+		{"amazon.m1", config.ModelPrice{InputPer1K: 0.005, OutputPer1K: 0.01}, true},
+		// Shared only: no floor, and the config entry is left out.
+		{"openai.new", config.ModelPrice{InputPer1K: 0.0022, OutputPer1K: 0.010}, true},
+		{"openai.big", config.ModelPrice{InputPer1K: 0.011, OutputPer1K: 0.055}, true},
+		{"xai.unlisted", config.ModelPrice{}, false},
+	}
+	for _, c := range cases {
+		got, ok := p.KnownPrice(c.model)
+		if ok != c.ok || got != c.want {
+			t.Errorf("%s: got %+v %v, want %+v %v", c.model, got, ok, c.want, c.ok)
+		}
+	}
+	if v, _ := p.Price("openai.new"); v.InputPer1K != 0.0001 {
+		t.Errorf("pricing changed: %+v", v)
+	}
+}

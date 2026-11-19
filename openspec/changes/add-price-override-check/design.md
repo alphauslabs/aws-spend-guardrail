@@ -28,7 +28,7 @@ The check runs in `Daily`, only when the AI guard is on and a config is in force
 
 ### D3: Reported records keyed by model and prices
 
-Each report is a reported record of kind `price_override_low` keyed `<model>|<entry>|<known>`, prices formatted as in alerts. A key already present is not reported again. Each run clears the records of this kind whose key isn't low today, so a raised, removed, or no-longer-low entry is forgotten without an alert, and a later return is reported again. The event id is `price_override_low:<key>`, so a retried write is the same event.
+Each report is a reported record of kind `price_override_low` keyed `<model>|<entry>|<known>`, prices formatted as in alerts. A key already present is not reported again. Each run clears the records of this kind whose key isn't low today, so a raised, removed, or no-longer-low entry is forgotten without an alert, and a later return is reported again. The event id is `price_override_low:<key>:<UTC day>`, so a retried write is the same event, and an entry reported again after it was cleared (low, fixed, then low again at the same prices) gets a new event instead of one Jennah drops as a repeat.
 
 ### D4: Alert text points at the fix
 
