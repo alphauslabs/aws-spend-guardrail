@@ -182,3 +182,57 @@ func TestDailyHeartbeatKeepsItsFieldsAndAddsTheState(t *testing.T) {
 		t.Fatal("a quiet run after the daily heartbeat writes none")
 	}
 }
+
+// The heartbeat's AI section carries blocks, mantle status, and the
+// unknown-model policy, and a change to them writes a heartbeat
+// (add-heartbeat-ai-status D1, D2).
+func TestHeartbeatAIStatus(t *testing.T) {
+	h, _ := blockedHarness(t)
+	h.g.Fast.MantleRegions = []string{"us-east-1", "us-west-2"}
+	h.publish(blockedConfig + `{"ou_id":"ou-ab12-cd34ef56"}]}}`)
+	h.pull()
+	ai, _ := h.lastHeartbeat()["ai"].(map[string]any)
+	if ai == nil || ai["unknown_models"] != "cutoff" {
+		t.Fatalf("ai %v", ai)
+	}
+	blocked, _ := ai["blocked"].(map[string]any)
+	accts, _ := blocked["accounts"].(map[string]any)
+	if blocked["attached"] != true || accts["444455556666"] == nil || accts["555566667777"] == nil {
+		t.Fatalf("blocked %v", blocked)
+	}
+	mantle, _ := ai["mantle"].(map[string]any)
+	if regions, _ := mantle["regions"].([]any); len(regions) != 2 || regions[0].(map[string]any)["read"] != true {
+		t.Fatalf("mantle %v", mantle)
+	}
+
+	// A region becomes unreadable: one change heartbeat, then none while it
+	// stays so.
+	n := len(h.heartbeats())
+	if err := h.g.Fast.Engine.Store.PutMeta(context.Background(), "mantle.status", map[string]any{"failing": map[string]string{"us-west-2": "no CloudWatch observability sink"}}); err != nil {
+		t.Fatal(err)
+	}
+	h.trail()
+	if got := len(h.heartbeats()); got != n+1 {
+		t.Fatalf("heartbeats %d, want %d", got, n+1)
+	}
+	west := h.lastHeartbeat()["ai"].(map[string]any)["mantle"].(map[string]any)["regions"].([]any)[1].(map[string]any)
+	if west["region"] != "us-west-2" || west["read"] != false || west["error"] != "no CloudWatch observability sink" {
+		t.Fatalf("us-west-2 %v", west)
+	}
+	h.trail()
+	if got := len(h.heartbeats()); got != n+1 {
+		t.Fatalf("an unchanged state wrote a heartbeat: %d", got)
+	}
+
+	// Without a block policy or watched regions, those fields are absent.
+	h.g.Blocks, h.g.Fast.MantleRegions = nil, nil
+	h.publish(blockedConfig + `{"ou_id":"ou-ab12-cd34ef56"}],"unknown_models":"cutoff"}}`)
+	h.pull()
+	ai = h.lastHeartbeat()["ai"].(map[string]any)
+	if _, ok := ai["blocked"]; ok {
+		t.Fatalf("blocked without a block policy: %v", ai)
+	}
+	if _, ok := ai["mantle"]; ok {
+		t.Fatalf("mantle without watched regions: %v", ai)
+	}
+}

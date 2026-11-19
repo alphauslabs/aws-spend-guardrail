@@ -4,6 +4,17 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Upgrade
+1. Update the stack with this release's package, as in [upgrading](docs/upgrade.md). The template is unchanged (revision 7).
+
+Rolling back to v0.2.8 is supported; its heartbeats leave out the new fields.
+
+### Added
+- The heartbeat's `ai` section carries what the AI block policy denies (accounts and kinds, whether it is attached, and any failing write), each watched mantle region with whether its usage can be read and the accounts not linked in it, and `unknown_models`. A change to any of them writes a heartbeat. The layout version stays 1. See [the guard's state](docs/operating.md#the-guards-state).
+
+### Security-relevant
+None.
+
 ## [v0.2.8] - 2026-11-18
 
 ### Upgrade

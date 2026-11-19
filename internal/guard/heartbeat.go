@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/alphauslabs/aws-spend-guardrail/config"
@@ -147,7 +148,62 @@ func (g *Guard) aiSnapshot(ctx context.Context, cfg *config.ResolvedAI) (map[str
 			trail["last_file"] = stall.LastFile.UTC().Format(time.RFC3339)
 		}
 	}
-	return map[string]any{"mode": cfg.Mode, "cutoffs": cutoffs, "trail": trail}, nil
+	ai := map[string]any{"mode": cfg.Mode, "cutoffs": cutoffs, "trail": trail, "unknown_models": unknownModels(cfg)}
+	// What the block policy denies, as the guard last wrote it
+	// (add-heartbeat-ai-status D1).
+	if g.Blocks != nil {
+		var bs blockedState
+		if _, err := g.State.Meta(ctx, metaBlocked, &bs); err != nil {
+			return nil, fmt.Errorf("read the block policy's state: %w", err)
+		}
+		accounts := map[string][]string{}
+		for a, kinds := range bs.Sets {
+			accounts[a] = kinds
+		}
+		ai["blocked"] = map[string]any{"accounts": accounts, "attached": bs.Attached, "failing": bs.Failing}
+	}
+	// Mantle regions and whether their usage can be read, and the accounts
+	// reported as not linked.
+	if len(g.Fast.MantleRegions) > 0 {
+		var ms struct {
+			Failing map[string]string `json:"failing"`
+		}
+		if _, err := store.GetMeta(ctx, "mantle.status", &ms); err != nil {
+			return nil, fmt.Errorf("read mantle status: %w", err)
+		}
+		regions := []map[string]any{}
+		for _, r := range g.Fast.MantleRegions {
+			entry := map[string]any{"region": r, "read": true}
+			if e, failing := ms.Failing[r]; failing {
+				entry["read"], entry["error"] = false, e
+			}
+			regions = append(regions, entry)
+		}
+		reported, err := g.State.Reported(ctx, schema.KindMantleUnlinked)
+		if err != nil {
+			return nil, fmt.Errorf("read unlinked accounts: %w", err)
+		}
+		unlinked := map[string][]string{}
+		for id := range reported {
+			if acct, region, ok := strings.Cut(id, "@"); ok {
+				unlinked[region] = append(unlinked[region], acct)
+			}
+		}
+		for r := range unlinked {
+			sort.Strings(unlinked[r])
+		}
+		ai["mantle"] = map[string]any{"regions": regions, "unlinked": unlinked}
+	}
+	return ai, nil
+}
+
+// unknownModels is how the config treats unpriced models; state saved before
+// add-unknown-model-policy has none, which is cutoff.
+func unknownModels(cfg *config.ResolvedAI) string {
+	if cfg.CountsUnknown() {
+		return config.UnknownCount
+	}
+	return config.UnknownCutoff
 }
 
 // digest hashes a snapshot without its volatile parts: spend (added later) and

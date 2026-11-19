@@ -180,10 +180,10 @@ The newest `heartbeat` event in the inbox is the guard's state as it last record
 - `scopes`: every scope in force, with its `target`, `mode`, `ceiling_usd`, `threshold_pct`, `period`, `freeze_style`, and `actual_usd` as Budgets last reported it. A frozen scope has `frozen` with `since`, `how`, and `policy_id`. A freeze still in place for a scope no longer in the config is listed with `in_config: false`.
 - `pending`: the loosening waiting for approval, with its `version`, `approval_id`, and `earliest_apply_at`.
 - `excluded` and `unprotected`: the accounts left out on purpose, and those reported as covered by no scope.
-- `ai`, with the AI guard on: its `mode`, the accounts in `cutoffs`, and whether the `trail` is stalled.
+- `ai`, with the AI guard on: its `mode`, the accounts in `cutoffs`, whether the `trail` is stalled, and `unknown_models`. With a block policy, `blocked` gives the `accounts` and kinds it denies (as the guard last wrote it), whether it is `attached`, and any `failing` write it is retrying. With mantle regions watched, `mantle` gives each region in `regions` with whether its usage can be `read` (and the `error` when not), and the accounts reported as `unlinked`, per region.
 - `applied_version`, `effective_version`, `keys`, `guard_version`, and `code_sha256`, as before, and `state_layout`, which changes when this shape does.
 
-The guard writes a heartbeat once a day (`reason: "daily"`, id `heartbeat:<date>`), and also at the end of any run that changed its state: a freeze or lift, a cutoff or its lift, a version applied, a loosening raised or closed, the trail stalling or resuming, or a change in the unprotected accounts (`reason: "change"`). Spend moving alone writes nothing. To read the current state:
+The guard writes a heartbeat once a day (`reason: "daily"`, id `heartbeat:<date>`), and also at the end of any run that changed its state: a freeze or lift, a cutoff or its lift, a version applied, a loosening raised or closed, the trail stalling or resuming, a change in the unprotected accounts, a change in what the block policy denies, or a mantle region becoming unreadable or readable again (`reason: "change"`). Spend moving alone writes nothing. To read the current state:
 
 ```
 jnh datasets query guardrail.msp_a.123456789012.inbox --table events \
