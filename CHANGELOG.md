@@ -4,6 +4,14 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+## [v0.2.11] - 2026-11-19
+
+### Upgrade
+1. Update the CLI, for the new wording of the floor warning in `guardrail prices publish`. Optional.
+2. Update the stack with this release's package, as in [upgrading](docs/upgrade.md). The template is unchanged (revision 7).
+
+Rolling back to v0.2.10 is supported: it reads the trail in its old order, without rereading or skipping files, and ignores this release's records of reported config prices.
+
 ### Added
 - With the AI guard on, the daily run reports a payer org's `ai.prices` entry that has fallen below the model's release and shared price, without the provider floor, in every region that prices it: one alert (`guardrail: config price below the known price`) and one `price_override_low` event per entry and known price. The entry still applies; the report says to raise or remove it. See [prices](docs/ai-guard.md#prices).
 
@@ -12,6 +20,9 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ### Changed
 - `guardrail prices publish`'s warning that guards will charge a provider's floor above a manual price now says how to charge the manual price in a payer org: approve it in that org's `ai.prices`. See [manual prices](docs/operating.md#manual-prices).
+
+### Security-relevant
+None.
 
 ## [v0.2.10] - 2026-11-19
 
