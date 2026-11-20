@@ -24,4 +24,4 @@
 - [x] 4.1 `docs/operating.md` manual prices step 5 and `docs/ai-guard.md` price section: the guard reports a config price below the known price
 - [x] 4.2 CHANGELOG `[Unreleased]`: the new check and event kind, no template change, rollback supported
 - [x] 4.3 Jennah console (`app/src/lib/guardrail.ts`): label and summary for `price_override_low`, released as a console patch
-- [ ] 4.4 Release as a patch and deploy to e2e; check the daily run with a test `ai.prices` entry below a known price, then remove it
+- [x] 4.4 Release as a patch and deploy to e2e; check the daily run with a test `ai.prices` entry below a known price, then remove it
