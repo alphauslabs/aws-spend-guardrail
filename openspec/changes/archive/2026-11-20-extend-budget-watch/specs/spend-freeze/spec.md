@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: A changed budget is watched until AWS Budgets reports spend again
-After the guard creates or updates a budget, the guard SHALL read the scope's actual cost from Cost Explorer at least once an hour, starting on the same run, until the budget reports nonzero spend again, the budget is gone, or a new budget period starts. After 48 hours the guard SHALL keep watching only while Cost Explorer shows the scope has spent something this period; a scope with no spend SHALL stop being watched then. The AWS Budgets action SHALL stay in place and keep freezing on its own once it has spend.
+After the guard creates or updates a budget, it SHALL read the scope's cost from Cost Explorer at least once an hour, starting on the same run, until the budget reports nonzero spend, the budget is gone, or a new budget period starts. Past 48 hours it SHALL stop only when Cost Explorer shows no spend for the scope this period. The AWS Budgets action SHALL stay in place and keep freezing on its own once it has spend.
 
 #### Scenario: AWS Budgets catches up
 - **WHEN** a changed budget reports nonzero spend again
