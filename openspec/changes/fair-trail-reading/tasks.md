@@ -24,4 +24,4 @@
 
 - [x] 4.1 `docs/ai-guard.md`: how the guard catches up when it's behind (the run's reading is shared among accounts and regions)
 - [x] 4.2 CHANGELOG `[Unreleased]`: the fix, no template change, rollback supported
-- [ ] 4.3 Release as a patch and deploy to e2e; check the heartbeat and a pull run
+- [x] 4.3 Release as a patch and deploy to e2e; check the heartbeat and a pull run
