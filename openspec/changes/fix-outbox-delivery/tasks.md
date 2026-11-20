@@ -27,5 +27,5 @@
 ## 5. Docs and release
 
 - [x] 5.1 `docs/operating.md`: the daily heartbeat id, and where outbox failures are logged
-- [ ] 5.2 CHANGELOG `[Unreleased]`: the fix; Upgrade: update the stack with the release's template and package (revision 8); rollback needs the previous template; Security-relevant: the new function and role, and `GuardRole` losing SQS receive and delete
+- [x] 5.2 CHANGELOG `[Unreleased]`: the fix; Upgrade: update the stack with the release's template and package (revision 8); rollback needs the previous template; Security-relevant: the new function and role, and `GuardRole` losing SQS receive and delete
 - [ ] 5.3 Release as a patch and deploy to e2e; check a pull's `config_applied` reaches the inbox within 5 minutes while the trail task runs, a second daily run writes its own heartbeat, and the outbox log shows no failures

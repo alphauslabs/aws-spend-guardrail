@@ -4,10 +4,23 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+## [v0.2.12] - 2026-11-20
+
+### Upgrade
+1. Update the stack with this release's template and package, as in [upgrading](docs/upgrade.md). The template is revision 8: it adds the outbox function, and the guard alerts that its stack is too old if only the package is updated.
+2. If you protect the payer account with the policy in [protect the payer account side](docs/install.md#protect-the-payer-account-side), add the outbox function's ARN (`function:guardrail-<MSPId>-outbox`) to its resources.
+
+Rolling back to v0.2.11 needs that release's template as well as its package: its code can't run as the outbox function, so a rollback that updates only the package stops event delivery until the template is rolled back too. Events stay queued meanwhile and are written once it is.
+
 ### Fixed
 - Inbox events no longer wait behind the guard's own work. They were written by the guard's function, which runs one invocation at a time, so event writes were throttled behind the pull, trail, and daily runs and could reach the inbox hours late; until then `guardrail pull` reported an applied version as pending. A new outbox function (`guardrail-<MSPId>-outbox`) writes them instead. See [when events arrive late](docs/operating.md#when-events-arrive-late).
 - An event whose id the inbox already holds no longer blocks in the outbox for days. Jennah refuses a second event under an id it holds with other content; the outbox now checks the inbox and counts such an event as delivered, keeping the first. A second daily run on a day (run by hand, or retried by Lambda) caused this, since the daily heartbeat's id was its date; it is now `heartbeat:<date>:<digest>`.
 - Each failed event write is logged in the outbox function's log group, with the event's id and kind and the error.
+
+### Security-relevant
+- New function `guardrail-<MSPId>-outbox` with its own role, `OutboxRole`, which can only receive and delete outbox queue messages, read the reader and writer key secrets, and write its own logs. It runs the same signed package as the guard.
+- The guard role loses `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:GetQueueAttributes`, and `sqs:ChangeMessageVisibility` on the outbox queue; it keeps `sqs:SendMessage`.
+- No new outbound calls: the outbox function calls Jennah as the guard did, plus one inbox read when a write is refused as invalid.
 
 ## [v0.2.11] - 2026-11-19
 
