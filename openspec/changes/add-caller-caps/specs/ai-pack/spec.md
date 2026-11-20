@@ -37,19 +37,30 @@ A caller cutoff SHALL stay until a config version that lists its cutoff id under
 - **WHEN** an approved version raises `app-chatbot`'s daily cap from $20 to $40, past the delay
 - **THEN** the role's cutoff is lifted within 5 minutes and a lift event is recorded
 
-### Requirement: The caller cutoff policy stays in step and within limits
-The guard SHALL keep one caller cutoff policy, attached to the organization root only while some caller is cut off in an enforce scope. When adding a caller would make the policy exceed AWS's size limit, the guard SHALL cut off that caller's whole account with the AI cutoff instead, and alert once. A change to the policy or its attachment made outside the guard SHALL be restored within a day, with one alert.
+### Requirement: A caller cutoff denies by the caller's unique id
+A caller cutoff SHALL deny the caller by the unique IAM id its trail records carry, so it applies whatever the role's or user's path. When a call from a cut-off caller carries an id the cutoff doesn't hold yet, as after the role was deleted and created again with the same name, the guard SHALL add that id to the cutoff within 5 minutes, without a new cutoff id.
 
-#### Scenario: The policy is full
-- **WHEN** a caller passes its cap and listing it would make the caller cutoff policy longer than 5,120 characters
-- **THEN** the caller's account is cut off, the cutoff event names the caller and says the caller cutoff policy was full, and one alert is sent
+#### Scenario: A role created again
+- **WHEN** cut-off role `app-chatbot` is deleted, created again with the same name, and calls Bedrock
+- **THEN** within 5 minutes its calls are refused, and the cutoff keeps its id
+
+### Requirement: The caller cutoff policies stay in step and within limits
+The guard SHALL keep three caller cutoff policies, filled in order, each attached to the organization root only while it holds a cut-off caller in an enforce scope. When no policy has room for a caller within AWS's size limit, or the caller's unique id isn't known, the guard SHALL cut off that caller's whole account with the AI cutoff instead, and alert once. A change to a policy or its attachment made outside the guard SHALL be restored within a day, with one alert.
+
+#### Scenario: The first policy is full
+- **WHEN** a caller passes its cap and the first caller cutoff policy has no room for it
+- **THEN** the caller is added to the second policy, which is attached to the root
+
+#### Scenario: All policies are full
+- **WHEN** a caller passes its cap and none of the three caller cutoff policies has room for it
+- **THEN** the caller's account is cut off, the cutoff event names the caller and says the caller cutoff policies were full, and one alert is sent
 
 #### Scenario: Nobody cut off any more
 - **WHEN** the last caller cutoff is lifted
-- **THEN** the guard detaches the caller cutoff policy from the root
+- **THEN** the guard detaches every caller cutoff policy from the root
 
 #### Scenario: Edited by hand
-- **WHEN** someone removes a role from the caller cutoff policy by hand
+- **WHEN** someone removes a role from a caller cutoff policy by hand
 - **THEN** within a day the guard restores the policy and alerts once
 
 ### Requirement: Mantle usage doesn't count toward caller caps
