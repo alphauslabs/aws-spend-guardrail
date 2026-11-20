@@ -771,7 +771,8 @@ Resources:
                 Resource: !GetAtt StateTable.Arn
               - Sid: Outbox
                 Effect: Allow
-                Action: [sqs:SendMessage, sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes, sqs:ChangeMessageVisibility]
+                # Queues events only; the outbox function writes them.
+                Action: sqs:SendMessage
                 Resource: !GetAtt OutboxQueue.Arn
               - Sid: Alerts
                 Effect: Allow
@@ -954,8 +955,9 @@ Resources:
       # The scheduled price publish reads every region (about 35 seconds
       # measured); the minute tasks finish in well under a second.
       Timeout: 300
-      # One invocation at a time: a pull, a notification, and an outbox batch
-      # never run concurrently against the same state.
+      # One invocation at a time: a pull, a trail run, and a notification
+      # never run concurrently against the same state. Queued events are
+      # written by OutboxFunction instead.
       ReservedConcurrentExecutions: 1
       Environment:
         Variables:
@@ -985,7 +987,7 @@ Resources:
           GUARD_VERSION: !Ref GuardVersion
           # Bump with MinTemplateRevision (internal/guard/deployment.go) when the
           # code needs something older templates lack (add-guard-upgrades D2).
-          TEMPLATE_REVISION: "7"
+          TEMPLATE_REVISION: "8"
 
   NotifySubscription:
     Type: AWS::SNS::Subscription
@@ -1002,13 +1004,78 @@ Resources:
       Principal: sns.amazonaws.com
       SourceArn: !Ref NotifyTopic
 
+  # The outbox function writes queued events to Jennah. It shares the guard's
+  # package but not its one-at-a-time slot, so events never wait behind the
+  # guard's tasks (fix-outbox-delivery D1). It touches no guard state: it
+  # writes events with the writer key and looks one up with the reader key.
+  OutboxLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/guardrail-${MSPId}-outbox
+      RetentionInDays: 365
+
+  OutboxRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: outbox
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub ${OutboxLogGroup.Arn}:*
+              - Sid: Outbox
+                Effect: Allow
+                Action: [sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes, sqs:ChangeMessageVisibility]
+                Resource: !GetAtt OutboxQueue.Arn
+              - Sid: Credentials
+                Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: [!Ref ReaderSecretArn, !Ref WriterSecretArn]
+
+  OutboxFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: OutboxLogGroup
+    Properties:
+      FunctionName: !Sub guardrail-${MSPId}-outbox
+      Description: aws-spend-guardrail outbox, writes guard events to Jennah
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      Handler: bootstrap
+      Code:
+        S3Bucket: !Ref FunctionPackageBucket
+        S3Key: !Ref FunctionPackageKey
+      Role: !GetAtt OutboxRole.Arn
+      MemorySize: 128
+      # A batch of 10 writes, each with at most one lookup.
+      Timeout: 30
+      Environment:
+        Variables:
+          OUTBOX_ONLY: "true"
+          PAYER_ACCOUNT_ID: !Ref AWS::AccountId
+          MSP_ID: !Ref MSPId
+          JENNAH_ENDPOINT: !Ref JennahEndpoint
+          READER_SECRET_ARN: !Ref ReaderSecretArn
+          WRITER_SECRET_ARN: !Ref WriterSecretArn
+
   OutboxEventSource:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
-      FunctionName: !Ref GuardFunction
+      FunctionName: !Ref OutboxFunction
       EventSourceArn: !GetAtt OutboxQueue.Arn
       BatchSize: 10
       FunctionResponseTypes: [ReportBatchItemFailures]
+      # No reserved concurrency; at most two of the account's unreserved slots.
+      ScalingConfig:
+        MaximumConcurrency: 2
 
   SchedulerRole:
     Type: AWS::IAM::Role

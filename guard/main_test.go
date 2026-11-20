@@ -15,6 +15,7 @@ import (
 	"github.com/alphauslabs/aws-spend-guardrail/internal/alerttext"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/guard"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/jennah"
+	"github.com/alphauslabs/aws-spend-guardrail/internal/outbox"
 )
 
 func TestRoute(t *testing.T) {
@@ -215,3 +216,28 @@ func TestAIBlockPolicyPlaceholder(t *testing.T) {
 		}
 	}
 }
+
+// The outbox function handles queued events only (fix-outbox-delivery D1).
+func TestOutboxOnlyRefusesOtherInputs(t *testing.T) {
+	a := &app{consumer: &outbox.Consumer{Jennah: noWrites{}, DatasetID: "d"}}
+	if _, err := a.handle(context.Background(), json.RawMessage(`{"Records":[{"eventSource":"aws:sqs","messageId":"m1","body":"{\"event_id\":\"e1\",\"kind\":\"heartbeat\"}"}]}`)); err != nil {
+		t.Fatalf("an outbox batch: %v", err)
+	}
+	for _, raw := range []string{`{"task":"pull"}`, `{"task":"daily"}`, `{"Records":[{"EventSource":"aws:sns","Sns":{"Message":"x"}}]}`} {
+		if _, err := a.handle(context.Background(), json.RawMessage(raw)); err == nil || !strings.Contains(err.Error(), "only writes queued events") {
+			t.Errorf("%s: %v", raw, err)
+		}
+	}
+	t.Setenv("OUTBOX_ONLY", "true")
+	if !outboxOnly() {
+		t.Error("OUTBOX_ONLY=true")
+	}
+	t.Setenv("OUTBOX_ONLY", "")
+	if outboxOnly() {
+		t.Error("unset")
+	}
+}
+
+type noWrites struct{}
+
+func (noWrites) CommitEvent(context.Context, string, jennah.Event) error { return nil }

@@ -208,6 +208,15 @@ func unknownModels(cfg *config.ResolvedAI) string {
 
 // digest hashes a snapshot without its volatile parts: spend (added later) and
 // the trail's last-file time.
+// dailyHeartbeatID is the daily heartbeat's id: its date and a digest of its
+// detail, so a second daily run on a day writes its own event instead of one
+// Jennah refuses as a reused id (fix-outbox-delivery D3).
+func dailyHeartbeatID(day string, detail map[string]any) string {
+	raw, _ := json.Marshal(detail)
+	sum := sha256.Sum256(raw)
+	return schema.KindHeartbeat + ":" + day + ":" + hex.EncodeToString(sum[:])[:12]
+}
+
 func digest(snap map[string]any) string {
 	cp := map[string]any{}
 	for k, v := range snap {

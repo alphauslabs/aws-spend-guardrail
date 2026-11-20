@@ -191,7 +191,8 @@ func (g *Guard) Daily(ctx context.Context) error {
 	if keys != nil {
 		hbKeys = keys
 	}
-	g.emit(ctx, schema.KindHeartbeat, schema.KindHeartbeat+":"+day, "", st.AppliedVersion, g.heartbeatDetail(ctx, st, snap, HeartbeatDaily, hbKeys))
+	detail := g.heartbeatDetail(ctx, st, snap, HeartbeatDaily, hbKeys)
+	g.emit(ctx, schema.KindHeartbeat, dailyHeartbeatID(day, detail), "", st.AppliedVersion, detail)
 	if dailyDigest != "" {
 		_ = g.State.SetHeartbeatDigest(ctx, dailyDigest)
 	}

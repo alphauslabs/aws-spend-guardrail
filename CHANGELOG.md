@@ -4,6 +4,11 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Fixed
+- Inbox events no longer wait behind the guard's own work. They were written by the guard's function, which runs one invocation at a time, so event writes were throttled behind the pull, trail, and daily runs and could reach the inbox hours late; until then `guardrail pull` reported an applied version as pending. A new outbox function (`guardrail-<MSPId>-outbox`) writes them instead. See [when events arrive late](docs/operating.md#when-events-arrive-late).
+- An event whose id the inbox already holds no longer blocks in the outbox for days. Jennah refuses a second event under an id it holds with other content; the outbox now checks the inbox and counts such an event as delivered, keeping the first. A second daily run on a day (run by hand, or retried by Lambda) caused this, since the daily heartbeat's id was its date; it is now `heartbeat:<date>:<digest>`.
+- Each failed event write is logged in the outbox function's log group, with the event's id and kind and the error.
+
 ## [v0.2.11] - 2026-11-19
 
 ### Upgrade

@@ -166,7 +166,7 @@ func TestDailyHeartbeatKeepsItsFieldsAndAddsTheState(t *testing.T) {
 	h.pull()
 	h.daily()
 	hb := h.lastHeartbeat()
-	if hb["_id"] != "heartbeat:"+h.now.Format("2006-01-02") || hb["reason"] != HeartbeatDaily {
+	if !strings.HasPrefix(hb["_id"].(string), "heartbeat:"+h.now.Format("2006-01-02")+":") || hb["reason"] != HeartbeatDaily {
 		t.Fatalf("daily heartbeat: %v", hb)
 	}
 	for _, f := range []string{"applied_version", "effective_version", "pending", "guard_version", "code_sha256", "scopes", "state_layout"} {
@@ -298,5 +298,33 @@ func TestHeartbeatNamesAIAccounts(t *testing.T) {
 	got, _ := h.lastHeartbeat()["account_names"].(map[string]any)
 	if got["444455556666"] != "blocked one" || got["777788889999"] != "unlinked one" {
 		t.Fatalf("account_names %v", got)
+	}
+}
+
+// A second daily run on a day writes its own heartbeat, under its own id; the
+// same detail always gives the same id (fix-outbox-delivery D3).
+func TestSecondDailyRunWritesItsOwnHeartbeat(t *testing.T) {
+	h := newHarness(t)
+	h.publish(doc("50000", "50000"))
+	h.pull()
+	h.daily()
+	first := h.lastHeartbeat()["_id"]
+	h.publish(doc("40000", "50000")) // a tightening: applies at once
+	h.pull()
+	h.now = h.now.Add(time.Hour)
+	h.daily()
+	second := h.lastHeartbeat()["_id"]
+	if first == second {
+		t.Fatalf("two daily heartbeats with different state share the id %v", first)
+	}
+	day := "heartbeat:" + h.now.Format("2006-01-02") + ":"
+	for _, id := range []any{first, second} {
+		if s, _ := id.(string); !strings.HasPrefix(s, day) || len(s) != len(day)+12 {
+			t.Fatalf("id %v", id)
+		}
+	}
+	d := map[string]any{"reason": HeartbeatDaily, "applied_version": 3}
+	if dailyHeartbeatID("2026-11-20", d) != dailyHeartbeatID("2026-11-20", map[string]any{"applied_version": 3, "reason": HeartbeatDaily}) {
+		t.Error("the same detail must give the same id")
 	}
 }

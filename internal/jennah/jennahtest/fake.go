@@ -47,6 +47,7 @@ type Server struct {
 	rows map[string]map[string]map[string]*datastorev1.Row
 	// committed idempotency keys per dataset
 	idem      map[string]map[string]*datastorev1.CommitDataResponse
+	idemOps   map[string]map[string]string // the operations each key committed
 	approvals map[string]*approvalv1.Approval
 	byKey     map[string]string
 
@@ -68,6 +69,7 @@ func Start(t testing.TB) (*Server, *jennah.Client) {
 	s := &Server{
 		rows:      map[string]map[string]map[string]*datastorev1.Row{},
 		idem:      map[string]map[string]*datastorev1.CommitDataResponse{},
+		idemOps:   map[string]map[string]string{},
 		approvals: map[string]*approvalv1.Approval{},
 		byKey:     map[string]string{},
 		datasets:  map[string]bool{},
@@ -131,8 +133,13 @@ func (s *Server) CommitData(_ context.Context, in *datastorev1.CommitDataRequest
 		return nil, status.Error(codes.Unavailable, "fake: unavailable")
 	}
 	ds := in.GetDatasetId()
+	ops, _ := proto.MarshalOptions{Deterministic: true}.Marshal(&datastorev1.CommitDataRequest{Operations: in.GetOperations()})
 	if k := in.GetIdempotencyKey(); k != "" {
 		if r, ok := s.idem[ds][k]; ok {
+			// As Jennah does: the same key with other operations is refused.
+			if string(ops) != s.idemOps[ds][k] {
+				return nil, status.Errorf(codes.InvalidArgument, "idempotency key already used for a different commit: %q", k)
+			}
 			return r, nil
 		}
 	}
@@ -160,6 +167,10 @@ func (s *Server) CommitData(_ context.Context, in *datastorev1.CommitDataRequest
 			s.idem[ds] = map[string]*datastorev1.CommitDataResponse{}
 		}
 		s.idem[ds][k] = resp
+		if s.idemOps[ds] == nil {
+			s.idemOps[ds] = map[string]string{}
+		}
+		s.idemOps[ds][k] = string(ops)
 	}
 	if s.LoseCommitResponse > 0 {
 		s.LoseCommitResponse--

@@ -208,6 +208,26 @@ func (c *Client) CommitEvent(ctx context.Context, datasetID string, e Event) err
 	return nil
 }
 
+// HasEvent reports whether the inbox holds an event with this id
+// (fix-outbox-delivery D2).
+func (c *Client) HasEvent(ctx context.Context, datasetID, id string) (bool, error) {
+	resp, err := c.c.Dataset(datasetID).Data.Query(ctx, &datastorev1.QueryDataRequest{
+		Relational: &datastorev1.RelationalQuery{
+			Table: schema.EventsTable,
+			Where: []*datastorev1.Predicate{{Column: schema.ColEventID, Operator: datastorev1.Predicate_OPERATOR_EQUALS, Value: strVal(id)}},
+			Limit: 1,
+		},
+	})
+	if err != nil {
+		return false, fmt.Errorf("look up event %s: %w", id, err)
+	}
+	return len(resp.GetRelational().GetRows()) > 0, nil
+}
+
+// IsInvalid reports whether Jennah refused a request as invalid, which
+// retrying the same request won't change.
+func IsInvalid(err error) bool { return sdk.Code(err) == codes.InvalidArgument }
+
 // LatestEvent returns the newest event of a kind, or nil when none exists.
 func (c *Client) LatestEvent(ctx context.Context, datasetID, kind string) (*Event, error) {
 	resp, err := c.c.Dataset(datasetID).Data.Query(ctx, &datastorev1.QueryDataRequest{

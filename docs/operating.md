@@ -184,7 +184,7 @@ The newest `heartbeat` event in the inbox is the guard's state as it last record
 - `account_names`: id to name for the accounts the state above mentions, as the alerts name them (listed at most an hour before). It is left out when the guard can't list the organization's accounts, and an account with no name is left out of it. A rename alone doesn't write a heartbeat; the next one carries the new name.
 - `applied_version`, `effective_version`, `keys`, `guard_version`, and `code_sha256`, as before, and `state_layout`, which changes when this shape does.
 
-The guard writes a heartbeat once a day (`reason: "daily"`, id `heartbeat:<date>`), and also at the end of any run that changed its state: a freeze or lift, a cutoff or its lift, a version applied, a loosening raised or closed, the trail stalling or resuming, a change in the unprotected accounts, a change in what the block policy denies, or a mantle region becoming unreadable or readable again (`reason: "change"`). Spend moving alone writes nothing. To read the current state:
+The guard writes a heartbeat once a day (`reason: "daily"`, id `heartbeat:<date>:<digest>`, so a second daily run on a day writes its own), and also at the end of any run that changed its state: a freeze or lift, a cutoff or its lift, a version applied, a loosening raised or closed, the trail stalling or resuming, a change in the unprotected accounts, a change in what the block policy denies, or a mantle region becoming unreadable or readable again (`reason: "change"`). Spend moving alone writes nothing. To read the current state:
 
 ```
 jnh datasets query guardrail.msp_a.123456789012.inbox --table events \
@@ -192,6 +192,16 @@ jnh datasets query guardrail.msp_a.123456789012.inbox --table events \
 ```
 
 Older heartbeats stay for 400 days, so they also answer what the state was at a given time.
+
+## When events arrive late
+
+The guard queues each event in the payer account, and the outbox function (`guardrail-<MSPId>-outbox`) writes it to the inbox, normally within a minute; the guard's own work never waits on Jennah. While Jennah is unreachable, events stay queued, keep their original time, and are retried every 5 minutes for about 3.5 days, then move to the dead-letter queue, whose alarm alerts on the alert topic. Each failed write is logged in `/aws/lambda/guardrail-<MSPId>-outbox` with the event's id and kind and the error, for example:
+
+```
+aws logs tail /aws/lambda/guardrail-msp_a-outbox --since 1h --filter-pattern '"failed"'
+```
+
+An event Jennah refuses because the inbox already holds an event with its id counts as delivered: the first one written stands, and the log says so.
 
 ## How long events are kept
 

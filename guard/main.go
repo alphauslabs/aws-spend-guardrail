@@ -1,7 +1,9 @@
-// Command guard is the guard Lambda function. One function handles every
-// trigger: the 5-minute schedule (pull config and reconcile), the daily
-// schedule (period lifts, drift, heartbeat), budget notifications (record a
-// freeze or would-freeze), and the outbox queue (write events to Jennah).
+// Command guard is the guard Lambda function. One function handles the
+// guard's triggers: the 5-minute schedule (pull config and reconcile), the
+// daily schedule (period lifts, drift, heartbeat), and budget notifications
+// (record a freeze or would-freeze). The same package runs as the stack's
+// outbox function with OUTBOX_ONLY=true, writing queued events to Jennah
+// apart from the guard's one-at-a-time tasks (fix-outbox-delivery D1).
 package main
 
 import (
@@ -73,6 +75,29 @@ func secret(ctx context.Context, sm *secretsmanager.Client, arn string) string {
 	return strings.TrimSpace(aws.ToString(out.SecretString))
 }
 
+// outboxOnly reports whether this function only writes queued events.
+func outboxOnly() bool { return os.Getenv("OUTBOX_ONLY") == "true" }
+
+// setupOutbox builds the outbox function: the consumer, with the writer key
+// to write events and the reader key to look one up (fix-outbox-delivery D1).
+func setupOutbox(ctx context.Context) *app {
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-east-1"))
+	if err != nil {
+		log.Fatalf("aws config: %v", err)
+	}
+	sm := secretsmanager.NewFromConfig(cfg)
+	endpoint := os.Getenv("JENNAH_ENDPOINT")
+	reader, err := jennah.Dial(endpoint, secret(ctx, sm, env("READER_SECRET_ARN")))
+	if err != nil {
+		log.Fatalf("jennah reader: %v", err)
+	}
+	writer, err := jennah.Dial(endpoint, secret(ctx, sm, env("WRITER_SECRET_ARN")))
+	if err != nil {
+		log.Fatalf("jennah writer: %v", err)
+	}
+	return &app{consumer: &outbox.Consumer{Jennah: writer, Inbox: reader, DatasetID: schema.InboxDatasetID(env("MSP_ID"), env("PAYER_ACCOUNT_ID"))}}
+}
+
 func setup(ctx context.Context) *app {
 	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-east-1"))
 	if err != nil {
@@ -133,7 +158,7 @@ func setup(ctx context.Context) *app {
 			Prices: reader,
 			Spend:  &awsx.CostExplorer{API: costexplorer.NewFromConfig(cfg)},
 		},
-		consumer: &outbox.Consumer{Jennah: writer, DatasetID: schema.InboxDatasetID(mspID, payer)},
+		consumer: &outbox.Consumer{Jennah: writer, Inbox: reader, DatasetID: schema.InboxDatasetID(mspID, payer)},
 	}
 	// Shared price publishing, on in one payer org per enterprise
 	// (add-scheduled-price-publish). The publisher key is read only when it's
@@ -236,6 +261,9 @@ func (a *app) handle(ctx context.Context, raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if a.g == nil && r != routeOutbox {
+		return nil, fmt.Errorf("the outbox function only writes queued events, not %s", r)
+	}
 	switch r {
 	case routeTeardown:
 		var ev cfn.Event
@@ -290,7 +318,12 @@ func main() {
 		fmt.Println(version)
 		return
 	}
-	a := setup(context.Background())
+	var a *app
+	if outboxOnly() {
+		a = setupOutbox(context.Background())
+	} else {
+		a = setup(context.Background())
+	}
 	lambda.Start(a.handle)
 }
 

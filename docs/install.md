@@ -92,7 +92,7 @@ An approval alone doesn't guard against a fast mistake: a careless click, or an 
 - Two freeze SCPs, unattached: style A (deny cost-creating actions) and style B (deny all but reads and cost-reducing actions of common services, and support, billing, and security tooling; unlisted services are blocked entirely).
 - The role AWS Budgets assumes to attach them.
 - The guard function, run every 5 minutes and daily, and on budget notifications. Its role can read Cost Explorer (`ce:GetCostAndUsage`) and attach or detach the two freeze policies, so it can freeze a scope whose budget AWS hasn't recalculated yet and lift a freeze.
-- A DynamoDB table for the guard's state, an SQS outbox for events (with a dead-letter queue and an alarm), and an SNS alert topic.
+- A DynamoDB table for the guard's state, an SQS outbox for events (with a dead-letter queue and an alarm), an outbox function that writes the queued events to Jennah (`guardrail-<MSPId>-outbox`, from the same package, with a role that can only read the queue and the two key secrets), and an SNS alert topic.
 - A delete-time step that lifts every freeze the guard recorded and removes the budgets it owns.
 - With `ReactToAccountEvents=true`, an EventBridge rule that runs the coverage check when accounts change.
 - With `EnableAIGuard=true`, the AI cutoff SCP (unattached), a one-minute schedule to read the organization trail, and permission for the guard to read the trail's bucket (and decrypt with its KMS key, if set) and to attach or detach the AI cutoff policy on accounts only. The delete-time step also detaches every AI cutoff.
@@ -104,12 +104,12 @@ Budgets are not stack resources. The guard creates and updates them from config,
 SCPs don't apply to the management account, so IAM there is the only lock on the guard. Anyone who can change the guard's function, schedules, roles, or stack can loosen protection without an approval: for example, by pointing the function at another config source (`lambda:UpdateFunctionConfiguration`), stopping it (`lambda:PutFunctionConcurrency` set to 0, or a changed schedule), or giving its role more power. Restrict all of these to your deployment pipeline's role:
 
 - the stack (it holds the approvers, the delay, and the Jennah endpoint) and its roles, including creating a role whose name matches theirs;
-- the guard function, the outbox's event source mapping, and the schedules that run the function;
+- the guard and outbox functions, the outbox's event source mapping, and the schedules that run the guard;
 - the two secrets;
 - the state table, the outbox queue, and the alert and notification topics;
 - the two freeze policies.
 
-For example, with the stack named `guardrail-msp-a` and `MSPId` `msp_a` (the function is `guardrail-<MSPId>`; the stack's other resources are named after the stack), deny these to everyone except the pipeline role and the stack's own roles:
+For example, with the stack named `guardrail-msp-a` and `MSPId` `msp_a` (the functions are `guardrail-<MSPId>` and `guardrail-<MSPId>-outbox`; the stack's other resources are named after the stack), deny these to everyone except the pipeline role and the stack's own roles:
 
 ```json
 {
@@ -159,6 +159,7 @@ For example, with the stack named `guardrail-msp-a` and `MSPId` `msp_a` (the fun
         "arn:aws:cloudformation:us-east-1:<payer>:stack/guardrail-msp-a/*",
         "arn:aws:secretsmanager:us-east-1:<payer>:secret:guardrail/msp_a/*",
         "arn:aws:lambda:us-east-1:<payer>:function:guardrail-msp_a",
+        "arn:aws:lambda:us-east-1:<payer>:function:guardrail-msp_a-outbox",
         "arn:aws:lambda:us-east-1:<payer>:event-source-mapping:<outbox mapping id>",
         "arn:aws:scheduler:us-east-1:<payer>:schedule/default/guardrail-msp-a-*",
         "arn:aws:dynamodb:us-east-1:<payer>:table/guardrail-msp-a-*",
@@ -181,7 +182,7 @@ For example, with the stack named `guardrail-msp-a` and `MSPId` `msp_a` (the fun
 }
 ```
 
-Attach it as an IAM policy to the groups and roles that administer the payer account. The stack's outputs give the freeze policy ids, and `aws lambda list-event-source-mappings --function-name guardrail-msp_a` gives the outbox mapping id. The exception for `role/guardrail-msp-a-*` covers the stack's own roles, which need some of these actions (the guard writes its state table); the deny on `iam:CreateRole` keeps anyone else from creating a role with such a name. Before relying on the policy, check it with the IAM policy simulator (`aws iam simulate-custom-policy`) for an administrator, the pipeline role, and the guard's role.
+Attach it as an IAM policy to the groups and roles that administer the payer account. The stack's outputs give the freeze policy ids, and `aws lambda list-event-source-mappings --function-name guardrail-msp_a-outbox` gives the outbox mapping id. The exception for `role/guardrail-msp-a-*` covers the stack's own roles, which need some of these actions (the guard writes its state table); the deny on `iam:CreateRole` keeps anyone else from creating a role with such a name. Before relying on the policy, check it with the IAM policy simulator (`aws iam simulate-custom-policy`) for an administrator, the pipeline role, and the guard's role.
 
 ## Going to enforce
 
