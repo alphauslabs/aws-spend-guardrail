@@ -1066,7 +1066,11 @@ Resources:
           READER_SECRET_ARN: !Ref ReaderSecretArn
           WRITER_SECRET_ARN: !Ref WriterSecretArn
 
-  OutboxEventSource:
+  # A new logical id, not OutboxEventSource updated in place: Lambda checks
+  # MaximumConcurrency against the function the mapping had, the guard's
+  # reserved 1, and refuses the update. A new mapping is created on the
+  # outbox function and the old one deleted.
+  OutboxFunctionEventSource:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
       FunctionName: !Ref OutboxFunction

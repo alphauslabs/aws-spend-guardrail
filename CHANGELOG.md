@@ -4,7 +4,23 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+## [v0.2.13] - 2026-11-20
+
+### Upgrade
+1. Update the stack with this release's template and package, as in [upgrading](docs/upgrade.md), from v0.2.11 or v0.2.12. The template is revision 8.
+2. If you protect the payer account with the policy in [protect the payer account side](docs/install.md#protect-the-payer-account-side), add the outbox function's ARN (`function:guardrail-<MSPId>-outbox`) to its resources, and replace the outbox mapping's id: the upgrade creates a new mapping and deletes the old one. `aws lambda list-event-source-mappings --function-name guardrail-<MSPId>-outbox` gives the new id.
+
+Rolling back to v0.2.11 needs that release's template as well as its package, as for v0.2.12.
+
+### Fixed
+- v0.2.12's template can't update an existing stack: CloudFormation rolls the update back, because Lambda refuses to move the outbox's event source mapping to the outbox function with a maximum concurrency of 2 while checking it against the guard function's reserved concurrency of 1. This release creates a new mapping instead. A fresh install of v0.2.12 is unaffected. Use this release in place of v0.2.12; it carries all of v0.2.12's changes.
+
+### Security-relevant
+None beyond v0.2.12's: the outbox mapping is replaced by an identical one on the outbox function.
+
 ## [v0.2.12] - 2026-11-20
+
+Upgrading an existing stack to this release fails and rolls back; use v0.2.13.
 
 ### Upgrade
 1. Update the stack with this release's template and package, as in [upgrading](docs/upgrade.md). The template is revision 8: it adds the outbox function, and the guard alerts that its stack is too old if only the package is updated.

@@ -8,7 +8,7 @@
 ## 2. Outbox function
 
 - [x] 2.1 `guard/main.go`: with `OUTBOX_ONLY=true`, read only the writer and reader secrets, build only the consumer, and refuse every other input
-- [x] 2.2 `guard/template.yaml`: `OutboxFunction` (same package, `OUTBOX_ONLY`, 30-second timeout), `OutboxRole`, `OutboxLogGroup`; `OutboxEventSource` on the new function with `ScalingConfig.MaximumConcurrency: 2`; drop SQS receive and delete from `GuardRole`; `TEMPLATE_REVISION` 8
+- [x] 2.2 `guard/template.yaml`: `OutboxFunction` (same package, `OUTBOX_ONLY`, 30-second timeout), `OutboxRole`, `OutboxLogGroup`; `OutboxFunctionEventSource` (a new mapping replacing `OutboxEventSource`) on the new function with `ScalingConfig.MaximumConcurrency: 2`; drop SQS receive and delete from `GuardRole`; `TEMPLATE_REVISION` 8
 - [x] 2.3 `MinTemplateRevision` 8 in `internal/guard/deployment.go`
 - [x] 2.4 cfn-lint passes
 
