@@ -15,7 +15,9 @@ import (
 // guard changes a budget, it watches the scope's spend in Cost Explorer until
 // Budgets catches up (fix-budget-spend-reset).
 const (
-	// SpendWatchFor is the longest a changed budget is watched.
+	// SpendWatchFor is how long a changed budget is watched on time alone.
+	// Past it, the watch goes on only while Cost Explorer shows the scope has
+	// spent this period (extend-budget-watch D1).
 	SpendWatchFor = 48 * time.Hour
 	// SpendCheckEvery spaces Cost Explorer reads for one watched budget.
 	SpendCheckEvery = time.Hour
@@ -24,6 +26,9 @@ const (
 	// watch started, and when Cost Explorer was last read for it.
 	reportedSpendWatch = "spend_watch"
 	reportedSpendCheck = "spend_check"
+	// reportedSpendLag marks a budget still at zero past SpendWatchFor while
+	// its scope spends, alerted once (extend-budget-watch D2).
+	reportedSpendLag = "spend_lag"
 )
 
 // startSpendWatch starts (or restarts) the watch on a budget the guard just
@@ -39,6 +44,7 @@ func (g *Guard) startSpendWatch(ctx context.Context, name string) {
 func (g *Guard) endSpendWatch(ctx context.Context, name string) {
 	_ = g.State.ClearReported(ctx, reportedSpendWatch, name)
 	_ = g.State.ClearReported(ctx, reportedSpendCheck, name)
+	_ = g.State.ClearReported(ctx, reportedSpendLag, name)
 }
 
 // watchSpend checks each watched budget at most once an hour, and freezes a
@@ -54,6 +60,10 @@ func (g *Guard) watchSpend(ctx context.Context, eff *config.Resolved, want []Bud
 		return err
 	}
 	checked, err := g.State.Reported(ctx, reportedSpendCheck)
+	if err != nil {
+		return err
+	}
+	lagging, err := g.State.Reported(ctx, reportedSpendLag)
 	if err != nil {
 		return err
 	}
@@ -87,14 +97,16 @@ func (g *Guard) watchSpend(ctx context.Context, eff *config.Resolved, want []Bud
 		case !ok || !inEff:
 			g.endSpendWatch(ctx, name) // budget gone
 			continue
-		case now.Sub(since) >= SpendWatchFor:
-			g.endSpendWatch(ctx, name)
-			continue
 		case PeriodStart(w.Period, now).After(since):
 			g.endSpendWatch(ctx, name) // a new period: Budgets starts over anyway
 			continue
 		case since.Before(runStart) && existing[name].ActualUSD > 0:
 			// Read after the watch started, so Budgets has recalculated.
+			if _, lag := lagging[name]; lag {
+				g.alert(ctx, "guardrail: budget for "+targetRef(w.Target)+" caught up",
+					fmt.Sprintf("AWS Budgets reports spend for %s again, %s after the guard changed its budget. Its freeze action works on its own again, so the guard stops checking Cost Explorer for it.",
+						targetRef(w.Target), hoursText(now.Sub(since))))
+			}
 			g.endSpendWatch(ctx, name)
 			continue
 		}
@@ -107,7 +119,19 @@ func (g *Guard) watchSpend(ctx context.Context, eff *config.Resolved, want []Bud
 		_ = g.State.MarkReported(ctx, reportedSpendCheck, name, now)
 		actual, ok := g.spendFor(ctx, w, "watch")
 		if !ok {
-			continue
+			continue // a failed read never ends the watch
+		}
+		if now.Sub(since) >= SpendWatchFor {
+			if actual <= 0 {
+				g.endSpendWatch(ctx, name) // no spend: Budgets has nothing to catch up on
+				continue
+			}
+			if _, lag := lagging[name]; !lag {
+				g.alert(ctx, "guardrail: budget for "+targetRef(w.Target)+" hasn't caught up",
+					fmt.Sprintf("AWS Budgets still reports no spend for %s %s after the guard changed its budget, while Cost Explorer shows %.2f USD %s. Until Budgets catches up, its freeze action can't fire, so the guard keeps checking Cost Explorer every hour and freezes the scope itself at its threshold.",
+						targetRef(w.Target), hoursText(now.Sub(since)), actual, periodText(w.Period)))
+				_ = g.State.MarkReported(ctx, reportedSpendLag, name, now)
+			}
 		}
 		threshold := w.LimitUSD * float64(w.ThresholdPct) / 100
 		if actual < threshold {
@@ -124,4 +148,13 @@ func (g *Guard) watchSpend(ctx context.Context, eff *config.Resolved, want []Bud
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// hoursText writes a duration in whole hours: "1 hour", "54 hours".
+func hoursText(d time.Duration) string {
+	h := int(d / time.Hour)
+	if h == 1 {
+		return "1 hour"
+	}
+	return fmt.Sprintf("%d hours", h)
 }

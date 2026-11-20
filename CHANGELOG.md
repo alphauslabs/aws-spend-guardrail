@@ -4,6 +4,15 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Upgrade
+1. Update the stack's package, as in [upgrading](docs/upgrade.md). The template is unchanged (revision 8).
+
+### Changed
+- After the guard changes a budget, it no longer stops checking the scope's spend in Cost Explorer at 48 hours if the budget still reports zero while the scope is spending. It keeps checking every hour, and freezing at the threshold, until the budget reports spend or a new period starts. It alerts once when a budget hasn't caught up after 48 hours, and once more when it does. A scope with no spend stops being watched at 48 hours, as before.
+
+### Security-relevant
+None.
+
 ## [v0.2.13] - 2026-11-20
 
 ### Upgrade

@@ -2,6 +2,8 @@ package guard
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -146,4 +148,72 @@ func TestDryRunWatchRecordsWouldFreezeOnce(t *testing.T) {
 	if d["spend_source"] != SpendSourceCostExplorer {
 		t.Fatalf("detail %v", d)
 	}
+}
+
+// Past 48 hours, a budget still at zero while its scope spends stays watched,
+// alerted once, and alerted again when it catches up (extend-budget-watch).
+func TestWatchContinuesWhileBudgetLags(t *testing.T) {
+	start := func(t *testing.T) *harness {
+		h := newHarness(t)
+		h.spend.byAccount[tX.ID] = 3.10
+		h.publish(enforceDoc("100", "stay_frozen")) // threshold 90
+		h.pull()
+		for i := 0; i < 49; i++ {
+			h.now = h.now.Add(time.Hour)
+			h.pull()
+		}
+		if len(watching(h)) != 1 {
+			t.Fatal("watch ended while the budget lags and the scope spends")
+		}
+		if n := alertCount(h, "hasn't caught up"); n != 1 {
+			t.Fatalf("%d lag alerts: %v", n, h.alerts.list)
+		}
+		return h
+	}
+	t.Run("freezes at the threshold", func(t *testing.T) {
+		h := start(t)
+		h.spend.byAccount[tX.ID] = 95
+		h.now = h.now.Add(time.Hour)
+		h.pull()
+		if len(h.budgets.freezes) != 1 || alertCount(h, "hasn't caught up") != 1 {
+			t.Fatalf("freezes %v, alerts %v", h.budgets.freezes, h.alerts.list)
+		}
+	})
+	t.Run("caught up", func(t *testing.T) {
+		h := start(t)
+		h.budgets.setActual(bX, 3.10)
+		h.now = h.now.Add(5 * time.Hour)
+		h.pull()
+		if len(watching(h)) != 0 || alertCount(h, "caught up") != 2 {
+			t.Fatalf("watch %v, alerts %v", watching(h), h.alerts.list)
+		}
+		found := false
+		for _, a := range h.alerts.list {
+			found = found || strings.Contains(a, "54 hours after the guard changed its budget")
+		}
+		if !found {
+			t.Fatalf("caught-up alert lacks the hours: %v", h.alerts.list)
+		}
+	})
+	t.Run("a failed read keeps the watch", func(t *testing.T) {
+		h := start(t)
+		h.spend.err = errors.New("ThrottlingException")
+		h.now = h.now.Add(time.Hour)
+		h.pull()
+		if len(watching(h)) != 1 {
+			t.Fatal("a failed read ended the watch")
+		}
+	})
+	t.Run("a new period ends it without a caught-up alert", func(t *testing.T) {
+		h := start(t)
+		h.now = time.Date(2026, 12, 1, 0, 5, 0, 0, time.UTC)
+		h.pull()
+		if len(watching(h)) != 0 || alertCount(h, "caught up") != 1 {
+			t.Fatalf("watch %v, alerts %v", watching(h), h.alerts.list)
+		}
+		lag, _ := h.state.Reported(context.Background(), reportedSpendLag)
+		if len(lag) != 0 {
+			t.Fatalf("lag record kept: %v", lag)
+		}
+	})
 }
