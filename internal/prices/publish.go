@@ -282,6 +282,9 @@ func chunksFor(t *Table, manual map[string]ManualPrice) map[string]*Table {
 }
 
 // changedChunks reports whether a version's chunks differ from the latest's.
+// The Price List's publication date is left out: AWS restamps it about daily
+// without changing a price, and a version that changes nothing else would
+// only make every guard fetch the same prices again.
 func changedChunks(current, next map[string]*Table) bool {
 	if len(current) != len(next) {
 		return true
@@ -291,8 +294,10 @@ func changedChunks(current, next map[string]*Table) bool {
 		if !ok {
 			return true
 		}
-		a, _ := json.Marshal(c)
-		b, _ := json.Marshal(n)
+		cc, nn := *c, *n
+		cc.Published, nn.Published = "", ""
+		a, _ := json.Marshal(cc)
+		b, _ := json.Marshal(nn)
 		if jennah.HashChunk(a) != jennah.HashChunk(b) {
 			return true
 		}

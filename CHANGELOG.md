@@ -4,6 +4,15 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Upgrade
+1. Update the stack's package, as in [upgrading](docs/upgrade.md). The template is unchanged (revision 8).
+
+### Fixed
+- Publishing shared AI prices, by hand or on a schedule, no longer writes a new version when the only change is the AWS Price List's publication date. AWS changes that date about daily without changing a price, so a guard that publishes on a schedule wrote a version, and alerted with no changes listed, almost every day.
+
+### Security-relevant
+None.
+
 ## [v0.2.14] - 2026-11-20
 
 ### Upgrade

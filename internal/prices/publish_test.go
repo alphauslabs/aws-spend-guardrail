@@ -91,6 +91,12 @@ func TestPublishReturnsWhatItDid(t *testing.T) {
 	if err != nil || r.Written() || r.Latest.Number != 1 || len(r.Changes) != 0 || f.Commits != commits {
 		t.Fatalf("unchanged: %+v %v", r, err)
 	}
+	restamped := built(map[string]config.ModelPrice{"a.m1": {InputPer1K: 1, OutputPer1K: 2}})
+	restamped.Table.Published = "2026-11-17T00:00:00Z"
+	r, err = Publish(ctx, c, restamped, nil, PublishOptions{})
+	if err != nil || r.Written() || len(r.Changes) != 0 || f.Commits != commits {
+		t.Fatalf("only the Price List's date changed: %+v %v", r, err)
+	}
 	r, err = Publish(ctx, c, built(map[string]config.ModelPrice{"a.m1": {InputPer1K: 2, OutputPer1K: 2}}), nil, PublishOptions{DryRun: true})
 	if err != nil || r.Written() || len(r.Changes) != 1 || r.Changes[0].Kind != "raised" || f.Commits != commits {
 		t.Fatalf("dry run: %+v %v", r, err)
