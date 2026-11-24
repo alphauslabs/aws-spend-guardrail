@@ -4,6 +4,23 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Upgrade
+1. Update the CLI, so `guardrail config` accepts `ai.unmeasured_calls`.
+2. For each payer org whose accounts make streamed Chat Completions calls on `bedrock-runtime` (`/openai/v1/chat/completions` with `stream: true`), publish a config with `ai.unmeasured_calls` set to `allow` and approve it before updating the stack. This release cuts off an account on its first such call otherwise, since the guard can't measure it.
+3. Update the stack's package, as in [upgrading](docs/upgrade.md). The template is unchanged (revision 8).
+
+Rolling back to v0.2.17 needs `ai.unmeasured_calls` removed from the config first: v0.2.17 refuses a config with a field it doesn't know and keeps the config it had.
+
+### Added
+- The AI guard prices each Bedrock call at the service tier it used: Flex at about half the standard rate, Priority at about 1.75 times, and Ultrafast at 3 to 6 times. A call naming no tier is priced at the standard rate, as before. A `ConverseStream` completion takes its call record's tier; usage from mantle metrics, which names no tier, and a stream completion whose call record wasn't seen are priced at the model's highest tier. A tier the guard's prices don't cover for a model is priced at the model's highest tier and reported once (`unpriced_tier`). An `ai.prices` entry is a model's standard price and never prices a premium tier below its known price.
+- The price build keeps each model's Flex, Priority, and Ultrafast rates as tier prices, in the release's table and in shared price chunks; guards of earlier releases ignore them. Publishing lists tier price changes with the tier named, and the first version with tier prices says so.
+- The AI guard prices calls to the OpenAI-compatible API on `bedrock-runtime` (`ChatCompletions` and `Responses`), which it didn't count before, under the same caps, allowlists, and rules. Accounts that use it reach their caps sooner.
+- A call the trail records without token counts, such as a streamed Chat Completions call, cuts off the account as `unmeasured_call`, unless the new `ai.unmeasured_calls` is `allow`; then it counts as one call at $0 and is reported once per account and model (`unmeasured_call`).
+- With mantle regions listed, a daily check reports Ultrafast tokens in CloudWatch that the trail didn't mark as Ultrafast (`ultrafast_unseen`), since how AWS records an Ultrafast call hasn't been seen yet.
+
+### Security-relevant
+None. The AI cutoff already denies the OpenAI-compatible API on `bedrock-runtime` through `bedrock:InvokeModel`.
+
 ## [v0.2.17] - 2026-11-24
 
 ### Upgrade

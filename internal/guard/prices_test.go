@@ -135,13 +135,13 @@ func TestSharedPricesFetchedOnceAndApplied(t *testing.T) {
 	if d.Version != 12 || len(d.Chunks) != 1 || d.Chunks[0].Raised != 1 || d.Chunks[0].Added != 1 {
 		t.Fatalf("prices_applied %+v", d)
 	}
-	if shared, v := h.g.sharedAIPrices(context.Background()); v != 12 || shared[ai.DefaultRegion][opus].InputPer1K != release.InputPer1K*2 {
+	if shared, _, v := h.g.sharedAIPrices(context.Background()); v != 12 || shared[ai.DefaultRegion][opus].InputPer1K != release.InputPer1K*2 {
 		t.Fatalf("held %d %+v", v, shared[ai.DefaultRegion][opus])
 	}
 	// The same content under a newer version: no fetch, version recorded.
 	src.latest.Number = 13
 	h.pull()
-	if _, v := h.g.sharedAIPrices(context.Background()); v != 13 || src.fetches != 1 {
+	if _, _, v := h.g.sharedAIPrices(context.Background()); v != 13 || src.fetches != 1 {
 		t.Fatalf("version %d, fetches %d", v, src.fetches)
 	}
 }
@@ -154,7 +154,7 @@ func TestCorruptChunkKeepsLastGoodAndAlertsOnce(t *testing.T) {
 	src.publish(t, 2, map[string]config.ModelPrice{"anthropic.claude-new": {InputPer1K: 0.2, OutputPer1K: 0.2}}, true)
 	h.pull()
 	h.pull()
-	if _, v := h.g.sharedAIPrices(context.Background()); v != 1 {
+	if _, _, v := h.g.sharedAIPrices(context.Background()); v != 1 {
 		t.Fatalf("must keep version 1, holds %d", v)
 	}
 	n := 0
@@ -184,7 +184,7 @@ func TestJennahDownAndKeyWithoutReachFallBackToRelease(t *testing.T) {
 			src.err = err
 			h.pull()
 			h.pull()
-			if shared, _ := h.g.sharedAIPrices(context.Background()); shared != nil {
+			if shared, _, _ := h.g.sharedAIPrices(context.Background()); shared != nil {
 				t.Fatal("nothing must be held")
 			}
 			if len(h.alerts.list) != 1 || !h.alerts.has("the prices in its release") {
@@ -261,7 +261,7 @@ func TestSharedPricesPerRegion(t *testing.T) {
 	if src.fetches != 3 {
 		t.Fatalf("first pull: %d fetches, want 3", src.fetches)
 	}
-	shared, v := h.g.sharedAIPrices(context.Background())
+	shared, _, v := h.g.sharedAIPrices(context.Background())
 	if v != 20 || len(shared) != 3 || shared["eu-west-2"][opus].InputPer1K != 0.02 {
 		t.Fatalf("held %d %+v", v, shared)
 	}
@@ -275,7 +275,7 @@ func TestSharedPricesPerRegion(t *testing.T) {
 	if src.fetches != 4 {
 		t.Fatalf("one changed chunk: %d fetches, want 4", src.fetches)
 	}
-	shared, v = h.g.sharedAIPrices(context.Background())
+	shared, _, v = h.g.sharedAIPrices(context.Background())
 	if v != 21 || len(shared) != 2 || shared["eu-west-2"][opus].InputPer1K != 0.025 || shared["ap-northeast-1"] != nil {
 		t.Fatalf("held %d %+v", v, shared)
 	}

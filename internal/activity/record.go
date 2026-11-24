@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 )
 
@@ -32,6 +33,23 @@ type Record struct {
 	InputTokens  int64
 	OutputTokens int64
 	BearerToken  bool // additionalEventData.callWithBearerToken
+	// ServiceTier is the service tier the call asked for, lowercased, from
+	// requestParameters.serviceTier.type, additionalEventData.serviceTier, or
+	// a completion record's additionalEntries; "" for none, and "default"
+	// reads as none (add-tier-pricing D3).
+	ServiceTier string
+	// Stream is additionalEventData.stream or a completion's
+	// additionalEntries.stream: an OpenAI-compatible call that streams.
+	Stream bool
+	// RequestID is the call's requestID; ParentRequestID is a completion
+	// record's serviceEventDetails.parentRequestId, the requestID of the call
+	// it completes (add-tier-pricing D7).
+	RequestID       string
+	ParentRequestID string
+	// TierUnknown: the record can't show the tier the call used, as for a
+	// ConverseStream completion whose call record the guard didn't see
+	// (add-tier-pricing D7). The engine sets it.
+	TierUnknown bool
 	// Calls is how many calls the record stands for: 1 for a trail record,
 	// and a minute's growth in inferences for mantle usage read from metrics
 	// (add-mantle-usage D1).
@@ -60,19 +78,28 @@ type rawRecord struct {
 		Type string `json:"type"`
 		ARN  string `json:"arn"`
 	} `json:"userIdentity"`
+	RequestID         string `json:"requestID"`
 	RequestParameters struct {
-		ModelID string `json:"modelId"`
+		ModelID     string `json:"modelId"`
+		ServiceTier struct {
+			Type string `json:"type"`
+		} `json:"serviceTier"`
 	} `json:"requestParameters"`
 	AdditionalEventData struct {
-		InputTokens         int64 `json:"inputTokens"`
-		OutputTokens        int64 `json:"outputTokens"`
-		CallWithBearerToken bool  `json:"callWithBearerToken"`
+		InputTokens         int64  `json:"inputTokens"`
+		OutputTokens        int64  `json:"outputTokens"`
+		CallWithBearerToken bool   `json:"callWithBearerToken"`
+		ServiceTier         string `json:"serviceTier"`
+		Stream              bool   `json:"stream"`
 	} `json:"additionalEventData"`
 	ServiceEventDetails struct {
+		ParentRequestID     string `json:"parentRequestId"`
 		AdditionalEventData struct {
 			AdditionalEntries struct {
-				InputTokens  int64 `json:"inputTokens"`
-				OutputTokens int64 `json:"outputTokens"`
+				InputTokens  int64  `json:"inputTokens"`
+				OutputTokens int64  `json:"outputTokens"`
+				ServiceTier  string `json:"serviceTier"`
+				Stream       bool   `json:"stream"`
 			} `json:"additionalEntries"`
 		} `json:"AdditionalEventData"`
 	} `json:"serviceEventDetails"`
@@ -123,6 +150,11 @@ func ParseFile(gz []byte) ([]Record, error) {
 			OutputTokens:  r.AdditionalEventData.OutputTokens,
 			BearerToken:   r.AdditionalEventData.CallWithBearerToken,
 			Calls:         1,
+			ServiceTier: tierName(r.RequestParameters.ServiceTier.Type, r.AdditionalEventData.ServiceTier,
+				r.ServiceEventDetails.AdditionalEventData.AdditionalEntries.ServiceTier),
+			Stream:          r.AdditionalEventData.Stream || r.ServiceEventDetails.AdditionalEventData.AdditionalEntries.Stream,
+			RequestID:       r.RequestID,
+			ParentRequestID: r.ServiceEventDetails.ParentRequestID,
 		}
 		if rec.EventCategory == "" {
 			rec.EventCategory = CategoryManagement // management records always carried one; old fixtures don't
@@ -136,4 +168,18 @@ func ParseFile(gz []byte) ([]Record, error) {
 		out = append(out, rec)
 	}
 	return out, nil
+}
+
+// tierName is the first service tier named, lowercased, with "default" read
+// as none (add-tier-pricing D3).
+func tierName(names ...string) string {
+	for _, n := range names {
+		if n = strings.ToLower(strings.TrimSpace(n)); n != "" {
+			if n == "default" {
+				return ""
+			}
+			return n
+		}
+	}
+	return ""
 }

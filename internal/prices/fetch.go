@@ -203,6 +203,7 @@ func forEach(ctx context.Context, regions []string, n int, f func(context.Contex
 // regions with a change of that kind (add-regional-prices D8).
 type Change struct {
 	Model    string
+	Tier     string // a service tier, or "" for the standard price (add-tier-pricing D6)
 	Kind     string // added, raised, lowered, changed, removed
 	From, To string
 	Region   string // the region shown, when merged across regions
@@ -363,4 +364,41 @@ func Of(t *Table) map[string]PriceOf {
 		out[id] = PriceOf{In: p.InputPer1K, Out: p.OutputPer1K}
 	}
 	return out
+}
+
+// tierSep joins a model and a tier into one key for Diff (add-tier-pricing
+// D6); SplitTiers takes them apart again.
+const tierSep = "\x00"
+
+// OfTiers is a table's tier prices, each keyed by its model and tier, for
+// Diff. SplitTiers turns the changes back into a model and a tier.
+func OfTiers(t *Table) map[string]PriceOf {
+	out := map[string]PriceOf{}
+	if t == nil {
+		return out
+	}
+	for id, tiers := range t.Tiers {
+		for tier, p := range tiers {
+			out[id+tierSep+tier] = PriceOf{In: p.InputPer1K, Out: p.OutputPer1K}
+		}
+	}
+	return out
+}
+
+// SplitTiers sets each change's Model and Tier from a key OfTiers made.
+func SplitTiers(changes []Change) {
+	for i := range changes {
+		if m, t, ok := strings.Cut(changes[i].Model, tierSep); ok {
+			changes[i].Model, changes[i].Tier = m, t
+		}
+	}
+}
+
+// Name is the model a change is for, and its tier when it's a tier price:
+// "openai.gpt-6-astra ultrafast".
+func (c Change) Name() string {
+	if c.Tier == "" {
+		return c.Model
+	}
+	return c.Model + " " + c.Tier
 }

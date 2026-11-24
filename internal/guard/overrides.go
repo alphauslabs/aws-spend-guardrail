@@ -26,8 +26,8 @@ func (g *Guard) checkPriceOverrides(ctx context.Context, eff *config.Resolved, v
 	if err != nil {
 		return fmt.Errorf("read reported low prices: %w", err)
 	}
-	shared, _ := g.sharedAIPrices(ctx)
-	pack := ai.NewShared(g.Fast.Prices, shared, eff.AI)
+	shared, sharedTiers, _ := g.sharedAIPrices(ctx)
+	pack := ai.NewTiered(g.Fast.Prices, shared, sharedTiers, eff.AI)
 	models := make([]string, 0, len(eff.AI.Prices))
 	for m := range eff.AI.Prices {
 		models = append(models, m)

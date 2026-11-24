@@ -70,7 +70,17 @@ type AISection struct {
 	// UnknownModels is how a call to a model with no price is treated:
 	// UnknownCutoff (the default) or UnknownCount (add-unknown-model-policy).
 	UnknownModels string `json:"unknown_models,omitempty"`
+	// UnmeasuredCalls is how a call the trail records without token counts
+	// is treated: UnmeasuredCutoff (the default) or UnmeasuredAllow
+	// (add-tier-pricing D9).
+	UnmeasuredCalls string `json:"unmeasured_calls,omitempty"`
 }
+
+// How a call the guard can't measure is treated (add-tier-pricing D9).
+const (
+	UnmeasuredCutoff = "cutoff" // trip the unmeasured_call rule
+	UnmeasuredAllow  = "allow"  // count it as a call at $0, and report it once
+)
 
 // How a call to a model with no price is treated (add-unknown-model-policy D1).
 const (
@@ -113,6 +123,15 @@ type ResolvedAI struct {
 	// UnknownModels is UnknownCutoff or UnknownCount. State saved before
 	// add-unknown-model-policy has it empty; read it with CountsUnknown.
 	UnknownModels string `json:"unknown_models,omitempty"`
+	// UnmeasuredCalls is UnmeasuredCutoff or UnmeasuredAllow. State saved
+	// before add-tier-pricing has it empty; read it with AllowsUnmeasured.
+	UnmeasuredCalls string `json:"unmeasured_calls,omitempty"`
+}
+
+// AllowsUnmeasured reports whether calls the trail records without token
+// counts are counted at $0 instead of tripping (add-tier-pricing D9).
+func (r *ResolvedAI) AllowsUnmeasured() bool {
+	return r != nil && r.UnmeasuredCalls == UnmeasuredAllow
 }
 
 // CountsUnknown reports whether calls to models with no price are counted at
@@ -148,14 +167,18 @@ func (a *AISection) resolve() *ResolvedAI {
 		return nil
 	}
 	r := &ResolvedAI{
-		Models:        sortedCopy(a.Models),
-		Regions:       sortedCopy(a.Regions),
-		APIKeyCallers: sortedCopy(a.APIKeyCallers),
-		Lifts:         sortedCopy(a.Lifts),
-		UnknownModels: a.UnknownModels,
+		Models:          sortedCopy(a.Models),
+		Regions:         sortedCopy(a.Regions),
+		APIKeyCallers:   sortedCopy(a.APIKeyCallers),
+		Lifts:           sortedCopy(a.Lifts),
+		UnknownModels:   a.UnknownModels,
+		UnmeasuredCalls: a.UnmeasuredCalls,
 	}
 	if r.UnknownModels == "" {
 		r.UnknownModels = UnknownCutoff
+	}
+	if r.UnmeasuredCalls == "" {
+		r.UnmeasuredCalls = UnmeasuredCutoff
 	}
 	if len(a.Prices) > 0 {
 		r.Prices = map[string]ModelPrice{}
@@ -213,7 +236,7 @@ var (
 	liftIDRe   = regexp.MustCompile(LiftIDPattern)
 	regionRe   = regexp.MustCompile(`^[a-z]{2}(-[a-z]+)+-[0-9]$`)
 	iamCallRe  = regexp.MustCompile(`^arn:aws[a-z-]*:(iam|sts)::[0-9]{12}:[A-Za-z0-9+=,.@_/-]+$`)
-	aiFields   = []string{"defaults", "scopes", "models", "regions", "api_key_callers", "prices", "lifts", "unknown_models"}
+	aiFields   = []string{"defaults", "scopes", "models", "regions", "api_key_callers", "prices", "lifts", "unknown_models", "unmeasured_calls"}
 	capFields  = []string{"hourly_usd", "daily_usd", "monthly_usd", "mode", "blocked"}
 	aiScopeFld = append([]string{"account_id", "ou_id"}, capFields...)
 )
@@ -373,6 +396,9 @@ func aiSemantics(a *AISection) []Problem {
 	var probs []Problem
 	if u := a.UnknownModels; u != "" && u != UnknownCutoff && u != UnknownCount {
 		probs = append(probs, Problem{Field: "ai.unknown_models", Message: fmt.Sprintf("%q is not one of the two values: \"cutoff\" (the default) or \"count\"", u)})
+	}
+	if u := a.UnmeasuredCalls; u != "" && u != UnmeasuredCutoff && u != UnmeasuredAllow {
+		probs = append(probs, Problem{Field: "ai.unmeasured_calls", Message: fmt.Sprintf("%q is not one of the two values: \"cutoff\" (the default) or \"allow\"", u)})
 	}
 	seen := map[Target]int{}
 	for i, s := range a.Scopes {

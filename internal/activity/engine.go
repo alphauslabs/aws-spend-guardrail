@@ -26,6 +26,14 @@ type Usage struct {
 	// Unpriced: the model has no price, and the call was counted at the
 	// highest known price (add-unknown-model-policy D4).
 	Unpriced bool
+	// UnpricedTier is the tier the call named that the tables don't price
+	// for its model; it was counted at the model's highest tier price
+	// (add-tier-pricing D5).
+	UnpricedTier string
+	// Unmeasured: the call's records carried no token counts, and it was
+	// counted as one call at $0 under ai.unmeasured_calls allow
+	// (add-tier-pricing D9).
+	Unmeasured bool
 }
 
 // Hit is a tripwire firing: cut off at once, no estimate needed.
@@ -132,14 +140,16 @@ type Engine struct {
 
 // Event kinds the engine emits, defined with the inbox layout.
 const (
-	KindCutoff      = schema.KindCutoff
-	KindWouldCutoff = schema.KindWouldCutoff
-	KindLift        = schema.KindCutoffLift
-	KindTrailStall  = schema.KindTrailStall
-	KindTrailResume = schema.KindTrailResume
-	KindUsage       = schema.KindUsage
-	KindUnpriced    = schema.KindUnpricedModel
-	KindDrift       = schema.KindDrift
+	KindCutoff       = schema.KindCutoff
+	KindWouldCutoff  = schema.KindWouldCutoff
+	KindLift         = schema.KindCutoffLift
+	KindTrailStall   = schema.KindTrailStall
+	KindTrailResume  = schema.KindTrailResume
+	KindUsage        = schema.KindUsage
+	KindUnpriced     = schema.KindUnpricedModel
+	KindUnpricedTier = schema.KindUnpricedTier
+	KindUnmeasured   = schema.KindUnmeasuredCall
+	KindDrift        = schema.KindDrift
 )
 
 // DetachedGrace is how long after attaching a cutoff the engine trusts it
@@ -171,9 +181,22 @@ func (e *Engine) Tick(ctx context.Context, runs []PackRun) error {
 		errs = append(errs, readErr)
 	}
 	read := e.readMetrics(ctx, now, &records)
+	tiers, tiersErr := e.joinStreamTiers(ctx, now, records)
+	if tiersErr != nil {
+		errs = append(errs, tiersErr)
+	}
 
 	var usageErr error
 	unpriced := map[string]map[string]Usage{} // per pack: the first counted call of each unpriced model
+	firsts := map[string]map[string]Usage{}   // per report: the first usage of each key (add-tier-pricing D5, D9)
+	first := func(report, key string, u Usage) {
+		if firsts[report] == nil {
+			firsts[report] = map[string]Usage{}
+		}
+		if _, seen := firsts[report][key]; !seen {
+			firsts[report][key] = u
+		}
+	}
 	for _, run := range runs {
 		hits := map[string]Hit{}
 		active := map[string]bool{}
@@ -195,6 +218,12 @@ func (e *Engine) Tick(ctx context.Context, runs []PackRun) error {
 					if _, seen := unpriced[run.Name][u.Model]; !seen {
 						unpriced[run.Name][u.Model] = *u
 					}
+				}
+				if u.UnpricedTier != "" {
+					first(KindUnpricedTier+"."+run.Name, u.Model+" "+u.UnpricedTier, *u)
+				}
+				if u.Unmeasured {
+					first(KindUnmeasured+"."+run.Name, u.Account+" "+u.Model, *u)
 				}
 			}
 			if h != nil {
@@ -221,6 +250,20 @@ func (e *Engine) Tick(ctx context.Context, runs []PackRun) error {
 			if err := e.reportUnpriced(ctx, run, unpriced[run.Name]); err != nil {
 				errs = append(errs, err)
 			}
+			if err := e.reportUnpricedTiers(ctx, run, firsts[KindUnpricedTier+"."+run.Name]); err != nil {
+				errs = append(errs, err)
+			}
+			if err := e.reportUnmeasured(ctx, run, firsts[KindUnmeasured+"."+run.Name]); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		if tiersErr == nil {
+			if err := tiers.save(ctx); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		if err := e.noteUltrafast(ctx, now, records); err != nil {
+			errs = append(errs, err)
 		}
 		if err := e.Reader.Commit(ctx); err != nil {
 			errs = append(errs, err)

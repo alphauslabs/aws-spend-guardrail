@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/alphauslabs/aws-spend-guardrail/config"
 	"github.com/alphauslabs/aws-spend-guardrail/internal/activity"
@@ -23,6 +24,10 @@ type FastPath struct {
 	// check (add-mantle-usage D6).
 	MantleRegions []string
 	MantleLinks   func(ctx context.Context, region string) (sink string, linked map[string]bool, err error)
+	// Ultrafast reads a region's ultrafast tokens per account and model for
+	// the UTC day starting at from, for the daily check (add-tier-pricing
+	// D10).
+	Ultrafast func(ctx context.Context, region string, from time.Time) ([]activity.UltrafastTokens, error)
 }
 
 // Trail runs one tick of the fast path on the config in force. With no AI
@@ -57,10 +62,10 @@ func (g *Guard) Trail(ctx context.Context) error {
 	if e.Now == nil && g.Now != nil {
 		e.Now = g.Now
 	}
-	shared, priceVersion := g.sharedAIPrices(ctx)
+	shared, sharedTiers, priceVersion := g.sharedAIPrices(ctx)
 	run := activity.PackRun{
 		Name:           aiPack,
-		Pack:           ai.NewShared(g.Fast.Prices, shared, cfg),
+		Pack:           ai.NewTiered(g.Fast.Prices, shared, sharedTiers, cfg),
 		Detail:         map[string]any{"price_version": priceVersion},
 		PolicyID:       g.Fast.AIPolicyID,
 		CapsFor:        func(a string) (activity.Caps, bool) { c, ok := caps[a]; return c, ok },

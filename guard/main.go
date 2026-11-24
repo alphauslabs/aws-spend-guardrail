@@ -377,6 +377,9 @@ func fastPath(ctx context.Context, cfg aws.Config, orgs *organizations.Client, p
 		MantleLinks: func(ctx context.Context, region string) (string, map[string]bool, error) {
 			return awsx.MantleLinks(ctx, oam.NewFromConfig(cfg, func(o *oam.Options) { o.Region = region }))
 		},
+		Ultrafast: func(ctx context.Context, region string, from time.Time) ([]activity.UltrafastTokens, error) {
+			return awsx.Ultrafast(ctx, cloudwatch.NewFromConfig(cfg, func(o *cloudwatch.Options) { o.Region = region }), from)
+		},
 	}, nil
 }
 

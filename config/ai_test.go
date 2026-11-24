@@ -107,3 +107,25 @@ func TestUnknownModelsSetting(t *testing.T) {
 		t.Error("no AI section counts nothing")
 	}
 }
+
+// ai.unmeasured_calls (add-tier-pricing D9): resolved to cutoff when unset,
+// and any other value refused.
+func TestUnmeasuredCallsSetting(t *testing.T) {
+	parse := func(ai string) (*Resolved, error) {
+		d, err := Parse([]byte(`{"payer_account_id":"123456789012","scopes":[],"ai":`+ai+`}`), Options{})
+		if err != nil {
+			return nil, err
+		}
+		return d.Resolve(), nil
+	}
+	for ai, want := range map[string]string{`{}`: UnmeasuredCutoff, `{"unmeasured_calls":"cutoff"}`: UnmeasuredCutoff, `{"unmeasured_calls":"allow"}`: UnmeasuredAllow} {
+		r, err := parse(ai)
+		if err != nil || r.AI.UnmeasuredCalls != want || r.AI.AllowsUnmeasured() != (want == UnmeasuredAllow) {
+			t.Fatalf("%s: %+v %v", ai, r, err)
+		}
+	}
+	_, err := parse(`{"unmeasured_calls":"count"}`)
+	if err == nil || !strings.Contains(err.Error(), "ai.unmeasured_calls") || !strings.Contains(err.Error(), `"cutoff" (the default) or "allow"`) {
+		t.Fatalf("bad value: %v", err)
+	}
+}

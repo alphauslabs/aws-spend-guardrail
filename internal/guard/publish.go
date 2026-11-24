@@ -105,11 +105,11 @@ func publishedText(r *prices.PublishResult) string {
 		}
 		switch ch.Kind {
 		case "added":
-			lines = append(lines, fmt.Sprintf("- %s added%s: %s", ch.Model, where, ch.To))
+			lines = append(lines, fmt.Sprintf("- %s added%s: %s", ch.Name(), where, ch.To))
 		case "removed":
-			lines = append(lines, fmt.Sprintf("- %s removed%s: was %s", ch.Model, where, ch.From))
+			lines = append(lines, fmt.Sprintf("- %s removed%s: was %s", ch.Name(), where, ch.From))
 		default:
-			line := fmt.Sprintf("- %s %s%s: %s, was %s", ch.Model, ch.Kind, where, ch.To, ch.From)
+			line := fmt.Sprintf("- %s %s%s: %s, was %s", ch.Name(), ch.Kind, where, ch.To, ch.From)
 			if j := ch.Jump(); j != "" {
 				line += ". " + upperFirst(j) + "."
 			}

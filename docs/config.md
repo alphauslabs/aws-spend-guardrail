@@ -70,7 +70,8 @@ The optional `ai` section configures the [AI guard](ai-guard.md). It has no effe
   "api_key_callers": ["arn:aws:iam::111122223333:role/batch-jobs"],
   "prices": { "acme.custom-model-v1:0": { "input_per_1k": 0.001, "output_per_1k": 0.004 } },
   "lifts": ["ai:111122223333:20261111T0930"],
-  "unknown_models": "cutoff"
+  "unknown_models": "cutoff",
+  "unmeasured_calls": "cutoff"
 }
 ```
 
@@ -85,6 +86,7 @@ The optional `ai` section configures the [AI guard](ai-guard.md). It has no effe
 | `prices` | Per-model prices in USD per 1,000 tokens, overriding the shipped table or adding a model to it. |
 | `lifts` | Cutoff ids to lift. |
 | `unknown_models` | How a call to a model with no price is treated: `cutoff` (the default) cuts off the account; `count` counts the call against the account's caps at the highest price the guard knows. See [AI guard](ai-guard.md#models-with-no-price). |
+| `unmeasured_calls` | How a call the trail records without token counts, such as a streamed Chat Completions call, is treated: `cutoff` (the default) cuts off the account; `allow` counts it as a call at $0 and reports it once. See [AI guard](ai-guard.md#calls-the-guard-cant-measure). |
 
 ## Tightening and loosening
 
@@ -103,8 +105,8 @@ The guard compares each new version with the config in force, field by field:
 | Any change of `period` | loosening |
 | Account added to or removed from `excluded_accounts` | notice: applies at once, no approval, since it changes what's reported, not what's protected |
 | Address added to or removed from `alert_emails` | needs approval, like a loosening: removing one can silence freeze alerts, and adding one can send them to someone outside the MSP. This holds in a first version too. |
-| AI: a lower cap, a scope added, a model, region, or API-key caller removed, a higher price, `dry-run` to `enforce`, `unknown_models` `count` to `cutoff`, a kind added to a scope's `blocked` | tightening |
-| AI: a higher or removed cap, a scope removed, a model, region, or API-key caller added, a lower, new, or removed price, `enforce` to `dry-run`, a lift added, `unknown_models` `cutoff` to `count` (also in a first version), a kind removed from a scope's `blocked` | loosening |
+| AI: a lower cap, a scope added, a model, region, or API-key caller removed, a higher price, `dry-run` to `enforce`, `unknown_models` `count` to `cutoff`, `unmeasured_calls` `allow` to `cutoff`, a kind added to a scope's `blocked` | tightening |
+| AI: a higher or removed cap, a scope removed, a model, region, or API-key caller added, a lower, new, or removed price, `enforce` to `dry-run`, a lift added, `unknown_models` `cutoff` to `count` (also in a first version), `unmeasured_calls` `cutoff` to `allow` (also in a first version), a kind removed from a scope's `blocked` | loosening |
 
 - A version that only tightens applies on the guard's next pull, within about 5 minutes.
 - A version that loosens anything applies its tightening parts at once. For the rest, the guard raises one Jennah approval to the approvers set in the stack. The loosening applies only once the approval is approved **and** the stack's delay has passed since the guard first saw the version. The approval shows the version's note (`guardrail publish --note`) as the reason given, so write why the change is needed there: approvers decide from it.

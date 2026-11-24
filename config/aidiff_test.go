@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -110,5 +111,29 @@ func TestUnknownModelsClassified(t *testing.T) {
 	}
 	if s := stricterAI(count, count); s.UnknownModels != UnknownCount {
 		t.Fatalf("count kept: %+v", s)
+	}
+}
+
+// Allowing unmeasured calls loosens, cutting them off tightens, and state
+// saved before add-tier-pricing reads as cutoff (add-tier-pricing D9).
+func TestUnmeasuredCallsClassified(t *testing.T) {
+	cutoff := &ResolvedAI{Mode: ModeDryRun, UnknownModels: UnknownCutoff, UnmeasuredCalls: UnmeasuredCutoff}
+	allow := &ResolvedAI{Mode: ModeDryRun, UnknownModels: UnknownCutoff, UnmeasuredCalls: UnmeasuredAllow}
+	legacy := &ResolvedAI{Mode: ModeDryRun, UnknownModels: UnknownCutoff}
+	ch := aiChanges(cutoff, allow)
+	if len(ch) != 1 || ch[0].Field != FieldAIUnmeasured || ch[0].Direction != Loosening || !strings.HasPrefix(ch[0].Sentence(), "Count calls the guard can't measure") {
+		t.Fatalf("to allow: %+v", ch)
+	}
+	if ch := aiChanges(allow, cutoff); len(ch) != 1 || ch[0].Direction != Tightening || !strings.HasPrefix(ch[0].Sentence(), "Cut off an account that makes a call the guard can't measure") {
+		t.Fatalf("to cutoff: %+v", ch)
+	}
+	if ch := aiChanges(legacy, cutoff); len(ch) != 0 || !equalAI(legacy, cutoff) {
+		t.Fatalf("legacy state must equal cutoff: %+v", ch)
+	}
+	if s := stricterAI(cutoff, allow); s.UnmeasuredCalls != UnmeasuredCutoff {
+		t.Fatalf("allow waits for approval: %+v", s)
+	}
+	if s := stricterAI(allow, allow); s.UnmeasuredCalls != UnmeasuredAllow {
+		t.Fatalf("allow kept: %+v", s)
 	}
 }

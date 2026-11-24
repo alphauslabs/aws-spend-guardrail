@@ -35,6 +35,13 @@ type Table struct {
 	// Regions are the prices per region (add-regional-prices D1). A chunk
 	// leaves it out: each chunk is one region's Models.
 	Regions map[string]map[string]config.ModelPrice `json:"regions,omitempty"`
+	// Tiers are a chunk's service tier prices, by model and tier; Models
+	// holds the standard tier (add-tier-pricing D2). Guards of earlier
+	// releases ignore them.
+	Tiers map[string]map[string]config.ModelPrice `json:"tiers,omitempty"`
+	// RegionTiers are the built table's tier prices per region. A chunk
+	// leaves it out: each chunk is one region's Tiers.
+	RegionTiers map[string]map[string]map[string]config.ModelPrice `json:"region_tiers,omitempty"`
 	// Manual lists the prices set by hand when publishing, as given
 	// (add-manual-price-overrides D3). Guards ignore it; Models already holds
 	// the merged prices.
@@ -42,7 +49,7 @@ type Table struct {
 }
 
 // Basis describes which rates a table holds.
-const Basis = "On-demand standard (regional) input and output token rates, USD per 1,000 tokens. Excludes batch, reserved, flex, priority, ultrafast, long-context, latency-optimized, and prompt-cache rates. Where only a global rate is listed, that rate is used."
+const Basis = "On-demand standard (regional) input and output token rates, USD per 1,000 tokens, with flex, priority, and ultrafast rates as tier prices. Excludes batch, reserved, long-context, latency-optimized, and prompt-cache rates. Where only a global rate is listed, that rate is used."
 
 // Source names where a table's prices come from.
 const Source = "AWS Price List API, service codes AmazonBedrock and AmazonBedrockFoundationModels, every region, matched to model ids from bedrock list-foundation-models and the bedrock-mantle model list in every enabled region"
@@ -57,7 +64,11 @@ type Unmatched struct {
 }
 
 var (
-	skipUsage  = []string{"batch", "reserved", "long_ctx", "flex", "priority", "ultrafast", "cache", "latency", "tpm"}
+	skipUsage = []string{"batch", "reserved", "long_ctx", "cache", "latency", "tpm"}
+	// TierNames are the service tiers priced apart from the standard tier,
+	// as the Price List's usage types and inference types name them
+	// (add-tier-pricing D1).
+	TierNames  = []string{"flex", "priority", "ultrafast"}
 	stripWords = map[string]bool{"instruct": true, "openai": true, "nvidia": true, "bf16": true, "vl": true, "dense": true, "it": true, "pt": true}
 	parens     = regexp.MustCompile(`\(.*?\)`)
 	nonAlnum   = regexp.MustCompile(`[^a-z0-9]+`)
@@ -145,6 +156,7 @@ func Build(priceItems []string, models []Model) (*Table, []Unmatched, error) {
 // build is Build, with the usage types that set each model's prices.
 func build(priceItems []string, models []Model) (*Table, map[string]RateSource, []Unmatched, error) {
 	byKey := map[string]*rates{}
+	byTier := map[string]map[string]*rates{} // tier, then key
 	// bags maps a word-order-insensitive key to the Price List model names
 	// that produce it (design D3).
 	bags := map[string][]string{}
@@ -165,6 +177,7 @@ func build(priceItems []string, models []Model) (*Table, map[string]RateSource, 
 			continue
 		}
 		global := strings.Contains(lu, "global") || strings.Contains(strings.ToLower(a["inferenceType"]), "global")
+		tier := tierOf(lu, strings.ToLower(a["inferenceType"]))
 		keys := map[string]bool{}
 		for _, n := range []string{a["model"], a["titanModel"]} {
 			if k := norm(n); k != "" {
@@ -206,11 +219,18 @@ func build(priceItems []string, models []Model) (*Table, map[string]RateSource, 
 				default:
 					continue
 				}
+				into := byKey
+				if tier != "" {
+					if byTier[tier] == nil {
+						byTier[tier] = map[string]*rates{}
+					}
+					into = byTier[tier]
+				}
 				for k := range keys {
-					r := byKey[k]
+					r := into[k]
 					if r == nil {
 						r = &rates{in: map[bool][]rate{}, out: map[bool][]rate{}}
-						byKey[k] = r
+						into[k] = r
 					}
 					if input {
 						r.in[global] = append(r.in[global], rate{per1k, usage})
@@ -230,14 +250,15 @@ func build(priceItems []string, models []Model) (*Table, map[string]RateSource, 
 			continue // not a text model, or a context-length variant of one
 		}
 		var r *rates
+		key := ""
 		for _, k := range []string{norm(m.Name), idKey(m.ID)} {
 			if c := byKey[k]; c != nil && len(c.in) > 0 && len(c.out) > 0 {
-				r = c
+				r, key = c, k
 				break
 			}
 		}
 		if r == nil {
-			r = byBag(byKey, bags, m)
+			r, key = byBag(byKey, bags, m)
 		}
 		if r == nil {
 			miss = append(miss, Unmatched{ID: m.ID, Name: m.Name})
@@ -247,6 +268,23 @@ func build(priceItems []string, models []Model) (*Table, map[string]RateSource, 
 		out, outUsage := pick(r.out)
 		t.Models[m.ID] = config.ModelPrice{InputPer1K: in, OutputPer1K: out}
 		sources[m.ID] = RateSource{In: inUsage, Out: outUsage}
+		// A tier is priced from the rows under the same name the standard
+		// price matched (add-tier-pricing D1).
+		for _, tier := range TierNames {
+			c := byTier[tier][key]
+			if c == nil || len(c.in) == 0 || len(c.out) == 0 {
+				continue
+			}
+			in, _ := pick(c.in)
+			out, _ := pick(c.out)
+			if t.Tiers == nil {
+				t.Tiers = map[string]map[string]config.ModelPrice{}
+			}
+			if t.Tiers[m.ID] == nil {
+				t.Tiers[m.ID] = map[string]config.ModelPrice{}
+			}
+			t.Tiers[m.ID][tier] = config.ModelPrice{InputPer1K: in, OutputPer1K: out}
+		}
 	}
 	sort.Slice(miss, func(i, j int) bool { return miss[i].ID < miss[j].ID })
 	return t, sources, miss, nil
@@ -293,15 +331,27 @@ func bagKey(name string) string {
 // byBag finds a model's rates through its name's word-order-insensitive key,
 // only when exactly one Price List model produced that key, and that model's
 // own key has both input and output rates (design D3).
-func byBag(byKey map[string]*rates, bags map[string][]string, m Model) *rates {
+func byBag(byKey map[string]*rates, bags map[string][]string, m Model) (*rates, string) {
 	names := uniq(bags[bagKey(m.Name)])
 	if len(names) != 1 {
-		return nil
+		return nil, ""
 	}
-	if c := byKey[norm(names[0])]; c != nil && len(c.in) > 0 && len(c.out) > 0 {
-		return c
+	k := norm(names[0])
+	if c := byKey[k]; c != nil && len(c.in) > 0 && len(c.out) > 0 {
+		return c, k
 	}
-	return nil
+	return nil, ""
+}
+
+// tierOf is the service tier a Price List row prices, from its usage type or
+// inference type, or "" for the standard tier (add-tier-pricing D1).
+func tierOf(usage, inferenceType string) string {
+	for _, t := range TierNames {
+		if strings.Contains(usage, t) || strings.Contains(inferenceType, t) {
+			return t
+		}
+	}
+	return ""
 }
 
 func uniq(s []string) []string {
@@ -413,6 +463,12 @@ func BuildRegions(items map[string][]string, listed map[string][]Model, unlisted
 		}
 		t.Regions[r] = rt.Models
 		b.Sources[r] = src
+		if len(rt.Tiers) > 0 {
+			if t.RegionTiers == nil {
+				t.RegionTiers = map[string]map[string]map[string]config.ModelPrice{}
+			}
+			t.RegionTiers[r] = rt.Tiers
+		}
 		for id := range rt.Models {
 			priced[id] = true
 		}

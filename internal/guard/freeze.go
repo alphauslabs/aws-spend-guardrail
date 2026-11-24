@@ -158,6 +158,9 @@ func (g *Guard) Daily(ctx context.Context) error {
 		if err := g.mantleCoverage(ctx, st.Effective, st.AppliedVersion); err != nil {
 			errs = append(errs, err)
 		}
+		if err := g.ultrafastUnseen(ctx, st.Effective, st.AppliedVersion); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	if err := g.checkBlocked(ctx); err != nil {
 		errs = append(errs, err)

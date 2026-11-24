@@ -57,7 +57,7 @@ The fields are fixed in code from observed records, with the dates in `docs/aws-
 - **A named tier** the tables price for the model in that region (or, failing that, in any region, at its highest): that price, release and shared merged tighten-only per tier. An `ai.prices` entry raises it to at least the entry, per side.
 - **Can't tell, or a tier the tables don't price for the model**: the highest of the model's standard and tier prices in that region, per side. An `ai.prices` entry raises it to at least the entry.
 
-The highest-known price used for unpriced models also takes in tier prices, so an unpriced model is never priced below a known premium tier.
+The highest-known price used for unpriced models stays the highest standard price. Taking in tier prices would raise it about 4 times (GPT-6 Astra's Ultrafast output is $0.33 per 1,000 tokens), charging every call to a new model as if it ran on the dearest tier of the dearest model.
 
 ### D5: An unknown tier is reported once
 

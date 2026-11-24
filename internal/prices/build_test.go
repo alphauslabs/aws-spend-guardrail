@@ -125,10 +125,11 @@ func TestBuildNeverLowersAShippedPrice(t *testing.T) {
 	}
 }
 
-// The ultrafast tier is a premium rate like priority, not the standard one:
-// GPT-6 Astra's standard rows are $11 and $55 per 1M tokens, its ultrafast
-// rows $66 and $330, as the Price List listed them in Nov 2026.
-func TestBuildSkipsUltrafastRates(t *testing.T) {
+// Tier rates are kept as tier prices, apart from the standard price
+// (add-tier-pricing D1): GPT-6 Astra's standard rows are $11 and $55 per 1M
+// tokens and its ultrafast rows $66 and $330, as the Price List listed them in
+// Nov 2026. A long-context ultrafast row is still left out.
+func TestBuildKeepsTierRates(t *testing.T) {
 	row := func(usage, inference, usd string) string {
 		return `{"product":{"attributes":{"regionCode":"us-east-1","inferenceType":"` + inference + `","feature":"On-demand Inference","provider":"OpenAI","usagetype":"USE1-MP:USE1_` + usage + `-Units","model":"OpenAI GPT-6 Astra","operation":""}},"terms":{"OnDemand":{"t":{"priceDimensions":{"d":{"unit":"1M tokens","pricePerUnit":{"USD":"` + usd + `"}}}}}},"publicationDate":"2026-11-23T00:00:00Z"}`
 	}
@@ -137,18 +138,53 @@ func TestBuildSkipsUltrafastRates(t *testing.T) {
 		row("output_tokens_standard", "Output tokens", "55.0000000000"),
 		row("input_tokens_ultrafast", "Input tokens ultrafast", "66.0000000000"),
 		row("output_tokens_ultrafast", "Output tokens ultrafast", "330.0000000000"),
+		row("input_tokens_long_ctx_ultrafast", "Input tokens ultrafast", "132.0000000000"),
+		row("output_tokens_long_ctx_ultrafast", "Output tokens ultrafast", "495.0000000000"),
+		row("cache_read_tokens_ultrafast", "Prompt cache read input tokens ultrafast", "6.6000000000"),
 	}
-	tab, _, err := Build(items, []Model{{ID: "openai.gpt-6-astra", Name: "GPT-6 Astra", Outputs: []string{"TEXT"}}})
+	models := []Model{{ID: "openai.gpt-6-astra", Name: "GPT-6 Astra", Outputs: []string{"TEXT"}}}
+	tab, _, err := Build(items, models)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := config.ModelPrice{InputPer1K: 0.011, OutputPer1K: 0.055}
-	if got := tab.Models["openai.gpt-6-astra"]; got != want {
-		t.Errorf("built %+v, want %+v", got, want)
+	if got, want := tab.Models["openai.gpt-6-astra"], (config.ModelPrice{InputPer1K: 0.011, OutputPer1K: 0.055}); got != want {
+		t.Errorf("standard %+v, want %+v", got, want)
 	}
-	_, src, _, _ := build(items, []Model{{ID: "openai.gpt-6-astra", Name: "GPT-6 Astra", Outputs: []string{"TEXT"}}})
+	if got, want := tab.Tiers["openai.gpt-6-astra"], map[string]config.ModelPrice{"ultrafast": {InputPer1K: 0.066, OutputPer1K: 0.33}}; len(got) != 1 || got["ultrafast"] != want["ultrafast"] {
+		t.Errorf("tiers %+v, want %+v", got, want)
+	}
+	_, src, _, _ := build(items, models)
 	if got := src["openai.gpt-6-astra"]; got != (RateSource{In: "USE1-MP:USE1_input_tokens_standard-Units", Out: "USE1-MP:USE1_output_tokens_standard-Units"}) {
 		t.Errorf("sources %+v", got)
+	}
+}
+
+// A chunk carries its region's tiers, and a guard of an earlier release,
+// whose table type has no tiers, still reads its standard prices
+// (add-tier-pricing D2).
+func TestChunkTiersRoundTrip(t *testing.T) {
+	built := &Table{Source: Source, Basis: Basis,
+		Regions:     map[string]map[string]config.ModelPrice{LegacyRegion: {"openai.gpt-6-astra": {InputPer1K: 0.011, OutputPer1K: 0.055}}},
+		RegionTiers: map[string]map[string]map[string]config.ModelPrice{LegacyRegion: {"openai.gpt-6-astra": {"ultrafast": {InputPer1K: 0.066, OutputPer1K: 0.33}}}}}
+	c := chunksFor(built, nil)[LegacyRegion]
+	raw, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Table
+	if err := json.Unmarshal(raw, &back); err != nil || back.Tiers["openai.gpt-6-astra"]["ultrafast"] != (config.ModelPrice{InputPer1K: 0.066, OutputPer1K: 0.33}) {
+		t.Fatalf("round trip: %+v %v", back.Tiers, err)
+	}
+	// The v0.2.17 table type, as an older guard parses a chunk.
+	var old struct {
+		Source    string                                  `json:"source"`
+		Published string                                  `json:"published"`
+		Basis     string                                  `json:"basis"`
+		Models    map[string]config.ModelPrice            `json:"models"`
+		Regions   map[string]map[string]config.ModelPrice `json:"regions,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &old); err != nil || old.Models["openai.gpt-6-astra"] != (config.ModelPrice{InputPer1K: 0.011, OutputPer1K: 0.055}) {
+		t.Fatalf("older guard: %+v %v", old.Models, err)
 	}
 }
 

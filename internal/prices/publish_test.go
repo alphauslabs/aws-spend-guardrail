@@ -285,3 +285,71 @@ func TestPublishPointsOutLargeRaises(t *testing.T) {
 		}
 	}
 }
+
+// withTiers is a us-east-1 build whose models have the given tier prices.
+func withTiers(models map[string]config.ModelPrice, tiers map[string]map[string]config.ModelPrice) *Built {
+	b := built(models)
+	b.Table.RegionTiers = map[string]map[string]map[string]config.ModelPrice{LegacyRegion: tiers}
+	return b
+}
+
+// Tier prices are diffed, published, and reported like standard ones, naming
+// the tier, and the first version with them says so (add-tier-pricing D6).
+func TestPublishTierPrices(t *testing.T) {
+	ctx := context.Background()
+	f, c := pricesStore(t)
+	std := map[string]config.ModelPrice{"openai.gpt-oss-20b": {InputPer1K: 0.00007, OutputPer1K: 0.0003}}
+	if _, err := Publish(ctx, c, built(std), nil, PublishOptions{Note: "first", Now: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	pri := map[string]map[string]config.ModelPrice{"openai.gpt-oss-20b": {"priority": {InputPer1K: 0.0001225, OutputPer1K: 0.000525}}}
+	r, err := Publish(ctx, c, withTiers(std, pri), nil, PublishOptions{})
+	if err != nil || !r.Written() || !r.FirstTiers || !strings.Contains(r.Note, "First version with service tier prices") {
+		t.Fatalf("first tiers: %+v %v", r, err)
+	}
+	if len(r.Changes) != 1 || r.Changes[0].Model != "openai.gpt-oss-20b" || r.Changes[0].Tier != "priority" || r.Changes[0].Kind != "added" || r.Changes[0].Name() != "openai.gpt-oss-20b priority" {
+		t.Fatalf("changes: %+v", r.Changes)
+	}
+	if got := chunkOf(t, c, LegacyRegion).Tiers["openai.gpt-oss-20b"]["priority"]; got != pri["openai.gpt-oss-20b"]["priority"] {
+		t.Fatalf("published tier %+v", got)
+	}
+	// Unchanged: no version.
+	commits := f.Commits
+	if r, err := Publish(ctx, c, withTiers(std, pri), nil, PublishOptions{}); err != nil || r.Written() || len(r.Changes) != 0 || f.Commits != commits || r.FirstTiers {
+		t.Fatalf("unchanged: %+v %v", r, err)
+	}
+	// Raised 2x on output, and a new ultrafast tier lowered from nothing is added.
+	raised := map[string]map[string]config.ModelPrice{"openai.gpt-oss-20b": {"priority": {InputPer1K: 0.0001225, OutputPer1K: 0.00105}}}
+	r, err = Publish(ctx, c, withTiers(std, raised), nil, PublishOptions{DryRun: true})
+	if err != nil || len(r.Changes) != 1 || r.Changes[0].Kind != "raised" || r.Changes[0].Tier != "priority" || r.Changes[0].Factor != 2 || r.Changes[0].Usage != (RateSource{}) {
+		t.Fatalf("raised: %+v %v", r.Changes, err)
+	}
+	// Lowered, and a tier removed.
+	lowered := map[string]map[string]config.ModelPrice{"openai.gpt-oss-20b": {"flex": {InputPer1K: 0.000035, OutputPer1K: 0.00015}}}
+	r, err = Publish(ctx, c, withTiers(std, lowered), nil, PublishOptions{DryRun: true})
+	kinds := map[string]string{}
+	for _, ch := range r.Changes {
+		kinds[ch.Name()] = ch.Kind
+	}
+	if err != nil || kinds["openai.gpt-oss-20b priority"] != "removed" || kinds["openai.gpt-oss-20b flex"] != "added" || len(kinds) != 2 {
+		t.Fatalf("lowered: %v %v", kinds, err)
+	}
+}
+
+// Manual prices carry forward unchanged into the first version with tiers.
+func TestPublishTiersKeepManualPrices(t *testing.T) {
+	ctx := context.Background()
+	_, c := pricesStore(t)
+	std := map[string]config.ModelPrice{"a.m1": {InputPer1K: 1, OutputPer1K: 2}}
+	manual := map[string]config.ModelPrice{"x.new": {InputPer1K: 3, OutputPer1K: 4}}
+	if _, err := Publish(ctx, c, built(std), nil, PublishOptions{Note: "manual", Manual: manual, Now: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Publish(ctx, c, withTiers(std, map[string]map[string]config.ModelPrice{"a.m1": {"priority": {InputPer1K: 2, OutputPer1K: 4}}}), nil, PublishOptions{})
+	if err != nil || !r.Written() || r.ManualChanged || r.Manual["x.new"].Price() != manual["x.new"] {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if got := latestOf(t, c).Models["x.new"]; got != manual["x.new"] {
+		t.Fatalf("manual price %+v", got)
+	}
+}

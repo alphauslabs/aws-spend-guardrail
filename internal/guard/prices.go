@@ -198,15 +198,17 @@ func keptWhat(h heldChunk) string {
 }
 
 // sharedAIPrices returns the shared AI prices the guard holds, per region,
-// and the newest version among them; nil and 0 when it holds none.
-func (g *Guard) sharedAIPrices(ctx context.Context) (map[string]map[string]config.ModelPrice, int64) {
+// their tier prices per region, model, and tier (add-tier-pricing D2), and the
+// newest version among them; nil and 0 when it holds none.
+func (g *Guard) sharedAIPrices(ctx context.Context) (map[string]map[string]config.ModelPrice, map[string]map[string]map[string]config.ModelPrice, int64) {
 	if g.Fast == nil {
-		return nil, 0
+		return nil, nil, 0
 	}
 	store := g.Fast.Engine.Store
 	var index heldRegions
 	_, _ = store.GetMeta(ctx, heldAIRegions, &index)
 	out := map[string]map[string]config.ModelPrice{}
+	tiers := map[string]map[string]map[string]config.ModelPrice{}
 	var version int64
 	for _, r := range uniqueRegions(append(index.Regions, ai.DefaultRegion)) {
 		var h heldChunk
@@ -218,10 +220,13 @@ func (g *Guard) sharedAIPrices(ctx context.Context) (map[string]map[string]confi
 			continue
 		}
 		out[r] = t.Models
+		if len(t.Tiers) > 0 {
+			tiers[r] = t.Tiers
+		}
 		version = max(version, h.Version)
 	}
 	if len(out) == 0 {
-		return nil, 0
+		return nil, nil, 0
 	}
-	return out, version
+	return out, tiers, version
 }

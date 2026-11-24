@@ -64,16 +64,24 @@ const (
 	KindRecipientUnconfirmed = "alert_recipient_unconfirmed" // a recipient hasn't confirmed its subscription; once a day
 
 	// Fast packs (the AI pack first). Each carries the pack name in its detail.
-	KindCutoff         = "cutoff"        // a pack attached its deny policy to an account
-	KindWouldCutoff    = "would_cutoff"  // dry-run: a pack would have cut off an account
-	KindCutoffLift     = "cutoff_lifted" // a cutoff was lifted
-	KindTrailStall     = "trail_stalled" // no new trail file, or the trail can't be read
-	KindTrailResume    = "trail_resumed"
-	KindUsage          = "usage_summary"   // one account and model's usage for an hour
-	KindPricesApplied  = "prices_applied"  // the guard started using a shared price version
-	KindUnpricedModel  = "unpriced_model"  // a model with no price was first counted at the highest known price
-	KindMantleUnlinked = "mantle_unlinked" // an active account doesn't share its mantle usage with the payer in a watched region
-	KindAIBlocked      = "ai_blocked"      // what the AI block policy denies changed (add-ai-blocked)
+	KindCutoff        = "cutoff"        // a pack attached its deny policy to an account
+	KindWouldCutoff   = "would_cutoff"  // dry-run: a pack would have cut off an account
+	KindCutoffLift    = "cutoff_lifted" // a cutoff was lifted
+	KindTrailStall    = "trail_stalled" // no new trail file, or the trail can't be read
+	KindTrailResume   = "trail_resumed"
+	KindUsage         = "usage_summary"  // one account and model's usage for an hour
+	KindPricesApplied = "prices_applied" // the guard started using a shared price version
+	KindUnpricedModel = "unpriced_model" // a model with no price was first counted at the highest known price
+	// add-tier-pricing: a call on a tier the tables don't price for its
+	// model, first counted at the model's highest tier price (D5); a call
+	// with no token counts, first counted at $0 under ai.unmeasured_calls
+	// allow (D9); and Ultrafast use the metrics show that the trail didn't
+	// (D10).
+	KindUnpricedTier    = "unpriced_tier"
+	KindUnmeasuredCall  = "unmeasured_call"
+	KindUltrafastUnseen = "ultrafast_unseen"
+	KindMantleUnlinked  = "mantle_unlinked" // an active account doesn't share its mantle usage with the payer in a watched region
+	KindAIBlocked       = "ai_blocked"      // what the AI block policy denies changed (add-ai-blocked)
 	// KindPriceOverrideLow: a config ai.prices entry is below the model's
 	// release and shared price (add-price-override-check).
 	KindPriceOverrideLow = "price_override_low"

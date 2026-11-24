@@ -10,15 +10,16 @@ import (
 // AI change fields. An AI change has an empty Target unless it is about one
 // AI scope.
 const (
-	FieldAIScope     = "ai.scope"
-	FieldAIModels    = "ai.models"
-	FieldAIRegions   = "ai.regions"
-	FieldAIAPIKey    = "ai.api_key_callers"
-	FieldAIPrice     = "ai.prices"
-	FieldAILift      = "ai.lifts"
-	FieldAIUnknown   = "ai.unknown_models"
-	FieldAIBlocked   = "ai.blocked"
-	allowlistAnyText = "any"
+	FieldAIScope      = "ai.scope"
+	FieldAIModels     = "ai.models"
+	FieldAIRegions    = "ai.regions"
+	FieldAIAPIKey     = "ai.api_key_callers"
+	FieldAIPrice      = "ai.prices"
+	FieldAILift       = "ai.lifts"
+	FieldAIUnknown    = "ai.unknown_models"
+	FieldAIUnmeasured = "ai.unmeasured_calls"
+	FieldAIBlocked    = "ai.blocked"
+	allowlistAnyText  = "any"
 )
 
 func emptyAI(r *ResolvedAI) *ResolvedAI {
@@ -115,6 +116,11 @@ func aiChanges(applied, desired *ResolvedAI) []Change {
 	if au, du := unknownOf(a), unknownOf(d); au != du {
 		add(Target{}, FieldAIUnknown, au, du, dirLower(du == UnknownCutoff))
 	}
+	// Allowing unmeasured calls lets calls through that would trip, so it
+	// loosens; going back to cutoff tightens (add-tier-pricing D9).
+	if au, du := unmeasuredOf(a), unmeasuredOf(d); au != du {
+		add(Target{}, FieldAIUnmeasured, au, du, dirLower(du == UnmeasuredCutoff))
+	}
 
 	wasLift, nowLift := set(a.Lifts), set(d.Lifts)
 	for _, l := range d.Lifts {
@@ -168,15 +174,19 @@ func stricterAI(applied, desired *ResolvedAI) *ResolvedAI {
 		mode = ModeEnforce
 	}
 	out := &ResolvedAI{
-		Mode:          mode,
-		Models:        tighterAllowlist(a.Models, d.Models),
-		Regions:       tighterAllowlist(a.Regions, d.Regions),
-		APIKeyCallers: intersect(a.APIKeyCallers, d.APIKeyCallers),
-		Lifts:         a.Lifts,
-		UnknownModels: UnknownCutoff,
+		Mode:            mode,
+		Models:          tighterAllowlist(a.Models, d.Models),
+		Regions:         tighterAllowlist(a.Regions, d.Regions),
+		APIKeyCallers:   intersect(a.APIKeyCallers, d.APIKeyCallers),
+		Lifts:           a.Lifts,
+		UnknownModels:   UnknownCutoff,
+		UnmeasuredCalls: UnmeasuredCutoff,
 	}
 	if unknownOf(a) == UnknownCount && unknownOf(d) == UnknownCount {
 		out.UnknownModels = UnknownCount // count only once both have it
+	}
+	if unmeasuredOf(a) == UnmeasuredAllow && unmeasuredOf(d) == UnmeasuredAllow {
+		out.UnmeasuredCalls = UnmeasuredAllow // allow only once both have it
 	}
 	for _, ds := range d.Scopes {
 		as, ok := a.Scope(ds.Target)
@@ -267,7 +277,18 @@ func equalAI(a, b *ResolvedAI) bool {
 	// State saved before add-unknown-model-policy has no unknown_models.
 	ac, bc := *a, *b
 	ac.UnknownModels, bc.UnknownModels = unknownOf(a), unknownOf(b)
+	// Nor does state saved before add-tier-pricing have unmeasured_calls.
+	ac.UnmeasuredCalls, bc.UnmeasuredCalls = unmeasuredOf(a), unmeasuredOf(b)
 	return reflect.DeepEqual(ac, bc)
+}
+
+// unmeasuredOf is how a section treats unmeasured calls; empty (an absent
+// section, or state saved before add-tier-pricing) is cutoff.
+func unmeasuredOf(r *ResolvedAI) string {
+	if r == nil || r.UnmeasuredCalls == "" {
+		return UnmeasuredCutoff
+	}
+	return r.UnmeasuredCalls
 }
 
 // unknownOf is how a section treats unpriced models; empty (an absent

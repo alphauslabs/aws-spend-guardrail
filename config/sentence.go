@@ -80,6 +80,11 @@ func (c Change) Sentence() string {
 			return "Count calls to models with no price at the highest known price instead of cutting off the account."
 		}
 		return "Cut off an account that calls a model with no price, instead of counting the call."
+	case FieldAIUnmeasured:
+		if c.To == UnmeasuredAllow {
+			return "Count calls the guard can't measure, such as streamed Chat Completions calls, as calls at $0 instead of cutting off the account."
+		}
+		return "Cut off an account that makes a call the guard can't measure, such as a streamed Chat Completions call, instead of counting it at $0."
 	case FieldAIBlocked:
 		if c.To != "" {
 			return fmt.Sprintf("Block %s on %s.", blockedText(c.To), t)

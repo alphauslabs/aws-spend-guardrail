@@ -80,6 +80,7 @@ type PublishResult struct {
 	Unlisted      []string               // regions whose model lists couldn't be read
 	Regions       int                    // regions published
 	FirstRegional bool                   // the latest version had no regional chunks (add-regional-prices D8)
+	FirstTiers    bool                   // the latest version had no tier prices (add-tier-pricing D6)
 	ChunksChanged bool                   // some chunk differs from the latest version's
 	ManualChanged bool                   // the manual prices differ from the latest version's
 	Note          string                 // the version note, with automatic drops
@@ -179,6 +180,10 @@ func Publish(ctx context.Context, s Store, built *Built, unmatched []Unmatched, 
 	if r.FirstRegional {
 		note = strings.TrimSpace(note + " First version with prices per region.")
 	}
+	r.FirstTiers = latest != nil && !hasTiers(current) && hasTiers(chunks)
+	if r.FirstTiers {
+		note = strings.TrimSpace(note + " First version with service tier prices (flex, priority, and ultrafast), so each is listed as added.")
+	}
 	r.Note = strings.TrimSpace(note + " " + strings.Join(auto, " "))
 	r.ManualChanged = !sameManual(prev, manual)
 	r.Manual = manual
@@ -190,14 +195,15 @@ func Publish(ctx context.Context, s Store, built *Built, unmatched []Unmatched, 
 		if base == nil {
 			base = legacy // what guards charged in this region until now
 		}
-		perRegion[region] = Diff(Of(base), Of(t))
+		perRegion[region] = append(Diff(Of(base), Of(t)), Diff(OfTiers(current[region]), OfTiers(t))...)
 	}
 	for region, t := range current {
 		if _, ok := chunks[region]; !ok {
-			perRegion[region] = Diff(Of(t), nil)
+			perRegion[region] = append(Diff(Of(t), nil), Diff(OfTiers(t), nil)...)
 		}
 	}
 	r.Changes = MergeChanges(perRegion)
+	SplitTiers(r.Changes)
 	for i := range r.Changes {
 		c := &r.Changes[i]
 		if c.Kind != "raised" || c.factor() < JumpFactor {
@@ -205,8 +211,8 @@ func Publish(ctx context.Context, s Store, built *Built, unmatched []Unmatched, 
 		}
 		c.Factor = math.Round(c.factor()*10) / 10
 		// Name the usage types only when the build set the price shown, not a
-		// manual price.
-		if p, ok := built.Table.Regions[c.Region][c.Model]; ok && p.InputPer1K == c.to.In && p.OutputPer1K == c.to.Out {
+		// manual price. Tier prices don't keep their usage types.
+		if p, ok := built.Table.Regions[c.Region][c.Model]; ok && c.Tier == "" && p.InputPer1K == c.to.In && p.OutputPer1K == c.to.Out {
 			c.Usage = built.Sources[c.Region][c.Model]
 		}
 	}
@@ -277,7 +283,7 @@ func chunksFor(t *Table, manual map[string]ManualPrice) map[string]*Table {
 	}
 	out := map[string]*Table{}
 	for region, models := range merged {
-		c := &Table{Source: t.Source, Published: t.Published, Basis: strings.TrimSuffix(t.Basis, ManualNote), Models: models}
+		c := &Table{Source: t.Source, Published: t.Published, Basis: strings.TrimSuffix(t.Basis, ManualNote), Models: models, Tiers: t.RegionTiers[region]}
 		if len(manual) > 0 {
 			c.Basis += ManualNote
 		}
@@ -292,6 +298,16 @@ func chunksFor(t *Table, manual map[string]ManualPrice) map[string]*Table {
 		}
 	}
 	return out
+}
+
+// hasTiers reports whether any chunk has tier prices.
+func hasTiers(chunks map[string]*Table) bool {
+	for _, c := range chunks {
+		if len(c.Tiers) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // changedChunks reports whether a version's chunks differ from the latest's.

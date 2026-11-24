@@ -73,6 +73,10 @@
         "unknown_models": {
           "description": "How a call to a model with no price is treated: cutoff (the default) trips the unknown_model rule; count counts it against the account's caps at the highest known price. Moving to count is a loosening and needs approval.",
           "type": "string", "enum": ["cutoff", "count"]
+        },
+        "unmeasured_calls": {
+          "description": "How a call the trail records without token counts, such as a streamed Chat Completions call, is treated: cutoff (the default) trips the unmeasured_call rule; allow counts it as a call at $0 and reports it once. Moving to allow is a loosening and needs approval.",
+          "type": "string", "enum": ["cutoff", "allow"]
         }
       }
     }

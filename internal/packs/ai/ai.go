@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/alphauslabs/aws-spend-guardrail/config"
@@ -28,10 +29,28 @@ type Table struct {
 	// Regions are the release's prices per region (add-regional-prices D1).
 	// A table without them is us-east-1's.
 	Regions map[string]map[string]config.ModelPrice `json:"regions,omitempty"`
+	// Tiers are a chunk's service tier prices, by model and tier, beside
+	// Models' standard prices (add-tier-pricing D2).
+	Tiers map[string]map[string]config.ModelPrice `json:"tiers,omitempty"`
+	// RegionTiers are the release's tier prices per region, by model and
+	// tier.
+	RegionTiers map[string]map[string]map[string]config.ModelPrice `json:"region_tiers,omitempty"`
 }
 
 // DefaultRegion is the region a table without regions prices.
 const DefaultRegion = "us-east-1"
+
+// TiersByRegion returns the table's tier prices per region, by model and
+// tier (add-tier-pricing D2).
+func (t *Table) TiersByRegion() map[string]map[string]map[string]config.ModelPrice {
+	if len(t.RegionTiers) > 0 {
+		return t.RegionTiers
+	}
+	if len(t.Tiers) > 0 {
+		return map[string]map[string]map[string]config.ModelPrice{DefaultRegion: t.Tiers}
+	}
+	return nil
+}
 
 // ByRegion returns the table's prices per region.
 func (t *Table) ByRegion() map[string]map[string]config.ModelPrice {
@@ -53,7 +72,9 @@ func Prices() (*Table, error) {
 // The Bedrock runtime calls that are priced, and the logging-configuration
 // calls that trip.
 var (
-	runtimeCalls = map[string]bool{"InvokeModel": true, "InvokeModelWithResponseStream": true, "Converse": true, "ConverseStream": true}
+	// ChatCompletions and Responses are the OpenAI-compatible API on
+	// bedrock-runtime (add-tier-pricing D8).
+	runtimeCalls = map[string]bool{"InvokeModel": true, "InvokeModelWithResponseStream": true, "Converse": true, "ConverseStream": true, "ChatCompletions": true, "Responses": true}
 	streaming    = map[string]bool{"InvokeModelWithResponseStream": true, "ConverseStream": true}
 	loggingCalls = map[string]bool{"PutModelInvocationLoggingConfiguration": true, "DeleteModelInvocationLoggingConfiguration": true}
 
@@ -98,6 +119,9 @@ func callerMatches(caller string, allowed []string) bool {
 type Pack struct {
 	release map[string]map[string]config.ModelPrice // per region: the release's prices
 	shared  map[string]map[string]config.ModelPrice // per region: the enterprise's shared prices
+	// releaseTiers and sharedTiers are the tier prices per region, model,
+	// and tier (add-tier-pricing D2, D4).
+	releaseTiers, sharedTiers map[string]map[string]map[string]config.ModelPrice
 	// inRelease lists every model the release prices in some region.
 	inRelease map[string]bool
 	// floors are per region and provider, and per provider in floorsAny: the
@@ -129,10 +153,17 @@ func New(t *Table, cfg *config.ResolvedAI) *Pack { return NewShared(t, nil, cfg)
 // can raise a release price but never lower it, and a model only the shared
 // tables list is priced at no less than its provider's highest release price.
 func NewShared(t *Table, shared map[string]map[string]config.ModelPrice, cfg *config.ResolvedAI) *Pack {
+	return NewTiered(t, shared, nil, cfg)
+}
+
+// NewTiered is NewShared with the shared tier prices, per region, model, and
+// tier, merged tighten-only per tier like standard prices (add-tier-pricing
+// D4).
+func NewTiered(t *Table, shared map[string]map[string]config.ModelPrice, sharedTiers map[string]map[string]map[string]config.ModelPrice, cfg *config.ResolvedAI) *Pack {
 	if cfg == nil {
 		cfg = &config.ResolvedAI{}
 	}
-	p := &Pack{release: t.ByRegion(), shared: shared, cfg: cfg, inRelease: map[string]bool{},
+	p := &Pack{release: t.ByRegion(), shared: shared, releaseTiers: t.TiersByRegion(), sharedTiers: sharedTiers, cfg: cfg, inRelease: map[string]bool{},
 		floors: map[string]map[string]config.ModelPrice{}, floorsAny: map[string]config.ModelPrice{}, highest: map[string]config.ModelPrice{}}
 	for region, models := range p.release {
 		p.floors[region] = map[string]config.ModelPrice{}
@@ -299,6 +330,125 @@ func (p *Pack) PriceIn(key, region string) (config.ModelPrice, bool) {
 	return v, ok
 }
 
+// tierIn is a model's price for one tier in a region, from the release and
+// shared tier prices merged tighten-only (add-tier-pricing D4).
+func (p *Pack) tierIn(key, region, tier string) (config.ModelPrice, bool) {
+	r, inRelease := p.releaseTiers[region][key][tier]
+	s, inShared := p.sharedTiers[region][key][tier]
+	switch {
+	case inRelease && inShared:
+		return higher(r, s), true
+	case inRelease:
+		return r, true
+	case inShared:
+		return s, true
+	}
+	return config.ModelPrice{}, false
+}
+
+// tiersOf lists the tiers a model has prices for in a region, or, when it has
+// none there, in any region.
+func (p *Pack) tiersOf(key, region string) []string {
+	seen := map[string]bool{}
+	for _, all := range []map[string]map[string]map[string]config.ModelPrice{p.releaseTiers, p.sharedTiers} {
+		for t := range all[region][key] {
+			seen[t] = true
+		}
+	}
+	if len(seen) == 0 {
+		for _, all := range []map[string]map[string]map[string]config.ModelPrice{p.releaseTiers, p.sharedTiers} {
+			for _, models := range all {
+				for t := range models[key] {
+					seen[t] = true
+				}
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for t := range seen {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// tierPrice is a model's price for a tier in a region, or, when it has none
+// there, its highest for that tier in any region.
+func (p *Pack) tierPrice(key, region, tier string) (config.ModelPrice, bool) {
+	if v, ok := p.tierIn(key, region, tier); ok {
+		return v, true
+	}
+	var hi config.ModelPrice
+	found := false
+	regions := map[string]bool{}
+	for _, all := range []map[string]map[string]map[string]config.ModelPrice{p.releaseTiers, p.sharedTiers} {
+		for r := range all {
+			regions[r] = true
+		}
+	}
+	for r := range regions {
+		if v, ok := p.tierIn(key, r, tier); ok {
+			hi, found = higher(hi, v), true
+		}
+	}
+	return hi, found
+}
+
+// TierUse says how a call's tier is known (add-tier-pricing D3, D4).
+type TierUse int
+
+const (
+	// TierNamed: the record names the tier, or names none, which is the
+	// standard tier.
+	TierNamed TierUse = iota
+	// TierUnknown: the record can't show the tier, as for usage read from
+	// metrics, or a stream completion whose call record wasn't seen.
+	TierUnknown
+)
+
+// PriceFor returns a model's price for a call made in a region on a tier
+// (add-tier-pricing D4). With no tier, it is PriceIn. A named tier the tables
+// price for the model is that tier's price, raised to at least the org's
+// ai.prices entry; a tier the call can't show, or one the tables don't price
+// for the model, is the highest of its standard and tier prices, and
+// unpricedTier says the latter. ok is false when the model has no price.
+func (p *Pack) PriceFor(key, region, tier string, use TierUse) (price config.ModelPrice, ok, unpricedTier bool) {
+	std, ok := p.PriceIn(key, region)
+	if !ok {
+		return config.ModelPrice{}, false, false
+	}
+	if use == TierNamed && tier == "" {
+		return std, true, false
+	}
+	override, hasOverride := p.override(key)
+	if use == TierNamed {
+		if v, found := p.tierPrice(key, region, tier); found {
+			if hasOverride {
+				v = higher(v, override)
+			}
+			return v, true, false
+		}
+		unpricedTier = true
+	}
+	hi := std
+	for _, t := range p.tiersOf(key, region) {
+		if v, found := p.tierPrice(key, region, t); found {
+			hi = higher(hi, v)
+		}
+	}
+	return hi, true, unpricedTier
+}
+
+// override is the org's ai.prices entry for a model.
+func (p *Pack) override(key string) (config.ModelPrice, bool) {
+	for k, v := range p.cfg.Prices {
+		if ModelKey(k) == key {
+			return v, true
+		}
+	}
+	return config.ModelPrice{}, false
+}
+
 // Price returns a model's price in us-east-1, or its highest price in any
 // region when it has none there.
 func (p *Pack) Price(key string) (config.ModelPrice, bool) {
@@ -369,14 +519,27 @@ func (p *Pack) Evaluate(r activity.Record) (*activity.Usage, *activity.Hit) {
 		if _, ok := p.PriceIn(key, r.Region); !ok && !p.cfg.CountsUnknown() {
 			return nil, hit("unknown_model", fmt.Sprintf("model %s has no price; allowlist and price it in config to allow it", r.ModelID))
 		}
-		if streaming[r.EventName] {
+		if streaming[r.EventName] || r.Stream {
 			return nil, nil // priced from its completion record
 		}
 	} else if r.EventType != "AwsServiceEvent" || !streaming[r.EventName] {
 		return nil, nil
 	}
-	price, ok := p.PriceIn(key, r.Region)
+	use := TierNamed
+	if r.TierUnknown {
+		use = TierUnknown
+	}
+	price, ok, unpricedTier := p.PriceFor(key, r.Region, r.ServiceTier, use)
 	unpriced := false
+	if ok && r.InputTokens == 0 && r.OutputTokens == 0 {
+		// A call whose records carry no token counts, such as a streamed
+		// Chat Completions call, can't be measured (add-tier-pricing D9).
+		if !p.cfg.AllowsUnmeasured() {
+			return nil, hit("unmeasured_call", fmt.Sprintf("%s by %s in %s left no token counts, so its spend can't be measured; set ai.unmeasured_calls to allow to count such calls at $0", r.ModelID, r.CallerARN, r.Region))
+		}
+		return &activity.Usage{Account: r.Account, Time: r.EventTime, Model: key, Caller: r.CallerARN, Region: r.Region,
+			Calls: 1, Unmeasured: true}, nil
+	}
 	if !ok {
 		if !p.cfg.CountsUnknown() {
 			return nil, nil // the call record already tripped
@@ -390,8 +553,12 @@ func (p *Pack) Evaluate(r activity.Record) (*activity.Usage, *activity.Hit) {
 		price, unpriced = p.unknown, true
 	}
 	usd := float64(r.InputTokens)/1000*price.InputPer1K + float64(r.OutputTokens)/1000*price.OutputPer1K
-	return &activity.Usage{Account: r.Account, Time: r.EventTime, Model: key, Caller: r.CallerARN, Region: r.Region,
-		Calls: 1, In: r.InputTokens, Out: r.OutputTokens, USD: usd, Unpriced: unpriced}, nil
+	u := &activity.Usage{Account: r.Account, Time: r.EventTime, Model: key, Caller: r.CallerARN, Region: r.Region,
+		Calls: 1, In: r.InputTokens, Out: r.OutputTokens, USD: usd, Unpriced: unpriced}
+	if unpricedTier {
+		u.UnpricedTier = r.ServiceTier
+	}
+	return u, nil
 }
 
 // evaluateMantle prices a minute's mantle usage of one account and model, read
@@ -404,7 +571,9 @@ func (p *Pack) evaluateMantle(r activity.Record, key string, hit func(rule, deta
 	if p.allowed != nil && !p.allowed[key] && !p.allowedBase[key] {
 		return nil, hit("model_not_allowed", fmt.Sprintf("model %s through mantle in %s", r.ModelID, r.Region))
 	}
-	price, ok := p.PriceIn(key, r.Region)
+	// Mantle usage names no tier, so it is priced at the model's highest
+	// tier (add-tier-pricing D3, D4).
+	price, ok, _ := p.PriceFor(key, r.Region, "", TierUnknown)
 	unpriced := false
 	if !ok {
 		if !p.cfg.CountsUnknown() {

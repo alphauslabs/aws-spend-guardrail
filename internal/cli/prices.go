@@ -43,7 +43,7 @@ func (c *CLI) PublishPrices(ctx context.Context, enterprise string, built *price
 	}
 	for _, ch := range r.Changes {
 		mark := ""
-		if _, ok := r.Manual[ch.Model]; ok {
+		if _, ok := r.Manual[ch.Model]; ok && ch.Tier == "" {
 			mark = " (manual)"
 		}
 		if w := ch.Where(); w != "" {
@@ -51,11 +51,11 @@ func (c *CLI) PublishPrices(ctx context.Context, enterprise string, built *price
 		}
 		switch ch.Kind {
 		case "added":
-			fmt.Fprintf(c.Out, "  added    %s: %s%s\n", ch.Model, ch.To, mark)
+			fmt.Fprintf(c.Out, "  added    %s: %s%s\n", ch.Name(), ch.To, mark)
 		case "removed":
-			fmt.Fprintf(c.Out, "  removed  %s: was %s%s\n", ch.Model, ch.From, mark)
+			fmt.Fprintf(c.Out, "  removed  %s: was %s%s\n", ch.Name(), ch.From, mark)
 		default:
-			fmt.Fprintf(c.Out, "  %-8s %s: %s -> %s%s\n", ch.Kind, ch.Model, ch.From, ch.To, mark)
+			fmt.Fprintf(c.Out, "  %-8s %s: %s -> %s%s\n", ch.Kind, ch.Name(), ch.From, ch.To, mark)
 			if j := ch.Jump(); j != "" {
 				fmt.Fprintf(c.Out, "           %s\n", j)
 			}

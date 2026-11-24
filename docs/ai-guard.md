@@ -20,7 +20,7 @@ A run reads at most 400 trail files. When there are more (a first run on a busy 
 
 The cutoff is a service control policy, `guardrail-ai-cutoff-<msp id>`, attached to one account at a time, never an OU. It denies every way to start paid Bedrock or AgentCore work:
 
-- **Model calls:** `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`, which also govern `Converse`, `ConverseStream`, the bidirectional stream (Nova Sonic), and async invoke.
+- **Model calls:** `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`, which also govern `Converse`, `ConverseStream`, the bidirectional stream (Nova Sonic), async invoke, and the OpenAI-compatible API on `bedrock-runtime` (`/openai/v1/chat/completions` and `/openai/v1/responses`).
 - **The OpenAI- and Anthropic-compatible endpoint** (`bedrock-mantle`): `CreateInference`, which covers `/v1/chat/completions`, `/v1/responses`, and `/anthropic/v1/messages`, plus `CreateFineTuningJob` and `CreateReservation`.
 - **Bedrock API keys**, on both endpoints: `bedrock:CallWithBearerToken` and `bedrock-mantle:CallWithBearerToken`.
 - **Knowledge bases, reranking, agents, and flows:** `Rerank`, `Retrieve`, `RetrieveAndGenerate`, `AgenticRetrieveStream`, `InvokeAgent`, `InvokeInlineAgent`, and `InvokeFlow`.
@@ -40,6 +40,7 @@ Set in the config's `ai` section ([config](config.md#ai)):
   - a call to a model not on `ai.models` (when set), or to a model with no price, unless `ai.unknown_models` is `count` (see [models with no price](#models-with-no-price));
   - a call in a region not on `ai.regions` (when set);
   - a call made with a Bedrock API key by a caller not on `ai.api_key_callers`. With no list, nobody may use API keys;
+  - a call the trail records without token counts, such as a streamed Chat Completions call, unless `ai.unmeasured_calls` is `allow` (see [calls the guard can't measure](#calls-the-guard-cant-measure));
   - a change to Bedrock's model invocation logging settings.
 - **Mode.** Each scope has `dry-run` or `enforce`; `ai.defaults.mode` applies to accounts no scope covers. In dry-run, the guard records and alerts what it would have cut off, at most once an hour per account and rule, and attaches nothing. Start in dry-run.
 
@@ -55,6 +56,24 @@ Under `count`, a call whose trail record has no token counts still cuts off, sin
 The first time the guard counts a call to an unpriced model, it sends one alert and writes one `unpriced_model` event naming the model, the account, and the prices used. Later calls to it don't repeat them. To stop the overestimate, price the model for every guard with a manual shared price (`guardrail prices publish --overrides`, see [operating](operating.md#manual-prices)) or for one payer org in `ai.prices`; a model priced and later unpriced again is reported again.
 
 Switching to `count` is a loosening and needs approval, even in a first config; switching back to `cutoff` applies at once.
+
+## Service tiers
+
+A Bedrock call can choose a service tier, and is billed at that tier's price: Flex costs about half the standard rate, Priority about 1.75 times, and Ultrafast, offered for some OpenAI models, 3 to 6 times. CloudTrail records the tier a call asked for (`docs/aws-facts.md` lists where, per call kind), and the guard prices each call at its model's price for that tier, in the call's region:
+
+- A call that names no tier is priced at the standard rate.
+- A `ConverseStream` call's tokens come on its completion record, which carries no tier, so the guard takes the tier of the call record it completes. If the guard hasn't seen that call record in the last 15 minutes, the completion is priced at the model's highest tier price.
+- A tier the guard's prices don't cover for the model is priced at the model's highest tier price, and reported once per model and tier with an alert and an `unpriced_tier` event.
+- A payer org's `ai.prices` entry is the model's standard price. A call on another tier is priced at the higher of the entry and the tier's price, input and output separately, so an entry never makes a premium tier cheap.
+- Usage read from mantle metrics names no tier, so it is priced at the model's highest tier price.
+
+How an Ultrafast call is recorded hasn't been seen yet, since no test account could call a model that offers it. As a check, with mantle regions listed, the guard reads each region's Ultrafast tokens per account and model from Bedrock's CloudWatch metrics once a day, and reports, once each, an account and model with Ultrafast tokens that the trail showed no Ultrafast call for that day, with an alert and an `ultrafast_unseen` event. Such a report means those calls were priced at the standard rate; report it so the guard can read where AWS records the tier.
+
+## Calls the guard can't measure
+
+A streamed Chat Completions call on `bedrock-runtime` (`/openai/v1/chat/completions` with `stream: true`) leaves no token counts in CloudTrail: neither its call record nor its completion record carries them. The guard can't estimate it, so by default it cuts the account off as `unmeasured_call`, naming the model and the caller. A successful call of any other kind whose records carry no token counts is treated the same way.
+
+`ai.unmeasured_calls` sets this: `cutoff` (the default), or `allow`, which counts each such call as one call at $0 and reports the first one per account and model with an alert and an `unmeasured_call` event. Under `allow`, streamed Chat Completions spend isn't counted toward the caps. Switching to `allow` is a loosening and needs approval; switching back applies at once. Set and approve `allow` before upgrading for any payer org whose accounts stream Chat Completions calls, or they are cut off on their first streamed call.
 
 ## Lifting a cutoff
 
@@ -111,7 +130,7 @@ Before rolling the stack back to a release without this (v0.2.6 or earlier), all
 
 Bedrock's `bedrock-mantle` endpoint serves the OpenAI Chat Completions and Responses APIs and the Anthropic Messages API, and AWS's console leads with it. CloudTrail records its calls only as data events, without token counts, so the guard can't count them from the trail. Instead, mantle publishes each account's inferences and input and output tokens per model and minute to CloudWatch (`AWS/BedrockMantle`), and with CloudWatch cross-account observability, member accounts share those metrics with the payer account. The guard reads them once a minute, in each region listed in the stack's `MantleRegions`, and prices and caps them like any other call: at the model's price in that region, against the same caps, allowlists, and unknown-model policy. A minute that grows after the guard read it counts only for its growth.
 
-Mantle usage names no caller, so the API-key tripwire doesn't apply to it; usage events and cutoffs say "through mantle". An allowlist entry also allows a mantle model id that differs from it only by a version suffix (`openai.gpt-oss-20b-1:0` allows `openai.gpt-oss-20b`).
+Mantle usage names no caller or service tier, so the API-key tripwire doesn't apply to it, and it is priced at the model's highest tier price (see [service tiers](#service-tiers)); usage events and cutoffs say "through mantle". An allowlist entry also allows a mantle model id that differs from it only by a version suffix (`openai.gpt-oss-20b-1:0` allows `openai.gpt-oss-20b`).
 
 A metric datapoint appears about 24 seconds after a call, so a mantle cutoff typically lands within 2 minutes. The guard revisits the last 15 minutes each run; a datapoint that first appears later than that isn't counted.
 
@@ -132,7 +151,7 @@ If the guard can't read a region's metrics (no sink, or access lost), it alerts 
 
 ## Prices
 
-`internal/packs/ai/prices.json` lists each Bedrock model's on-demand input and output price per 1,000 tokens in every region the AWS Price List prices it in, with the date the Price List was published. It covers every model Bedrock's model list or the `bedrock-mantle` endpoint's model list names in any region, so models offered only outside us-east-1, and mantle model ids such as `google.gemma-4-31b`, are priced too. It uses the standard (regional) rate where AWS lists one, so estimates lean high against the cheaper global rate. It leaves out batch, provisioned, prompt-cache, and long-context rates, so a heavy long-context user is estimated low.
+`internal/packs/ai/prices.json` lists each Bedrock model's on-demand input and output price per 1,000 tokens in every region the AWS Price List prices it in, with the date the Price List was published. It covers every model Bedrock's model list or the `bedrock-mantle` endpoint's model list names in any region, so models offered only outside us-east-1, and mantle model ids such as `google.gemma-4-31b`, are priced too. It uses the standard (regional) rate where AWS lists one, so estimates lean high against the cheaper global rate. It also lists each model's Flex, Priority, and Ultrafast rates as tier prices (see [service tiers](#service-tiers)). It leaves out batch, provisioned, prompt-cache, and long-context rates, so a heavy long-context user is estimated low.
 
 Prices differ by region: against us-east-1, a model typically costs the same in us-west-2, about 20% more in Frankfurt, Tokyo, and Mumbai, and about 55% more in London, up to 70% more in São Paulo. The guard prices each call at its model's price in the region the call was made from, which is also how AWS bills a cross-region inference call. A call through a global inference profile is priced at that region's price, about 10% above what AWS charges for it. A model with no price in the call's region is priced at its highest price in any region.
 
@@ -153,6 +172,8 @@ A call through an **application inference profile** names the profile, not the m
 The AI guard reads the organization trail's S3 files: the first copy of management events is free, and the guard makes one S3 list request per active account and region a minute (one that had a file in the last 24 hours), one list per account every 10 minutes to find new regions, and one read per new file. It doesn't create a trail. A second trail would bill every management event again, at $2 per 100,000.
 
 The list requests are most of the cost, and they grow with the number of active account and region pairs, not with Bedrock use: about $0.22 a month for each pair at S3's list price ($0.005 per 1,000). Measured on a test organization of 10 accounts with 39 pairs: about 40 lists and one file read a minute, about $8.60 a month for S3, plus about $0.15 for the function. An organization of 1,000 accounts with 5 active regions each would list about $1,000 a month.
+
+The daily Ultrafast check reads a handful of metrics per listed region once a day, a few cents a month.
 
 Reading mantle usage costs $0.01 per 1,000 metrics CloudWatch returns: three a minute for each account and model pair that used mantle in a listed region in the last two weeks, about $1.30 a month per pair. Fifty accounts each using two models cost about $130 a month. Cross-account observability itself is free for metrics.
 

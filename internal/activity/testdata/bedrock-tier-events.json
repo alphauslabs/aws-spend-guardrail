@@ -1,0 +1,382 @@
+{
+ "Records": [
+  {
+   "eventVersion": "1.11",
+   "userIdentity": {
+    "type": "IAMUser",
+    "principalId": "AIDAEXAMPLEEXAMPLE01",
+    "arn": "arn:aws:iam::111122223333:user/test",
+    "accountId": "111122223333",
+    "userName": "test"
+   },
+   "eventTime": "2026-11-24T09:28:50Z",
+   "eventSource": "bedrock.amazonaws.com",
+   "eventName": "Converse",
+   "awsRegion": "us-east-1",
+   "requestParameters": {
+    "modelId": "openai.gpt-oss-20b-1:0",
+    "inferenceConfig": {
+     "maxTokens": 5
+    },
+    "serviceTier": {
+     "type": "priority"
+    }
+   },
+   "responseElements": null,
+   "additionalEventData": {
+    "inputTokens": 69,
+    "outputTokens": 5
+   },
+   "requestID": "ae74612c-d344-4ca4-aa73-8b57f5745fcc",
+   "eventID": "884b74ef-1fff-4ba3-94fe-97ccf237933c",
+   "readOnly": true,
+   "resources": [
+    {
+     "accountId": "111122223333",
+     "type": "AWS::Bedrock::Model",
+     "ARN": "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-20b-1:0"
+    }
+   ],
+   "eventType": "AwsApiCall",
+   "managementEvent": true,
+   "recipientAccountId": "111122223333",
+   "eventCategory": "Management"
+  },
+  {
+   "eventVersion": "1.11",
+   "userIdentity": {
+    "type": "IAMUser",
+    "principalId": "AIDAEXAMPLEEXAMPLE01",
+    "arn": "arn:aws:iam::111122223333:user/test",
+    "accountId": "111122223333",
+    "userName": "test"
+   },
+   "eventTime": "2026-11-24T14:34:50Z",
+   "eventSource": "bedrock.amazonaws.com",
+   "eventName": "InvokeModelWithResponseStream",
+   "awsRegion": "us-east-1",
+   "requestParameters": {
+    "modelId": "openai.gpt-oss-20b-1:0"
+   },
+   "responseElements": null,
+   "additionalEventData": {
+    "serviceTier": "priority"
+   },
+   "requestID": "b3a55fc7-8d2a-4a6a-9a45-76fdf1971664",
+   "eventID": "1882536c-7972-4537-9c0e-2ca7d0ce3998",
+   "readOnly": true,
+   "resources": [
+    {
+     "accountId": "111122223333",
+     "type": "AWS::Bedrock::Model",
+     "ARN": "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-20b-1:0"
+    }
+   ],
+   "eventType": "AwsApiCall",
+   "managementEvent": true,
+   "recipientAccountId": "111122223333",
+   "eventCategory": "Management"
+  },
+  {
+   "eventVersion": "1.11",
+   "userIdentity": {
+    "type": "IAMUser",
+    "principalId": "AIDAEXAMPLEEXAMPLE01",
+    "arn": "arn:aws:iam::111122223333:user/test",
+    "accountId": "111122223333",
+    "userName": "test"
+   },
+   "eventTime": "2026-11-24T14:34:50Z",
+   "eventSource": "bedrock.amazonaws.com",
+   "eventName": "InvokeModel",
+   "awsRegion": "us-east-1",
+   "requestParameters": {
+    "modelId": "openai.gpt-oss-20b-1:0"
+   },
+   "responseElements": null,
+   "additionalEventData": {
+    "serviceTier": "priority",
+    "inputTokens": 69,
+    "outputTokens": 5
+   },
+   "requestID": "632564b2-ca6d-4c84-b1d5-2c4a91072747",
+   "eventID": "88d6138a-bb14-4428-acfa-56e3262170fc",
+   "readOnly": true,
+   "resources": [
+    {
+     "accountId": "111122223333",
+     "type": "AWS::Bedrock::Model",
+     "ARN": "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-20b-1:0"
+    }
+   ],
+   "eventType": "AwsApiCall",
+   "managementEvent": true,
+   "recipientAccountId": "111122223333",
+   "eventCategory": "Management"
+  },
+  {
+   "eventVersion": "1.11",
+   "userIdentity": {
+    "type": "IAMUser",
+    "principalId": "AIDAEXAMPLEEXAMPLE01",
+    "arn": "arn:aws:iam::111122223333:user/test",
+    "accountId": "111122223333",
+    "userName": "test"
+   },
+   "eventTime": "2026-11-24T14:34:50Z",
+   "eventSource": "bedrock.amazonaws.com",
+   "eventName": "InvokeModelWithResponseStream",
+   "awsRegion": "us-east-1",
+   "requestParameters": null,
+   "responseElements": null,
+   "eventID": "8f4a62bc-26d2-4a1f-a874-b0023b073bf7",
+   "readOnly": true,
+   "resources": [
+    {
+     "accountId": "111122223333",
+     "type": "AWS::Bedrock::Model",
+     "ARN": "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-20b-1:0"
+    }
+   ],
+   "eventType": "AwsServiceEvent",
+   "managementEvent": true,
+   "recipientAccountId": "111122223333",
+   "serviceEventDetails": {
+    "parentRequestId": "b3a55fc7-8d2a-4a6a-9a45-76fdf1971664",
+    "AdditionalEventData": {
+     "additionalEntries": {
+      "serviceTier": "priority",
+      "inputTokens": 69,
+      "outputTokens": 5
+     }
+    }
+   },
+   "eventCategory": "Management"
+  },
+  {
+   "eventVersion": "1.11",
+   "userIdentity": {
+    "type": "IAMUser",
+    "principalId": "AIDAEXAMPLEEXAMPLE01",
+    "arn": "arn:aws:iam::111122223333:user/test",
+    "accountId": "111122223333",
+    "userName": "test"
+   },
+   "eventTime": "2026-11-24T14:34:51Z",
+   "eventSource": "bedrock.amazonaws.com",
+   "eventName": "ConverseStream",
+   "awsRegion": "us-east-1",
+   "requestParameters": {
+    "modelId": "openai.gpt-oss-20b-1:0",
+    "inferenceConfig": {
+     "maxTokens": 5
+    },
+    "serviceTier": {
+     "type": "priority"
+    }
+   },
+   "responseElements": null,
+   "requestID": "ee5ad2f3-f222-45be-bd09-1e88ab3d91ba",
+   "eventID": "b9e085a6-ac6b-4f14-82fe-c0c4aa7ee091",
+   "readOnly": true,
+   "resources": [
+    {
+     "accountId": "111122223333",
+     "type": "AWS::Bedrock::Model",
+     "ARN": "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-20b-1:0"
+    }
+   ],
+   "eventType": "AwsApiCall",
+   "managementEvent": true,
+   "recipientAccountId": "111122223333",
+   "eventCategory": "Management"
+  },
+  {
+   "eventVersion": "1.11",
+   "userIdentity": {
+    "type": "IAMUser",
+    "principalId": "AIDAEXAMPLEEXAMPLE01",
+    "arn": "arn:aws:iam::111122223333:user/test",
+    "accountId": "111122223333",
+    "userName": "test"
+   },
+   "eventTime": "2026-11-24T14:34:51Z",
+   "eventSource": "bedrock.amazonaws.com",
+   "eventName": "ConverseStream",
+   "awsRegion": "us-east-1",
+   "requestParameters": null,
+   "responseElements": null,
+   "eventID": "a40e5326-2aef-4b16-87ac-18ef2e66de4c",
+   "readOnly": true,
+   "resources": [
+    {
+     "accountId": "111122223333",
+     "type": "AWS::Bedrock::Model",
+     "ARN": "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-20b-1:0"
+    }
+   ],
+   "eventType": "AwsServiceEvent",
+   "managementEvent": true,
+   "recipientAccountId": "111122223333",
+   "serviceEventDetails": {
+    "parentRequestId": "ee5ad2f3-f222-45be-bd09-1e88ab3d91ba",
+    "AdditionalEventData": {
+     "additionalEntries": {
+      "inputTokens": 69,
+      "outputTokens": 5
+     }
+    }
+   },
+   "eventCategory": "Management"
+  },
+  {
+   "eventVersion": "1.11",
+   "userIdentity": {
+    "type": "IAMUser",
+    "principalId": "AIDAEXAMPLEEXAMPLE01",
+    "arn": "arn:aws:iam::111122223333:user/test",
+    "accountId": "111122223333",
+    "userName": "test"
+   },
+   "eventTime": "2026-11-24T14:36:36Z",
+   "eventSource": "bedrock.amazonaws.com",
+   "eventName": "ChatCompletions",
+   "awsRegion": "us-east-1",
+   "requestParameters": {
+    "modelId": "openai.gpt-oss-20b-1:0"
+   },
+   "responseElements": null,
+   "additionalEventData": {
+    "stream": false,
+    "inputTokens": 69,
+    "outputTokens": 5
+   },
+   "requestID": "62a93018-24ad-4abe-bc31-7557705c7db7",
+   "eventID": "7c54569d-1344-4435-b22f-de398550e0c8",
+   "readOnly": true,
+   "resources": [
+    {
+     "accountId": "111122223333",
+     "type": "AWS::Bedrock::Model",
+     "ARN": "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-20b-1:0"
+    }
+   ],
+   "eventType": "AwsApiCall",
+   "managementEvent": true,
+   "recipientAccountId": "111122223333",
+   "eventCategory": "Management"
+  },
+  {
+   "eventVersion": "1.11",
+   "userIdentity": {
+    "type": "IAMUser",
+    "principalId": "AIDAEXAMPLEEXAMPLE01",
+    "arn": "arn:aws:iam::111122223333:user/test",
+    "accountId": "111122223333",
+    "userName": "test"
+   },
+   "eventTime": "2026-11-24T14:36:37Z",
+   "eventSource": "bedrock.amazonaws.com",
+   "eventName": "ChatCompletions",
+   "awsRegion": "us-east-1",
+   "requestParameters": {
+    "modelId": "openai.gpt-oss-20b-1:0"
+   },
+   "responseElements": null,
+   "additionalEventData": {
+    "stream": false,
+    "serviceTier": "priority",
+    "inputTokens": 69,
+    "outputTokens": 5
+   },
+   "requestID": "3aeeb9de-aae8-44d7-9b86-bb40782da854",
+   "eventID": "c155e367-9a1c-4008-b1a6-d61ea5ae1bc3",
+   "readOnly": true,
+   "resources": [
+    {
+     "accountId": "111122223333",
+     "type": "AWS::Bedrock::Model",
+     "ARN": "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-20b-1:0"
+    }
+   ],
+   "eventType": "AwsApiCall",
+   "managementEvent": true,
+   "recipientAccountId": "111122223333",
+   "eventCategory": "Management"
+  },
+  {
+   "eventVersion": "1.11",
+   "userIdentity": {
+    "type": "IAMUser",
+    "principalId": "AIDAEXAMPLEEXAMPLE01",
+    "arn": "arn:aws:iam::111122223333:user/test",
+    "accountId": "111122223333",
+    "userName": "test"
+   },
+   "eventTime": "2026-11-24T14:46:43Z",
+   "eventSource": "bedrock.amazonaws.com",
+   "eventName": "ChatCompletions",
+   "awsRegion": "us-east-1",
+   "requestParameters": {
+    "modelId": "openai.gpt-oss-20b-1:0"
+   },
+   "responseElements": null,
+   "additionalEventData": {
+    "stream": true,
+    "serviceTier": "priority"
+   },
+   "requestID": "6941cd35-6d2c-4b8f-b2e6-73499b251da4",
+   "eventID": "80d3dd75-4ed7-412a-a017-8b030df8cfc2",
+   "readOnly": true,
+   "resources": [
+    {
+     "accountId": "111122223333",
+     "type": "AWS::Bedrock::Model",
+     "ARN": "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-20b-1:0"
+    }
+   ],
+   "eventType": "AwsApiCall",
+   "managementEvent": true,
+   "recipientAccountId": "111122223333",
+   "eventCategory": "Management"
+  },
+  {
+   "eventVersion": "1.11",
+   "userIdentity": {
+    "type": "IAMUser",
+    "principalId": "AIDAEXAMPLEEXAMPLE01",
+    "arn": "arn:aws:iam::111122223333:user/test",
+    "accountId": "111122223333",
+    "userName": "test"
+   },
+   "eventTime": "2026-11-24T14:46:43Z",
+   "eventSource": "bedrock.amazonaws.com",
+   "eventName": "InvokeModelWithResponseStream",
+   "awsRegion": "us-east-1",
+   "requestParameters": null,
+   "responseElements": null,
+   "eventID": "b7aa7540-1616-4d47-9e42-15360a83932a",
+   "readOnly": true,
+   "resources": [
+    {
+     "accountId": "111122223333",
+     "type": "AWS::Bedrock::Model",
+     "ARN": "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-20b-1:0"
+    }
+   ],
+   "eventType": "AwsServiceEvent",
+   "managementEvent": true,
+   "recipientAccountId": "111122223333",
+   "serviceEventDetails": {
+    "parentRequestId": "6941cd35-6d2c-4b8f-b2e6-73499b251da4",
+    "AdditionalEventData": {
+     "additionalEntries": {
+      "stream": true,
+      "serviceTier": "priority"
+     }
+    }
+   },
+   "eventCategory": "Management"
+  }
+ ]
+}
