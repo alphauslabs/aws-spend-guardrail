@@ -52,7 +52,7 @@ Usage whose record can't carry a service tier, such as mantle usage read from me
 - **THEN** the completion is priced at the model's highest tier price
 
 ### Requirement: A call with no token counts trips unless allowed
-A completion of a streamed call whose records carry no token counts, as a streamed `ChatCompletions` call leaves, SHALL trip `unmeasured_call`, naming the model and the caller, unless config sets `ai.unmeasured_calls` to `allow`. When allowed, it SHALL count as one call at $0, and the first such call per account and model SHALL send one alert and write one `unmeasured_call` event.
+A successful call whose records carry no token counts, such as a streamed `ChatCompletions` call, SHALL trip `unmeasured_call`, naming the model and the caller, unless config sets `ai.unmeasured_calls` to `allow`. When allowed, it SHALL count as one call at $0, and the first such call per account and model SHALL send one alert and write one `unmeasured_call` event.
 
 #### Scenario: A streamed Chat Completions call
 - **WHEN** an account in an enforce scope makes a streamed `/openai/v1/chat/completions` call, and its completion record has `stream: true` and no token counts
@@ -61,6 +61,10 @@ A completion of a streamed call whose records carry no token counts, as a stream
 #### Scenario: Unmeasured calls allowed
 - **WHEN** config sets `ai.unmeasured_calls` to `allow`, and an account makes 50 streamed Chat Completions calls
 - **THEN** the account isn't cut off, its totals gain 50 calls and $0, and one alert and one `unmeasured_call` event are sent
+
+#### Scenario: A Responses call without token counts
+- **WHEN** a successful non-streamed `Responses` call record carries no token counts
+- **THEN** it is treated as unmeasured, as a streamed Chat Completions call is
 
 #### Scenario: A streamed InvokeModel call
 - **WHEN** an `InvokeModelWithResponseStream` completion record carries token counts
@@ -87,3 +91,14 @@ An `ai.prices` entry SHALL be a model's standard price in every region. A call o
 #### Scenario: A standard call with an override
 - **WHEN** the same model is called with no tier
 - **THEN** the call is priced at the override
+
+### Requirement: Ultrafast use the trail didn't show is reported
+Once a day, in each region the stack lists for mantle, the guard SHALL read the day's Ultrafast tokens per account and model from Bedrock runtime's metrics. For each account and model with Ultrafast tokens that the trail recorded no Ultrafast call for that day, it SHALL send one alert and write one `ultrafast_unseen` event naming them and the tokens.
+
+#### Scenario: Ultrafast calls recorded another way
+- **WHEN** an account's metrics show 40,000 Ultrafast output tokens for `openai.gpt-6-astra` today, and the trail showed it no Ultrafast call today
+- **THEN** one alert and one `ultrafast_unseen` event name the account, the model, and the tokens
+
+#### Scenario: Ultrafast calls the trail showed
+- **WHEN** the trail recorded the account's Ultrafast calls to that model today
+- **THEN** nothing is reported

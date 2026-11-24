@@ -79,13 +79,19 @@ Alternative: price every `ConverseStream` completion at the highest tier. Reject
 
 ### D9: A call with no token counts is unmeasured, and trips unless allowed
 
-A completion record of a priced model with no token counts and `stream: true` in its entries, as a streamed `ChatCompletions` call leaves, is unmeasured. The AI pack trips `unmeasured_call` on it, naming the model and the caller, unless `ai.unmeasured_calls` is `allow`. Then it counts one call at $0, and the first one per account and model is reported with an alert and an `unmeasured_call` event. The call record, which has no tokens either, is still checked by the tripwires as now and priced at nothing.
+A successful record that should carry a priced call's token counts and doesn't is unmeasured: a streaming completion record with no tokens (a streamed `ChatCompletions` call leaves one, named `InvokeModelWithResponseStream`), and a non-streamed `ChatCompletions` or `Responses` call record with no tokens. A `ChatCompletions` or `Responses` call record with `stream: true` is priced from its completion, like the other streaming calls. A successful `Responses` record hasn't been seen (GPT-6 Astra, the model tried, is refused to the e2e accounts), so this covers it whatever AWS records. The AI pack trips `unmeasured_call` on it, naming the model and the caller, unless `ai.unmeasured_calls` is `allow`. Then it counts one call at $0, and the first one per account and model is reported with an alert and an `unmeasured_call` event. The call record, which has no tokens either, is still checked by the tripwires as now and priced at nothing.
 
 The rule keys on the missing tokens, not the call name, so any other call kind AWS records without tokens is caught too. A direct `InvokeModelWithResponseStream` completion carries tokens and isn't affected.
 
 `unmeasured_calls` defaults to `cutoff`. `cutoff` to `allow` is loosening, the reverse tightening, as for `unknown_models`.
 
 Alternatives: count and report without tripping (rejected: streamed spend would stay uncapped, the gap this guard exists to close); fill the gap from CloudWatch runtime metrics (the accurate fix, a separate change).
+
+### D10: A daily check for Ultrafast use the trail didn't show
+
+How an Ultrafast call is recorded hasn't been seen. It is very likely `additionalEventData.serviceTier` `ultrafast`, as a Priority call through the same API was, and D3 reads that. If AWS records it elsewhere, the guard would read no tier and charge the standard price, a sixth of the cost. As a check, once a day in each region listed in `MantleRegions`, the guard reads the day's `AWS/Bedrock` `InputTokenCount` and `OutputTokenCount` where `ResolvedServiceTier` is `ultrafast`, per account and model, with one search query through the existing sink. For each account and model with Ultrafast tokens that the trail recorded no Ultrafast call for that day, it alerts once and writes one `ultrafast_unseen` event, naming them and the tokens. The engine keeps, per day, the accounts and models it saw Ultrafast calls for.
+
+This costs one `GetMetricData` read per region per day, a handful of metrics. Without listed regions, the check doesn't run, and the docs say so.
 
 ## Risks / Trade-offs
 
@@ -105,4 +111,4 @@ Alternatives: count and report without tripping (rejected: streamed spend would 
 
 ## Open Questions
 
-- How an Ultrafast call is recorded. If it carries `serviceTier` `ultrafast` like the other tiers, D3 covers it; if it uses another field, task 1.2 adds it to the parsing. Either way the specs and tasks hold.
+- How an Ultrafast call and a successful `Responses` call are recorded. D3 and D9 cover the likely answer and the unsafe alternatives, and D10 reports a wrong guess within a day. When an account with GPT-6 Astra access is available, one call each settles it; `docs/aws-facts.md` marks both "to confirm".

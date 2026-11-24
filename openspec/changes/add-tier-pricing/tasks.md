@@ -3,10 +3,10 @@
 ## 1. Facts
 
 - [x] 1.1 From the e2e payer, with the AI guard off, make one call each on `openai.gpt-oss-20b-1:0` with the Priority tier: `InvokeModel` (tier in the `X-Amzn-Bedrock-Service-Tier` header), `ConverseStream`, and `InvokeModelWithResponseStream`, with at most 5 output tokens; read the records with `aws cloudtrail lookup-events`, and note which carry the tier and where (design D3)
-- [ ] 1.2 Find how an Ultrafast call is requested (AWS docs, the CLI's `--service-tier` values) and, if a model in the e2e regions offers it, make one call and read its record; if Ultrafast is requested another way, note the field (design Open Questions)
+- [x] 1.2 Find how an Ultrafast call is requested (AWS docs, the CLI's `--service-tier` values) and try one call; record in `docs/aws-facts.md` how it is requested, and its record as "to confirm" while no e2e account can call a model that offers it (design D10, Open Questions)
 - [x] 1.3 Record the findings in `docs/aws-facts.md` with the date: which record kinds carry the tier, the field, and that a call without a tier has none; check `go test ./tools/...` and the docs build still pass
 - [x] 1.4 Check the AI cutoff refuses `ChatCompletions` and `Responses` on `bedrock-runtime`: with a test role in the e2e payer whose policy allows Bedrock but denies the cutoff's actions, make one Chat Completions call and expect `AccessDeniedException`; if it succeeds, find the action it needs and add it to the deny policy and `docs/ai-guard.md` (design D8); delete the role afterwards
-- [ ] 1.5 Make one successful `Responses` call and one streamed `ChatCompletions` call on `bedrock-runtime`, and note in `docs/aws-facts.md` which records carry the token counts and the tier (design D8)
+- [x] 1.5 Make one streamed `ChatCompletions` call on `bedrock-runtime` and try a `Responses` call; note in `docs/aws-facts.md` which records carry the token counts and the tier, and a successful `Responses` record as "to confirm" if none can be made (design D8, D9)
 
 ## 2. Builder
 
@@ -29,7 +29,8 @@
 - [ ] 4.6 Price `ChatCompletions` and `Responses` calls like `InvokeModel`, streamed ones from the record task 1.5 found, under the same caps, allowlists, tripwires, and unknown-model policy (design D8); test a priced call, a Priority call, and a call to a model not on the allowlist
 - [ ] 4.7 Report an unpriced tier once per model and tier with an alert and an `unpriced_tier` event (design D5), and add the event kind to `schema`; test one report for 200 calls
 - [ ] 4.8 Add `ai.unmeasured_calls` (`cutoff` default, `allow`) to config with validation, classification (`cutoff` to `allow` loosening), and the change sentence, following `unknown_models` (design D9); test the default, a bad value, and both directions of the change
-- [ ] 4.9 Trip `unmeasured_call` on a streamed completion of a priced model with no token counts unless `ai.unmeasured_calls` is `allow`, then count it as one call at $0 and report the first per account and model with an alert and an `unmeasured_call` event; add the rule and event kind to `schema` (design D9); test with the streamed `ChatCompletions` records from task 1.5, scrubbed, in both settings, and that a direct `InvokeModelWithResponseStream` completion with tokens is priced as before
+- [ ] 4.9 Trip `unmeasured_call` on a successful record with no token counts (a streaming completion, or a non-streamed `ChatCompletions` or `Responses` call record), pricing `ChatCompletions` and `Responses` with `stream: true` from their completion, unless `ai.unmeasured_calls` is `allow`, then count it as one call at $0 and report the first per account and model with an alert and an `unmeasured_call` event; add the rule and event kind to `schema` (design D9); test with the streamed `ChatCompletions` records from task 1.5, scrubbed, in both settings, and that a direct `InvokeModelWithResponseStream` completion with tokens is priced as before
+- [ ] 4.10 Once a day, read each listed region's Ultrafast tokens per account and model from `AWS/Bedrock` with one search query, and report each account and model the trail showed no Ultrafast call for that day with one alert and an `ultrafast_unseen` event; keep the day's Ultrafast accounts and models seen in the trail; add the event kind to `schema` (design D10); test a report, no report when the trail showed the calls, and no read without listed regions
 
 ## 5. Docs and release
 
