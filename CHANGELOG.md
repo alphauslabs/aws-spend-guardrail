@@ -4,8 +4,10 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+## [v0.2.18] - 2026-11-24
+
 ### Upgrade
-1. Update the CLI, so `guardrail config` accepts `ai.unmeasured_calls`.
+1. Update the CLI if you'll set `ai.unmeasured_calls`: earlier releases' `guardrail validate` and `guardrail publish` refuse it.
 2. For each payer org whose accounts make streamed Chat Completions calls on `bedrock-runtime` (`/openai/v1/chat/completions` with `stream: true`), publish a config with `ai.unmeasured_calls` set to `allow` and approve it before updating the stack. This release cuts off an account on its first such call otherwise, since the guard can't measure it.
 3. Update the stack's package, as in [upgrading](docs/upgrade.md). The template is unchanged (revision 8).
 
