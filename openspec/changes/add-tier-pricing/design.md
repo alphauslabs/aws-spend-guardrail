@@ -8,7 +8,13 @@ See proposal.md for why. The current state:
 - A model's price is `config.ModelPrice{InputPer1K, OutputPer1K}`. A region's chunk and the release table (`internal/packs/ai/prices.json`) hold `models` (and the release, `regions`). Guards parse chunks with plain `json.Unmarshal`, so they ignore fields they don't know. Config parsing is strict, but config isn't touched here.
 - The AI pack (`internal/packs/ai/ai.go`) prices a call with `PriceIn(key, region)`: the org's `ai.prices` entry first, then release and shared prices merged tighten-only (`higher`), then the model's highest price in any region.
 - `activity.Record` parses `requestParameters.modelId` only. Mantle usage comes from metrics (`CategoryMetric`) and names no tier.
-- Observed on 2026-11-24 (e2e payer, `openai.gpt-oss-20b-1:0`): `Converse` with `serviceTier` `priority` and `flex` was recorded with `requestParameters.serviceTier.type` set to the tier, next to `modelId` and `inferenceConfig`. Nova Micro refused both tiers (`ValidationException`), and the refused calls were recorded with the tier too. A call without a tier has no `serviceTier`. Not yet observed: `InvokeModel` (which takes the tier in a header), `ConverseStream` and `InvokeModelWithResponseStream` completion records, and how Ultrafast is requested.
+- Observed on 2026-11-24 (e2e payer, `openai.gpt-oss-20b-1:0`, recorded in `docs/aws-facts.md`):
+  - `Converse` and the `ConverseStream` call record carry `requestParameters.serviceTier.type`.
+  - `InvokeModel` carries `additionalEventData.serviceTier`, though the tier is sent in a header. The `InvokeModelWithResponseStream` completion record carries it in `serviceEventDetails.AdditionalEventData.additionalEntries.serviceTier`, next to the token counts.
+  - The `ConverseStream` completion record, which has the token counts, carries no tier. Its `parentRequestId` is the `requestID` of the `ConverseStream` call record. Both records had the same `eventTime`.
+  - Calls to the OpenAI-compatible API on `bedrock-runtime` are management events named `ChatCompletions` and `Responses`, with `requestParameters.modelId`, and for `ChatCompletions` `inputTokens`, `outputTokens`, `stream`, and `serviceTier` in `additionalEventData`. The AI pack doesn't price them today.
+  - A call without a tier has no tier field. A model refuses a tier it doesn't offer with `ValidationException`, and the refused call is recorded with the tier.
+  - Ultrafast is requested only through the OpenAI-compatible API, as `service_tier: "ultrafast"` (the GPT-6 Astra model card). The runtime API's tier values are `priority`, `default`, `flex`, and `reserved`.
 
 ## Goals / Non-Goals
 
@@ -37,11 +43,11 @@ A chunk gains `tiers`: model id to tier name to `ModelPrice`. The release table 
 
 Alternative: put the tier in the model key (`openai.gpt-6-astra#ultrafast`). Rejected: older guards would read it as a model id and price nothing new, but `guardrail prices` output and the floor logic would treat it as a model.
 
-### D3: The record names the tier, and some record kinds are tier-blind
+### D3: The record names the tier, and only metrics are tier-blind
 
-`activity.Record` gains `ServiceTier`, from `requestParameters.serviceTier.type`, lowercased. The AI pack keeps a fixed set of tier-blind record kinds: usage read from metrics always, and each runtime call kind the live checks (task 1) show never carries the tier. A record of a tier-blind kind is priced as D4's "can't tell". A record of another kind with no tier is standard.
+`activity.Record` gains `ServiceTier`, lowercased, from the first of `requestParameters.serviceTier.type`, `additionalEventData.serviceTier`, and the completion record's `additionalEntries.serviceTier`, and `RequestID` and `ParentRequestID`. `default` reads as standard. Usage from metrics is tier-blind and priced as D4's "can't tell". Any other record with no tier is standard.
 
-The set is fixed in code from observed records, with the dates in `docs/aws-facts.md`, so a change at AWS shows up when the facts are rechecked.
+The fields are fixed in code from observed records, with the dates in `docs/aws-facts.md`, so a change at AWS shows up when the facts are rechecked.
 
 ### D4: One lookup with a tier
 
@@ -61,9 +67,31 @@ A named tier with no price for the model is reported once per model and tier, ke
 
 The diff compares tier prices per model, tier, and region, and each change line names the tier (`openai.gpt-6-astra ultrafast raised ...`). The 2x note from v0.2.17 applies per tier. The first publish with tier pricing lists every tier price as added; its note says why.
 
+### D7: A ConverseStream completion takes its call record's tier
+
+The engine keeps the tier of each `ConverseStream` call record that names one, by `requestID`, for 15 minutes. A completion record whose `parentRequestId` matches takes that tier. A completion with no match is priced as D4's "can't tell", since a Priority call can't be told from a standard one without its call record. The two records were written in the same second, and the guard reads trail files in order, so a miss should be rare: a call record in a file the guard had already finished, or a call made just before an upgrade.
+
+Alternative: price every `ConverseStream` completion at the highest tier. Rejected: it overcharges every standard streaming call to a model with premium tiers, up to 6 times.
+
+### D8: OpenAI-compatible runtime calls are priced like the others
+
+`ChatCompletions` and `Responses` join the priced runtime calls, read like `InvokeModel`: `modelId`, token counts and tier from `additionalEventData`, the caller, and the region. A streamed call is priced from whichever of its records carries token counts, as for the other streaming calls; task 1.5 checks which. They go through the same caps, allowlists, tripwires, and unknown-model policy. The cutoff already denies `bedrock:InvokeModel`; task 1.4 checks it refuses these calls too, and if it doesn't, adds their action to the deny policy.
+
+### D9: A call with no token counts is unmeasured, and trips unless allowed
+
+A completion record of a priced model with no token counts and `stream: true` in its entries, as a streamed `ChatCompletions` call leaves, is unmeasured. The AI pack trips `unmeasured_call` on it, naming the model and the caller, unless `ai.unmeasured_calls` is `allow`. Then it counts one call at $0, and the first one per account and model is reported with an alert and an `unmeasured_call` event. The call record, which has no tokens either, is still checked by the tripwires as now and priced at nothing.
+
+The rule keys on the missing tokens, not the call name, so any other call kind AWS records without tokens is caught too. A direct `InvokeModelWithResponseStream` completion carries tokens and isn't affected.
+
+`unmeasured_calls` defaults to `cutoff`. `cutoff` to `allow` is loosening, the reverse tightening, as for `unknown_models`.
+
+Alternatives: count and report without tripping (rejected: streamed spend would stay uncapped, the gap this guard exists to close); fill the gap from CloudWatch runtime metrics (the accurate fix, a separate change).
+
 ## Risks / Trade-offs
 
-- [If `InvokeModel` doesn't record the tier, every `InvokeModel` call to a model with premium tiers is priced at its highest tier, up to 6 times its standard price, and trips caps early.] → Task 1 checks this first. If it's tier-blind, the alert for a model priced this way says so, and the docs say Converse records the tier. An org that calls such models heavily through `InvokeModel` can raise its caps.
+- [Pricing `ChatCompletions` and `Responses` is a step change for accounts that use that API: spend that never counted starts counting.] → The CHANGELOG and release notes say so plainly, so an MSP can check caps for those accounts before upgrading.
+- [Accounts that stream Chat Completions are cut off on their first streamed call after the upgrade.] → The CHANGELOG's Upgrade section says to set `ai.unmeasured_calls` to `allow` first for orgs whose accounts do, and approve it, before updating the stack. The cutoff event says what was unmeasured and how to allow it.
+- [A `ConverseStream` completion whose call record the guard missed is priced at the highest tier.] → Rare by D7's reasoning; the cost is an early trip, not a late one.
 - [Mantle usage of models with premium tiers is priced at the highest tier from now on.] → Same block-first trade-off. The docs say so, and the release notes name it.
 - [An `ai.prices` entry can't lower a premium tier.] → By design, so a config change can't make premium calls cheap. An org that needs a lower tier price waits for the Price List or a release.
 - [AWS adds a fourth tier with a new word.] → Rows with an unknown word are standard rows today and would raise the standard price, which v0.2.17's 2x note points out. Calls naming that tier are priced at the highest known tier and reported once (D5). Adding the word is a builder change.
@@ -77,4 +105,4 @@ The diff compares tier prices per model, tier, and region, and each change line 
 
 ## Open Questions
 
-- How an Ultrafast call is requested and recorded. If it uses `serviceTier` `ultrafast`, D3 covers it; if it uses another field, task 1 adds it to the parsing. Either way the specs and tasks hold.
+- How an Ultrafast call is recorded. If it carries `serviceTier` `ultrafast` like the other tiers, D3 covers it; if it uses another field, task 1.2 adds it to the parsing. Either way the specs and tasks hold.

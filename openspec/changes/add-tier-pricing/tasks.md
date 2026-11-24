@@ -2,9 +2,11 @@
 
 ## 1. Facts
 
-- [ ] 1.1 From the e2e payer, with the AI guard off, make one call each on `openai.gpt-oss-20b-1:0` with the Priority tier: `InvokeModel` (tier in the `X-Amzn-Bedrock-Service-Tier` header), `ConverseStream`, and `InvokeModelWithResponseStream`, with at most 5 output tokens; read the records with `aws cloudtrail lookup-events`, and note which carry the tier and where (design D3)
+- [x] 1.1 From the e2e payer, with the AI guard off, make one call each on `openai.gpt-oss-20b-1:0` with the Priority tier: `InvokeModel` (tier in the `X-Amzn-Bedrock-Service-Tier` header), `ConverseStream`, and `InvokeModelWithResponseStream`, with at most 5 output tokens; read the records with `aws cloudtrail lookup-events`, and note which carry the tier and where (design D3)
 - [ ] 1.2 Find how an Ultrafast call is requested (AWS docs, the CLI's `--service-tier` values) and, if a model in the e2e regions offers it, make one call and read its record; if Ultrafast is requested another way, note the field (design Open Questions)
-- [ ] 1.3 Record the findings in `docs/aws-facts.md` with the date: which record kinds carry the tier, the field, and that a call without a tier has none; check `go test ./tools/...` and the docs build still pass
+- [x] 1.3 Record the findings in `docs/aws-facts.md` with the date: which record kinds carry the tier, the field, and that a call without a tier has none; check `go test ./tools/...` and the docs build still pass
+- [x] 1.4 Check the AI cutoff refuses `ChatCompletions` and `Responses` on `bedrock-runtime`: with a test role in the e2e payer whose policy allows Bedrock but denies the cutoff's actions, make one Chat Completions call and expect `AccessDeniedException`; if it succeeds, find the action it needs and add it to the deny policy and `docs/ai-guard.md` (design D8); delete the role afterwards
+- [ ] 1.5 Make one successful `Responses` call and one streamed `ChatCompletions` call on `bedrock-runtime`, and note in `docs/aws-facts.md` which records carry the token counts and the tier (design D8)
 
 ## 2. Builder
 
@@ -19,19 +21,23 @@
 
 ## 4. Guard
 
-- [ ] 4.1 Parse `requestParameters.serviceTier.type` into `activity.Record.ServiceTier`, and any other field task 1 finds; add the task 1 records, scrubbed of real ids, to `internal/activity/testdata` and test the parsing
+- [ ] 4.1 Parse the tier from `requestParameters.serviceTier.type`, `additionalEventData.serviceTier`, and `additionalEntries.serviceTier` into `activity.Record.ServiceTier`, with `RequestID` and `ParentRequestID` (design D3); add the task 1 records, scrubbed of real ids, to `internal/activity/testdata` and test the parsing of each call kind
 - [ ] 4.2 Load tier prices from the release and shared chunks into the AI pack, merged tighten-only per tier (design D2, D4); test that a shared tier price raises a release tier price and never lowers it
 - [ ] 4.3 Price calls by tier: standard, a named tier, and can't-tell or unpriced tier at the model's highest, with `ai.prices` as the standard price and a floor for other tiers, and tier prices in the unpriced-model price (design D3, D4); test each scenario in the ai-pack delta
-- [ ] 4.4 Mark usage from metrics and the record kinds task 1 found tier-blind; test that mantle usage of a model with an Ultrafast tier is priced at it, and a model without tiers at its standard price
-- [ ] 4.5 Report an unpriced tier once per model and tier with an alert and an `unpriced_tier` event (design D5), and add the event kind to `schema`; test one report for 200 calls
+- [ ] 4.4 Mark usage from metrics tier-blind; test that mantle usage of a model with an Ultrafast tier is priced at it, and a model without tiers at its standard price
+- [ ] 4.5 Give a `ConverseStream` completion its call record's tier by `parentRequestId`, kept 15 minutes, and price an unmatched one at the highest tier (design D7); test a matched Priority stream, a matched standard stream, and an unmatched one
+- [ ] 4.6 Price `ChatCompletions` and `Responses` calls like `InvokeModel`, streamed ones from the record task 1.5 found, under the same caps, allowlists, tripwires, and unknown-model policy (design D8); test a priced call, a Priority call, and a call to a model not on the allowlist
+- [ ] 4.7 Report an unpriced tier once per model and tier with an alert and an `unpriced_tier` event (design D5), and add the event kind to `schema`; test one report for 200 calls
+- [ ] 4.8 Add `ai.unmeasured_calls` (`cutoff` default, `allow`) to config with validation, classification (`cutoff` to `allow` loosening), and the change sentence, following `unknown_models` (design D9); test the default, a bad value, and both directions of the change
+- [ ] 4.9 Trip `unmeasured_call` on a streamed completion of a priced model with no token counts unless `ai.unmeasured_calls` is `allow`, then count it as one call at $0 and report the first per account and model with an alert and an `unmeasured_call` event; add the rule and event kind to `schema` (design D9); test with the streamed `ChatCompletions` records from task 1.5, scrubbed, in both settings, and that a direct `InvokeModelWithResponseStream` completion with tokens is priced as before
 
 ## 5. Docs and release
 
-- [ ] 5.1 Update `docs/ai-guard.md` (pricing by tier, tier-blind usage, `ai.prices` and tiers) and `docs/operating.md` (tier lines in publish output, the first publish with tiers); check style: no em-dashes, Oxford comma
-- [ ] 5.2 Add the CHANGELOG entry: package-only upgrade, the estimate changes (premium tiers and mantle up, Flex down), and Security-relevant: None; check with `go run ./tools/changelogcheck`
+- [ ] 5.1 Update `docs/ai-guard.md` (pricing by tier, tier-blind usage, `ai.prices` and tiers, OpenAI-compatible calls, unmeasured calls) and `docs/config.md` (`unmeasured_calls`) and `docs/operating.md` (tier lines in publish output, the first publish with tiers); check style: no em-dashes, Oxford comma
+- [ ] 5.2 Add the CHANGELOG entry: an Upgrade step to set and approve `ai.unmeasured_calls: allow` before updating the stack for orgs whose accounts stream Chat Completions, then the package-only update; that OpenAI-compatible runtime calls now count toward caps and streamed ones trip `unmeasured_call`, the estimate changes (premium tiers and mantle up, Flex down), and Security-relevant (None, or the deny policy action); check with `go run ./tools/changelogcheck`
 - [ ] 5.3 Run `go vet ./...` and `go test ./...`, and the release gates
 
 ## 6. Live check
 
-- [ ] 6.1 Deploy to e2e with the AI guard on in dry-run for one test account; make one standard and one Priority `Converse` call to `openai.gpt-oss-20b-1:0`; check the account's AI totals grew by the standard and the Priority price for their tokens; turn the AI guard off again and remove any test setup
+- [ ] 6.1 Deploy to e2e with the AI guard on in dry-run for one test account; make one standard and one Priority `Converse` call, one Priority `ConverseStream` call, and one `ChatCompletions` call to `openai.gpt-oss-20b-1:0`; check the account's AI totals grew by each call's tier price for its tokens; turn the AI guard off again and remove any test setup
 - [ ] 6.2 Publish shared prices with the new build; check the version lists tier prices as added, and that a guard of v0.2.17 still reads it (its heartbeat and logs show no price read errors)
