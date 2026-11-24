@@ -125,6 +125,29 @@ func TestBuildNeverLowersAShippedPrice(t *testing.T) {
 	}
 }
 
+// The ultrafast tier is a premium rate like priority, not the standard one:
+// GPT-6 Astra's standard rows are $11 and $55 per 1M tokens, its ultrafast
+// rows $66 and $330, as the Price List listed them in Nov 2026.
+func TestBuildSkipsUltrafastRates(t *testing.T) {
+	row := func(usage, inference, usd string) string {
+		return `{"product":{"attributes":{"regionCode":"us-east-1","inferenceType":"` + inference + `","feature":"On-demand Inference","provider":"OpenAI","usagetype":"USE1-MP:USE1_` + usage + `-Units","model":"OpenAI GPT-6 Astra","operation":""}},"terms":{"OnDemand":{"t":{"priceDimensions":{"d":{"unit":"1M tokens","pricePerUnit":{"USD":"` + usd + `"}}}}}},"publicationDate":"2026-11-23T00:00:00Z"}`
+	}
+	items := []string{
+		row("input_tokens_standard", "Input tokens", "11.0000000000"),
+		row("output_tokens_standard", "Output tokens", "55.0000000000"),
+		row("input_tokens_ultrafast", "Input tokens ultrafast", "66.0000000000"),
+		row("output_tokens_ultrafast", "Output tokens ultrafast", "330.0000000000"),
+	}
+	tab, _, err := Build(items, []Model{{ID: "openai.gpt-6-astra", Name: "GPT-6 Astra", Outputs: []string{"TEXT"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := config.ModelPrice{InputPer1K: 0.011, OutputPer1K: 0.055}
+	if got := tab.Models["openai.gpt-6-astra"]; got != want {
+		t.Errorf("built %+v, want %+v", got, want)
+	}
+}
+
 func TestDirection(t *testing.T) {
 	for _, tc := range []struct {
 		it, usage string

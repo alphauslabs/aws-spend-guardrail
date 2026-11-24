@@ -4,6 +4,15 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Upgrade
+1. Update the stack's package, as in [upgrading](docs/upgrade.md). The template is unchanged (revision 8).
+
+### Fixed
+- Building AI prices from the AWS Price List no longer takes a model's ultrafast rate as its standard rate. AWS added ultrafast rates for OpenAI GPT-6 Astra, GPT-6.1 Sol, and GPT-6.2 Astra at 3 to 6 times the standard rate, and shared prices published since then charged them, so guards overestimated those models and tripped their caps early. Publishing with this release lowers them back to the standard rate; guards follow on their next pull, since their release prices are the standard ones.
+
+### Security-relevant
+None.
+
 ## [v0.2.15] - 2026-11-21
 
 ### Upgrade

@@ -42,7 +42,7 @@ type Table struct {
 }
 
 // Basis describes which rates a table holds.
-const Basis = "On-demand standard (regional) input and output token rates, USD per 1,000 tokens. Excludes batch, reserved, flex, priority, long-context, latency-optimized, and prompt-cache rates. Where only a global rate is listed, that rate is used."
+const Basis = "On-demand standard (regional) input and output token rates, USD per 1,000 tokens. Excludes batch, reserved, flex, priority, ultrafast, long-context, latency-optimized, and prompt-cache rates. Where only a global rate is listed, that rate is used."
 
 // Source names where a table's prices come from.
 const Source = "AWS Price List API, service codes AmazonBedrock and AmazonBedrockFoundationModels, every region, matched to model ids from bedrock list-foundation-models and the bedrock-mantle model list in every enabled region"
@@ -57,7 +57,7 @@ type Unmatched struct {
 }
 
 var (
-	skipUsage  = []string{"batch", "reserved", "long_ctx", "flex", "priority", "cache", "latency", "tpm"}
+	skipUsage  = []string{"batch", "reserved", "long_ctx", "flex", "priority", "ultrafast", "cache", "latency", "tpm"}
 	stripWords = map[string]bool{"instruct": true, "openai": true, "nvidia": true, "bf16": true, "vl": true, "dense": true, "it": true, "pt": true}
 	parens     = regexp.MustCompile(`\(.*?\)`)
 	nonAlnum   = regexp.MustCompile(`[^a-z0-9]+`)
