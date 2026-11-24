@@ -4,6 +4,9 @@ Every release has an entry here. Each entry has an **Upgrade** section that list
 
 ## [Unreleased]
 
+### Changed
+- When publishing shared AI prices raises a model's price to 2 or more times what it was, `guardrail prices publish` and the scheduled publish's alert say how many times, name the AWS Price List usage types that set the new price, and note that a raise this large is often a new premium tier the build doesn't know rather than a price change.
+
 ## [v0.2.16] - 2026-11-24
 
 ### Upgrade

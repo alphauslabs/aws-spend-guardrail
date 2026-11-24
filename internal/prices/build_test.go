@@ -146,6 +146,10 @@ func TestBuildSkipsUltrafastRates(t *testing.T) {
 	if got := tab.Models["openai.gpt-6-astra"]; got != want {
 		t.Errorf("built %+v, want %+v", got, want)
 	}
+	_, src, _, _ := build(items, []Model{{ID: "openai.gpt-6-astra", Name: "GPT-6 Astra", Outputs: []string{"TEXT"}}})
+	if got := src["openai.gpt-6-astra"]; got != (RateSource{In: "USE1-MP:USE1_input_tokens_standard-Units", Out: "USE1-MP:USE1_output_tokens_standard-Units"}) {
+		t.Errorf("sources %+v", got)
+	}
 }
 
 func TestDirection(t *testing.T) {

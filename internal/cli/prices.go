@@ -56,6 +56,9 @@ func (c *CLI) PublishPrices(ctx context.Context, enterprise string, built *price
 			fmt.Fprintf(c.Out, "  removed  %s: was %s%s\n", ch.Model, ch.From, mark)
 		default:
 			fmt.Fprintf(c.Out, "  %-8s %s: %s -> %s%s\n", ch.Kind, ch.Model, ch.From, ch.To, mark)
+			if j := ch.Jump(); j != "" {
+				fmt.Fprintf(c.Out, "           %s\n", j)
+			}
 		}
 	}
 	for _, id := range r.Dropped {

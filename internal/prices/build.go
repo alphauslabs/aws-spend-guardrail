@@ -121,12 +121,29 @@ type priceList struct {
 	PublicationDate string `json:"publicationDate"`
 }
 
-type rates struct{ in, out map[bool][]float64 } // keyed by "is a global rate"
+// rate is one Price List rate per 1,000 tokens and the usage type that lists
+// it.
+type rate struct {
+	v     float64
+	usage string
+}
+
+type rates struct{ in, out map[bool][]rate } // keyed by "is a global rate"
+
+// RateSource names the Price List usage types that set a model's input and output
+// prices in a region, so a publish can say where a large raise came from.
+type RateSource struct{ In, Out string }
 
 // Build joins Price List entries (each a JSON document, as GetProducts returns
 // them) with Bedrock's model list. It prices every text model it can match,
 // and lists the ones it can't.
 func Build(priceItems []string, models []Model) (*Table, []Unmatched, error) {
+	t, _, miss, err := build(priceItems, models)
+	return t, miss, err
+}
+
+// build is Build, with the usage types that set each model's prices.
+func build(priceItems []string, models []Model) (*Table, map[string]RateSource, []Unmatched, error) {
 	byKey := map[string]*rates{}
 	// bags maps a word-order-insensitive key to the Price List model names
 	// that produce it (design D3).
@@ -135,7 +152,7 @@ func Build(priceItems []string, models []Model) (*Table, []Unmatched, error) {
 	for _, raw := range priceItems {
 		var p priceList
 		if err := json.Unmarshal([]byte(raw), &p); err != nil {
-			return nil, nil, fmt.Errorf("price list entry: %w", err)
+			return nil, nil, nil, fmt.Errorf("price list entry: %w", err)
 		}
 		if p.PublicationDate > published {
 			published = p.PublicationDate
@@ -192,13 +209,13 @@ func Build(priceItems []string, models []Model) (*Table, []Unmatched, error) {
 				for k := range keys {
 					r := byKey[k]
 					if r == nil {
-						r = &rates{in: map[bool][]float64{}, out: map[bool][]float64{}}
+						r = &rates{in: map[bool][]rate{}, out: map[bool][]rate{}}
 						byKey[k] = r
 					}
 					if input {
-						r.in[global] = append(r.in[global], per1k)
+						r.in[global] = append(r.in[global], rate{per1k, usage})
 					} else {
-						r.out[global] = append(r.out[global], per1k)
+						r.out[global] = append(r.out[global], rate{per1k, usage})
 					}
 				}
 			}
@@ -206,6 +223,7 @@ func Build(priceItems []string, models []Model) (*Table, []Unmatched, error) {
 	}
 
 	t := &Table{Source: Source, Published: published, Basis: Basis, Models: map[string]config.ModelPrice{}}
+	sources := map[string]RateSource{}
 	var miss []Unmatched
 	for _, m := range models {
 		if !contains(m.Outputs, "TEXT") || strings.Count(m.ID, ":") > 1 {
@@ -225,10 +243,13 @@ func Build(priceItems []string, models []Model) (*Table, []Unmatched, error) {
 			miss = append(miss, Unmatched{ID: m.ID, Name: m.Name})
 			continue
 		}
-		t.Models[m.ID] = config.ModelPrice{InputPer1K: pick(r.in), OutputPer1K: pick(r.out)}
+		in, inUsage := pick(r.in)
+		out, outUsage := pick(r.out)
+		t.Models[m.ID] = config.ModelPrice{InputPer1K: in, OutputPer1K: out}
+		sources[m.ID] = RateSource{In: inUsage, Out: outUsage}
 	}
 	sort.Slice(miss, func(i, j int) bool { return miss[i].ID < miss[j].ID })
-	return t, miss, nil
+	return t, sources, miss, nil
 }
 
 // direction says whether a Price List entry is an input or output token rate:
@@ -296,17 +317,19 @@ func uniq(s []string) []string {
 }
 
 // pick prefers the regional rate and takes the highest seen, rounded to 9
-// decimal places.
-func pick(m map[bool][]float64) float64 {
+// decimal places, with the usage type that lists it.
+func pick(m map[bool][]rate) (float64, string) {
 	v := m[false]
 	if len(v) == 0 {
 		v = m[true]
 	}
-	best := 0.0
+	best := rate{}
 	for _, x := range v {
-		best = math.Max(best, x)
+		if x.v > best.v {
+			best = x
+		}
 	}
-	return math.Round(best*1e9) / 1e9
+	return math.Round(best.v*1e9) / 1e9, best.usage
 }
 
 func containsAny(s string, subs []string) bool {
@@ -341,6 +364,8 @@ type Built struct {
 	// Unlisted are the regions whose model lists couldn't be read; they are
 	// priced from the Price List for the models listed elsewhere.
 	Unlisted []string
+	// Sources are the usage types that set each model's prices, by region.
+	Sources map[string]map[string]RateSource
 }
 
 // BuildRegions prices every model a region's model list names, in every
@@ -348,7 +373,7 @@ type Built struct {
 // the Price List entries per region, listed the models per region. A model is
 // unmatched when no region prices it.
 func BuildRegions(items map[string][]string, listed map[string][]Model, unlisted []string) (*Built, []Unmatched, error) {
-	b := &Built{Offered: map[string]map[string]bool{}, Unlisted: append([]string(nil), unlisted...)}
+	b := &Built{Offered: map[string]map[string]bool{}, Unlisted: append([]string(nil), unlisted...), Sources: map[string]map[string]RateSource{}}
 	sort.Strings(b.Unlisted)
 	var union []Model
 	seen := map[string]bool{}
@@ -373,7 +398,7 @@ func BuildRegions(items map[string][]string, listed map[string][]Model, unlisted
 	priced := map[string]bool{}
 	missName := map[string]string{}
 	for r, its := range items {
-		rt, miss, err := Build(its, union)
+		rt, src, miss, err := build(its, union)
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", r, err)
 		}
@@ -387,6 +412,7 @@ func BuildRegions(items map[string][]string, listed map[string][]Model, unlisted
 			continue
 		}
 		t.Regions[r] = rt.Models
+		b.Sources[r] = src
 		for id := range rt.Models {
 			priced[id] = true
 		}

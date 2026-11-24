@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -197,6 +198,18 @@ func Publish(ctx context.Context, s Store, built *Built, unmatched []Unmatched, 
 		}
 	}
 	r.Changes = MergeChanges(perRegion)
+	for i := range r.Changes {
+		c := &r.Changes[i]
+		if c.Kind != "raised" || c.factor() < JumpFactor {
+			continue
+		}
+		c.Factor = math.Round(c.factor()*10) / 10
+		// Name the usage types only when the build set the price shown, not a
+		// manual price.
+		if p, ok := built.Table.Regions[c.Region][c.Model]; ok && p.InputPer1K == c.to.In && p.OutputPer1K == c.to.Out {
+			c.Usage = built.Sources[c.Region][c.Model]
+		}
+	}
 	for _, id := range sortedKeys(manual) {
 		m := manual[id].Price()
 		lo, hi, listed := built.listRange(id)

@@ -81,8 +81,13 @@ func TestScheduledPublishWritesOnlyChanges(t *testing.T) {
 	}
 	k.build["a.m1"] = config.ModelPrice{InputPer1K: 1, OutputPer1K: 3}
 	k.run()
-	if k.latest() != 2 || !k.h.alerts.has("a.m1 raised (in us-east-1): in 1 / out 3 per 1k, was in 1 / out 2 per 1k") {
+	if k.latest() != 2 || !k.h.alerts.has("a.m1 raised (in us-east-1): in 1 / out 3 per 1k, was in 1 / out 2 per 1k") || k.h.alerts.has("times the previous price") {
 		t.Fatalf("a rise: version %d, alerts %v", k.latest(), k.h.alerts.list)
+	}
+	k.build["a.m1"] = config.ModelPrice{InputPer1K: 6, OutputPer1K: 18}
+	k.run()
+	if k.latest() != 3 || !k.h.alerts.has("was in 1 / out 3 per 1k. 6.0 times the previous price; a raise this large") {
+		t.Fatalf("a large rise: version %d, alerts %v", k.latest(), k.h.alerts.list)
 	}
 }
 

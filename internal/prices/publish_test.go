@@ -245,3 +245,43 @@ func TestManualPricesAcrossRegions(t *testing.T) {
 		t.Fatalf("dropped: %+v %v", r, err)
 	}
 }
+
+// A raise of JumpFactor or more names how large it is and the usage types
+// that set it, unless a manual price set it.
+func TestPublishPointsOutLargeRaises(t *testing.T) {
+	ctx := context.Background()
+	_, c := pricesStore(t)
+	std := map[string]config.ModelPrice{"openai.gpt-6-astra": {InputPer1K: 0.011, OutputPer1K: 0.055}, "a.m1": {InputPer1K: 1, OutputPer1K: 2}}
+	if _, err := Publish(ctx, c, built(std), nil, PublishOptions{Note: "first", Now: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	b := built(map[string]config.ModelPrice{"openai.gpt-6-astra": {InputPer1K: 0.066, OutputPer1K: 0.33}, "a.m1": {InputPer1K: 1.5, OutputPer1K: 2}})
+	b.Sources = map[string]map[string]RateSource{LegacyRegion: {"openai.gpt-6-astra": {In: "USE1-MP:USE1_input_tokens_ultrafast-Units", Out: "USE1-MP:USE1_output_tokens_ultrafast-Units"}}}
+	r, err := Publish(ctx, c, b, nil, PublishOptions{DryRun: true})
+	if err != nil || len(r.Changes) != 2 {
+		t.Fatalf("%+v %v", r, err)
+	}
+	for _, ch := range r.Changes {
+		switch ch.Model {
+		case "a.m1":
+			if ch.Factor != 0 || ch.Jump() != "" {
+				t.Errorf("a 1.5x raise pointed out: %+v", ch)
+			}
+		case "openai.gpt-6-astra":
+			want := "6.0 times the previous price, from AWS usage types USE1-MP:USE1_input_tokens_ultrafast-Units (input) and USE1-MP:USE1_output_tokens_ultrafast-Units (output)"
+			if ch.Factor != 6 || !strings.HasPrefix(ch.Jump(), want) {
+				t.Errorf("jump %q", ch.Jump())
+			}
+		}
+	}
+	// A manual price that set the new price names no usage type.
+	r, err = Publish(ctx, c, b, nil, PublishOptions{DryRun: true, Manual: map[string]config.ModelPrice{"a.m1": {InputPer1K: 9, OutputPer1K: 9}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ch := range r.Changes {
+		if ch.Model == "a.m1" && (ch.Factor != 9 || ch.Usage != (RateSource{})) {
+			t.Errorf("manual raise: %+v", ch)
+		}
+	}
+}

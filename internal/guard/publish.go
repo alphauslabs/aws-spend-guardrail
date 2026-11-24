@@ -109,7 +109,11 @@ func publishedText(r *prices.PublishResult) string {
 		case "removed":
 			lines = append(lines, fmt.Sprintf("- %s removed%s: was %s", ch.Model, where, ch.From))
 		default:
-			lines = append(lines, fmt.Sprintf("- %s %s%s: %s, was %s", ch.Model, ch.Kind, where, ch.To, ch.From))
+			line := fmt.Sprintf("- %s %s%s: %s, was %s", ch.Model, ch.Kind, where, ch.To, ch.From)
+			if j := ch.Jump(); j != "" {
+				line += ". " + upperFirst(j) + "."
+			}
+			lines = append(lines, line)
 		}
 	}
 	for _, id := range r.AutoDropped {
@@ -127,4 +131,12 @@ func regionCount(n int) string {
 		return "1 region"
 	}
 	return fmt.Sprintf("%d regions", n)
+}
+
+// upperFirst capitalizes a sentence's first letter.
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }

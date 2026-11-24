@@ -207,8 +207,45 @@ type Change struct {
 	From, To string
 	Region   string // the region shown, when merged across regions
 	Regions  int    // the regions with this kind of change, when merged
+	// Factor is how many times the previous price a raise is, on its larger
+	// side, set only when it is at least JumpFactor; Usage names the Price
+	// List usage types that set the new price, when the build set it.
+	Factor float64
+	Usage  RateSource
 
 	from, to PriceOf
+}
+
+// JumpFactor is the raise, as a multiple of the previous price, that a
+// publish points out: AWS rarely raises a price this much, and a new premium
+// tier the build doesn't know (as ultrafast was) looks just like it.
+const JumpFactor = 2.0
+
+// Jump describes a raise of JumpFactor or more, or is empty.
+func (c Change) Jump() string {
+	if c.Factor == 0 {
+		return ""
+	}
+	s := fmt.Sprintf("%.1f times the previous price", c.Factor)
+	switch {
+	case c.Usage.In != "" && c.Usage.In == c.Usage.Out:
+		s += ", from AWS usage type " + c.Usage.In
+	case c.Usage.In != "" || c.Usage.Out != "":
+		s += ", from AWS usage types " + c.Usage.In + " (input) and " + c.Usage.Out + " (output)"
+	}
+	return s + "; a raise this large is often a new premium tier the build doesn't know, not a price change"
+}
+
+// factor is how many times the previous price a raise is, on its larger side.
+func (c Change) factor() float64 {
+	f := 0.0
+	if c.from.In > 0 {
+		f = c.to.In / c.from.In
+	}
+	if c.from.Out > 0 && c.to.Out/c.from.Out > f {
+		f = c.to.Out / c.from.Out
+	}
+	return f
 }
 
 // Diff lists the differences from old to new, sorted by model.
