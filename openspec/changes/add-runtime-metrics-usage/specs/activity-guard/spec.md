@@ -1,15 +1,19 @@
 ## ADDED Requirements
 
 ### Requirement: The guard charges runtime usage the trail missed
-When the AI pack is enabled and the stack lists mantle regions, the guard SHALL also read, once a minute in each listed region, Bedrock runtime's input and output tokens per account, model, and service tier that linked accounts share. For each account, model, and tier, it SHALL charge the tokens the metrics show beyond those it counted from the trail over the same minutes, at that tier's price, and SHALL never refund a shortfall.
+Every 5 minutes, in each region the stack lists for mantle, the guard SHALL read Bedrock runtime's tokens per service tier only for the accounts, models, and 5-minute windows with a call the trail couldn't measure. It SHALL charge the tokens the metrics show beyond those the trail counted in that window, at that tier's price, and SHALL never refund a shortfall.
 
 #### Scenario: A streamed Chat Completions call
 - **WHEN** a linked account in a listed region makes a streamed Priority Chat Completions call, which the trail records without tokens, and the metrics show 69 input and 5 output tokens for it
 - **THEN** within about 15 minutes the account's totals gain 69 input and 5 output tokens at the model's Priority price
 
 #### Scenario: Calls the trail measured
-- **WHEN** an account makes `Converse` calls whose records carry their tokens, and the metrics show the same tokens
-- **THEN** nothing more is charged for them
+- **WHEN** an account makes only `Converse` calls, whose records carry their tokens
+- **THEN** the guard reads no runtime metrics for it, and nothing more is charged
+
+#### Scenario: Measured and unmeasured calls in one window
+- **WHEN** an account makes a `Converse` call with 100 input tokens and a streamed Chat Completions call with 69 to the same model in one window, and the metrics show 169
+- **THEN** 69 input tokens are charged from the gap, and the `Converse` call isn't charged twice
 
 #### Scenario: The metrics show fewer tokens than the trail
 - **WHEN** the trail counted more tokens for an account, model, and tier than the metrics show
