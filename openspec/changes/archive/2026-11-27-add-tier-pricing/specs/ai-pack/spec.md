@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Every Bedrock runtime call is priced
-The AI pack SHALL price each successful `InvokeModel`, `InvokeModelWithResponseStream`, `Converse`, `ConverseStream`, `ChatCompletions`, and `Responses` call from its input and output token counts and the model's price, taking streaming calls' counts from the records that carry them. It SHALL match an inference profile id, a model id, and a model ARN for the same model to one price. Prices SHALL come from a table shipped with each release, overridden per model by config. A call refused by AWS SHALL NOT be priced.
+The AI pack SHALL price each successful `InvokeModel`, `InvokeModelWithResponseStream`, `Converse`, `ConverseStream`, `ChatCompletions`, and `Responses` call from its token counts and the model's price, streaming calls from the records that carry the counts. An inference profile id, model id, and model ARN for one model SHALL get one price, from the release's table, overridden per model by config. A call refused by AWS SHALL NOT be priced.
 
 #### Scenario: Two ways of naming one model
 - **WHEN** one call names `us.amazon.nova-micro-v1:0` and another the inference profile's ARN for the same model

@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: The builder prices every model the Price List prices per token
-The price builder SHALL price a Bedrock text model in each region whenever the Price List gives it regional or global on-demand input and output token rates there, whether an entry names its direction in `inferenceType` (in any wording, such as "Text Input Token") or only in its usage type, and whether the model appears by name, by model id, or in a usage type with a suffix such as `-mantle`. A model's standard price SHALL be the highest of its standard rates for each side; its Flex, Priority, and Ultrafast rates SHALL be its tier prices.
+The price builder SHALL price a Bedrock text model in each region where the Price List gives it regional or global on-demand input and output token rates, whether an entry names its direction in `inferenceType` (in any wording) or only in its usage type, and whether it names the model by name, by id, or in a suffixed usage type such as `-mantle`. Its standard price SHALL be the highest of its standard rates per side; its Flex, Priority, and Ultrafast rates SHALL be its tier prices.
 
 #### Scenario: A model listed by id without an inference type
 - **WHEN** the Price List lists `xai.grok-4.6` with usage types `USE1-xai.grok-4.6-mantle-input-tokens-standard` at $0.0022 and `...-output-tokens-standard` at $0.0066 per 1,000 tokens, and no `inferenceType`

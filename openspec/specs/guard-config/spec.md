@@ -4,6 +4,7 @@
 Defines the guard's configuration: a versioned document per payer org, kept in Jennah, that declares the scopes the guard protects and their limits, the accounts left out on purpose, the alert recipients, and the AI guard's settings. It covers how a document is validated, how the guard pulls and applies it (tightening at once, loosening only after a delay and a person's approval), why an invalid or unreachable config never weakens protection, and how operators read, check, and publish versions with the CLI.
 
 ## Requirements
+
 ### Requirement: A document can't enforce more scopes than AWS allows budget actions
 A document SHALL be invalid when more than 100 of its scopes are in `enforce` once defaults are applied, because AWS allows at most 100 budget actions per account and each enforcing scope needs one in the payer account. The problem SHALL be reported on `scopes`, give the number of enforcing scopes and the limit, and say to group accounts into OU scopes or set some scopes to `dry-run`. Scopes in `dry-run` SHALL NOT count.
 
@@ -268,3 +269,18 @@ Adding a kind to the blocked list that applies to an account SHALL be tightening
 #### Scenario: Allowing agents for one account
 - **WHEN** a version sets the scope of account 730335604511, named `e2enormal`, to `blocked: []` where it blocked `agents`
 - **THEN** it waits for approval, and the approval reads that agents become allowed on account 730335604511 (e2enormal) and aren't counted toward its caps
+
+### Requirement: The AI section sets how unmeasured calls are treated
+The `ai` section SHALL accept `unmeasured_calls`, either `cutoff` or `allow`, saying how a call the guard can't measure is treated, defaulting to `cutoff`. Validation SHALL refuse any other value. A move from `cutoff` to `allow`, including `allow` in a first version, SHALL be loosening; a move from `allow` to `cutoff` SHALL be tightening.
+
+#### Scenario: Not set
+- **WHEN** a document's `ai` section doesn't set `unmeasured_calls`
+- **THEN** unmeasured calls cut the account off
+
+#### Scenario: A bad value
+- **WHEN** a document sets `ai.unmeasured_calls` to `count`
+- **THEN** validation refuses the document and names the field
+
+#### Scenario: Allowing needs approval
+- **WHEN** a version sets `ai.unmeasured_calls` to `allow` where the version in force has `cutoff`
+- **THEN** the change is loosening and applies only after approval and the stack's delay
